@@ -1,0 +1,13 @@
+[package]
+name = "nitrogen"
+version = "0.1.0"
+authors = ["Thomas Herzog <thomas.herzog@simedis.com>"]
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+
+
+[build-dependencies]
+cbindgen = "0.6.3"
