@@ -6,8 +6,17 @@ authors = ["Thomas Herzog <thomas.herzog@simedis.com>"]
 [lib]
 crate-type = ["staticlib"]
 
-[dependencies]
 
+[dependencies]
+ash = "0.24.4"
+
+[dependencies.gfx-hal]
+git = "https://github.com/gfx-rs/gfx"
+
+[dependencies.gfx-backend-vulkan]
+git = "https://github.com/gfx-rs/gfx"
+default-features = false
+features = []
 
 [build-dependencies]
 cbindgen = "0.6.3"

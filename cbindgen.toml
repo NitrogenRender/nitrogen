@@ -3,3 +3,7 @@ header = """/* This Source Code Form is subject to the terms of the Mozilla Publ
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */"""
 
 namespace = "ntg"
+tab_width = 4
+
+[export.rename]
+"BindingCreationInfoX11" = "CreationInfoX11"
