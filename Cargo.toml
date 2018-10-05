@@ -9,6 +9,8 @@ crate-type = ["staticlib"]
 
 [dependencies]
 ash = "0.24.4"
+slab = "0.4.1"
+either = "1.5.0"
 
 [dependencies.gfx-hal]
 git = "https://github.com/gfx-rs/gfx"
