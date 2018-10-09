@@ -1,5 +1,10 @@
 extern crate gfx_backend_vulkan as back;
 extern crate gfx_hal as gfx;
+extern crate gfx_memory as gfxm;
+
+extern crate failure;
+#[macro_use]
+extern crate failure_derive;
 
 extern crate ash;
 
@@ -9,20 +14,79 @@ pub mod image;
 
 pub mod bindings;
 
-use gfx::window::Surface;
-use gfx::Instance;
 use gfx::Device;
+use gfx::Instance;
+use gfx::PhysicalDevice;
+
+use gfxm::MemoryAllocator;
+use gfxm::SmartAllocator;
 
 use ash::vk;
 
-use std::os::raw::*;
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::MutexGuard;
 
 pub struct CreationInfoX11 {
     name: String,
     version: u32,
     display: *mut vk::Display,
     window: vk::Window,
+}
+
+pub struct DeviceContext {
+    pub memory_allocator: Mutex<SmartAllocator<back::Backend>>,
+
+    pub queue_group: gfx::QueueGroup<back::Backend, gfx::General>,
+
+    pub device: Arc<back::Device>,
+    pub adapter: Arc<gfx::Adapter<back::Backend>>,
+}
+
+impl DeviceContext {
+    pub fn new(instance: &back::Instance, surface: &impl gfx::Surface<back::Backend>) -> Self {
+        let mut adapters = instance.enumerate_adapters();
+
+        // TODO select best fitting adapter
+        let mut adapter = adapters.remove(0);
+
+        let memory_properties = adapter.physical_device.memory_properties();
+        let memory_allocator = SmartAllocator::new(memory_properties, 256, 64, 1024, 256 * 1024 * 1024);
+
+        let (device, queue_group) = adapter
+            .open_with(1, |family| surface.supports_queue_family(family))
+            .unwrap();
+
+        DeviceContext {
+            memory_allocator: Mutex::new(memory_allocator),
+
+            queue_group,
+
+            device: Arc::new(device),
+            adapter: Arc::new(adapter),
+        }
+    }
+
+    pub fn allocator(&self) -> MutexGuard<SmartAllocator<back::Backend>> {
+        // if we can't access the device-local memory allocator then ... well, RIP
+        self.memory_allocator
+            .lock()
+            .expect("Memory allocator can't be accessed")
+    }
+
+    pub fn release(self) {
+        self.memory_allocator
+            .into_inner()
+            .unwrap()
+            .dispose(&self.device)
+            .unwrap();
+        self.device.wait_idle().unwrap();
+    }
+}
+
+// TODO put swapchain and stuff
+pub struct DisplayContext {
+    pub surface: Box<dyn gfx::window::Surface<back::Backend>>,
 }
 
 // DON'T CHANGE THE ORDER OF THE MEMBERS HERE!!!!
@@ -34,45 +98,33 @@ pub struct CreationInfoX11 {
 // MOUNTAINS OF CRASHES WILL POUR ONTO YOU.
 // So please, just don't.
 pub struct Context {
-    image_storage: image::ImageStorage,
+    pub image_storage: image::ImageStorage,
 
-    queue_group: gfx::QueueGroup<back::Backend, gfx::Graphics>,
-    device: Arc<back::Device>,
-    surface: Box<dyn gfx::window::Surface<back::Backend>>,
-    adapter: gfx::Adapter<back::Backend>,
-    instance: back::Instance,
+    pub device_ctx: DeviceContext,
+    pub display_ctx: DisplayContext,
+    pub instance: back::Instance,
 }
 
 impl Context {
     pub fn setup_x11(info: CreationInfoX11) -> Self {
         let instance = back::Instance::create(&info.name, info.version);
         let surface = instance.create_surface_from_xlib(info.display, info.window);
-        let mut adapters = instance.enumerate_adapters();
 
-        // TODO select adapter(s)
-        for adapter in &adapters {
-            println!("{:?}", adapter.info);
-        }
+        let device_ctx = DeviceContext::new(&instance, &surface);
 
-        let mut adapter = adapters.remove(0);
-
-        let (device, queue_group) = adapter
-            .open_with::<_, gfx::Graphics>(1, |family| surface.supports_queue_family(family))
-            .unwrap();
-
-        let device = Arc::new(device);
+        let display_ctx = DisplayContext {
+            surface: Box::new(surface),
+        };
 
         Self {
-            image_storage: image::ImageStorage::new(device.clone()),
+            image_storage: image::ImageStorage::new(&device_ctx),
             instance,
-            surface: Box::new(surface),
-            adapter,
-            device,
-            queue_group,
+            device_ctx,
+            display_ctx,
         }
     }
 
     pub fn release(self) {
-        self.device.wait_idle().unwrap();
+        self.device_ctx.release();
     }
 }

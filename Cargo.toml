@@ -10,15 +10,22 @@ crate-type = ["staticlib"]
 [dependencies]
 ash = "0.24.4"
 slab = "0.4.1"
-either = "1.5.0"
+failure = "0.1.2"
+failure_derive = "0.1.2"
 
 [dependencies.gfx-hal]
 git = "https://github.com/gfx-rs/gfx"
+rev = "c7fd233"
 
 [dependencies.gfx-backend-vulkan]
 git = "https://github.com/gfx-rs/gfx"
+rev = "c7fd233"
 default-features = false
 features = []
+
+[dependencies.gfx-memory]
+# git = "https://github.com/gfx-rs/gfx-memory"
+path = "../../staging/gfx-memory"
 
 [build-dependencies]
 cbindgen = "0.6.3"
