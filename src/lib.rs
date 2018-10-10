@@ -34,10 +34,16 @@ pub struct CreationInfoX11 {
     window: vk::Window,
 }
 
+#[repr(u8)]
+pub enum QueueType {
+    Rendering,
+    ImageStorage,
+}
+
 pub struct DeviceContext {
     pub memory_allocator: Mutex<SmartAllocator<back::Backend>>,
 
-    pub queue_group: gfx::QueueGroup<back::Backend, gfx::General>,
+    pub queue_group: Mutex<gfx::QueueGroup<back::Backend, gfx::General>>,
 
     pub device: Arc<back::Device>,
     pub adapter: Arc<gfx::Adapter<back::Backend>>,
@@ -54,13 +60,13 @@ impl DeviceContext {
         let memory_allocator = SmartAllocator::new(memory_properties, 256, 64, 1024, 256 * 1024 * 1024);
 
         let (device, queue_group) = adapter
-            .open_with(1, |family| surface.supports_queue_family(family))
+            .open_with(2, |family| surface.supports_queue_family(family))
             .unwrap();
 
         DeviceContext {
             memory_allocator: Mutex::new(memory_allocator),
 
-            queue_group,
+            queue_group: Mutex::new(queue_group),
 
             device: Arc::new(device),
             adapter: Arc::new(adapter),
@@ -72,6 +78,10 @@ impl DeviceContext {
         self.memory_allocator
             .lock()
             .expect("Memory allocator can't be accessed")
+    }
+
+    pub fn queue_group(&self) -> MutexGuard<gfx::QueueGroup<back::Backend, gfx::General>> {
+        self.queue_group.lock().unwrap()
     }
 
     pub fn release(self) {
