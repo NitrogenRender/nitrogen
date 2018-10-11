@@ -13,10 +13,9 @@ use std;
 
 use slab::Slab;
 
-use super::DeviceContext;
-use super::QueueType;
+use super::super::DeviceContext;
+use super::super::QueueType;
 
-#[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub enum ImageDimension {
     D1 { x: u32 },
@@ -27,11 +26,9 @@ pub enum ImageDimension {
 type ImageGeneration = u64;
 type ImageId = usize;
 
-#[repr(C)]
 #[derive(Copy, Clone)]
-pub struct ImageHandle(ImageId, ImageGeneration);
+pub struct ImageHandle(pub ImageId, pub ImageGeneration);
 
-#[repr(C)]
 pub struct ImageCreateInfo {
     pub dimension: ImageDimension,
     pub num_layers: u16,
@@ -47,7 +44,6 @@ pub struct ImageUploadInfo<'a> {
     pub target_offset: (u32, u32, u32),
 }
 
-#[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ImageFormat {
     RUnorm,
@@ -104,7 +100,6 @@ pub struct ImageStorage {
     dimensions: Vec<ImageDimension>,
     generations: Vec<ImageGeneration>,
     formats: Vec<gfx::format::Format>,
-
     images: Slab<Image>,
 
     command_pool: gfx::CommandPool<back::Backend, gfx::General>,
@@ -217,7 +212,7 @@ impl ImageStorage {
     ) -> Result<()> {
         use gfxm::Factory;
 
-        let image_dimensions = self.get_dimension(image).ok_or(ImageError::HandleInvalid)?;
+        let image_dimensions = self.dimension(image).ok_or(ImageError::HandleInvalid)?;
 
         let upload_data_fits = {
             use self::ImageDimension as I;
@@ -249,7 +244,7 @@ impl ImageStorage {
         let (image_width, image_height) = match data.dimension {
             ImageDimension::D1 { x } => (x, 1),
             ImageDimension::D2 { x, y } => (x, y),
-            ImageDimension::D3 { x, y, z } => unimplemented!("Setting of 3D texture data"),
+            ImageDimension::D3 { .. } => unimplemented!("Setting of 3D texture data"),
         };
 
         let image_stride = data.data.len() / (image_width * image_height) as usize;
@@ -277,10 +272,10 @@ impl ImageStorage {
             //  - "width" of 11
             //  - "height" of 10
             //
-            // If we want make a buffer used for copying the image, the "row size" is important
-            // since graphics APIs likes to have a certain *alignment* for copying the data.
+            // If we want to make a buffer used for copying the image, the "row size" is important
+            // since graphics APIs like to have a certain *alignment* for copying the data.
             //
-            // Let's assume the "row alignment" is 8, that means each row size has to be divisable
+            // Let's assume the "row alignment" is 8, that means each row size has to be divisible
             // by 8. In the RGBA8 example, each row has a size of `width * stride = 44`, which is
             // not divisible evenly by 8, so we need to add some padding.
             // In this case the padding we add needs to be 4 bytes, so we get to a row width of 48.
@@ -441,7 +436,7 @@ impl ImageStorage {
         Ok(())
     }
 
-    pub fn get_dimension(&self, image: ImageHandle) -> Option<ImageDimension> {
+    pub fn dimension(&self, image: ImageHandle) -> Option<ImageDimension> {
         if !self.is_alive(image) {
             None
         } else {

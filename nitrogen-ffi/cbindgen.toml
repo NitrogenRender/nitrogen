@@ -6,6 +6,6 @@ namespace = "ntg"
 tab_width = 4
 language = "C++"
 
-[export.rename]
-"BindingCreationInfoX11" = "CreationInfoX11"
-"BindingImageUploadInfo" = "ImageUploadInfo"
+# [export.rename]
+# "BindingCreationInfoX11" = "CreationInfoX11"
+# "BindingImageUploadInfo" = "ImageUploadInfo"

@@ -10,9 +10,9 @@ extern crate ash;
 
 extern crate slab;
 
-pub mod image;
+pub mod resources;
 
-pub mod bindings;
+pub use resources::image;
 
 use gfx::Device;
 use gfx::Instance;
@@ -28,10 +28,10 @@ use std::sync::Mutex;
 use std::sync::MutexGuard;
 
 pub struct CreationInfoX11 {
-    name: String,
-    version: u32,
-    display: *mut vk::Display,
-    window: vk::Window,
+    pub name: String,
+    pub version: u32,
+    pub display: *mut vk::Display,
+    pub window: vk::Window,
 }
 
 #[repr(u8)]
