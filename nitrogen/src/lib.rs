@@ -13,6 +13,7 @@ extern crate slab;
 pub mod resources;
 
 pub use resources::image;
+pub use resources::sampler;
 
 use gfx::Device;
 use gfx::Instance;
@@ -109,6 +110,7 @@ pub struct DisplayContext {
 // So please, just don't.
 pub struct Context {
     pub image_storage: image::ImageStorage,
+    pub sampler_storage: sampler::SamplerStorage,
 
     pub device_ctx: DeviceContext,
     pub display_ctx: DisplayContext,
@@ -128,6 +130,7 @@ impl Context {
 
         Self {
             image_storage: image::ImageStorage::new(&device_ctx),
+            sampler_storage: sampler::SamplerStorage::new(),
             instance,
             device_ctx,
             display_ctx,

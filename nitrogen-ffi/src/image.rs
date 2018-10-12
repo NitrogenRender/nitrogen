@@ -20,6 +20,33 @@ pub struct ImageCreateInfo {
     pub num_samples: u8,
     pub num_mipmaps: u8,
     pub format: ImageFormat,
+    pub kind: ImageViewKind,
+}
+
+#[repr(C)]
+pub enum ImageViewKind {
+    D1,
+    D1Array,
+    D2,
+    D2Array,
+    D3,
+    Cube,
+    CubeArray,
+}
+
+impl From<ImageViewKind> for nitrogen::image::ViewKind {
+    fn from(kind: ImageViewKind) -> Self {
+        use nitrogen::image::ViewKind as vk;
+        match kind {
+            ImageViewKind::D1 => vk::D1,
+            ImageViewKind::D1Array => vk::D1Array,
+            ImageViewKind::D2 => vk::D2,
+            ImageViewKind::D2Array => vk::D2Array,
+            ImageViewKind::D3 => vk::D3,
+            ImageViewKind::Cube => vk::Cube,
+            ImageViewKind::CubeArray => vk::CubeArray,
+        }
+    }
 }
 
 #[repr(C)]
@@ -108,6 +135,7 @@ pub unsafe extern "C" fn image_create(
         num_mipmaps: create_info.num_mipmaps,
         num_samples: create_info.num_samples,
         num_layers: create_info.num_layers,
+        kind: create_info.kind.into(),
     };
 
     let result = context

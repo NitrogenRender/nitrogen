@@ -1,6 +1,7 @@
 extern crate nitrogen;
 
 pub mod image;
+pub mod sampler;
 
 use std::ffi::CStr;
 use std::os::raw::*;
