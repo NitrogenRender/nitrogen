@@ -10,10 +10,17 @@ extern crate ash;
 
 extern crate slab;
 
-pub mod resources;
 
+pub mod util;
+pub use util::storage;
+
+
+
+pub mod resources;
 pub use resources::image;
 pub use resources::sampler;
+
+
 
 use gfx::Device;
 use gfx::Instance;

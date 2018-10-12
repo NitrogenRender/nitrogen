@@ -1,12 +1,13 @@
 use gfx;
 use back;
 
-use slab::Slab;
-
 use gfx::image;
 use gfx::Device;
 
 use super::DeviceContext;
+
+use util::storage;
+use util::storage::{Storage};
 
 
 type Sampler = <back::Backend as gfx::Backend>::Sampler;
@@ -73,22 +74,16 @@ impl From<SamplerCreateInfo> for image::SamplerInfo {
 
 
 
-pub type SamplerGeneration = u64;
-pub type SamplerId = usize;
-
-#[derive(Copy, Clone)]
-pub struct SamplerHandle(pub SamplerId, pub SamplerGeneration);
+pub type SamplerHandle = storage::Handle<Sampler>;
 
 pub struct SamplerStorage {
-    generations: Vec<SamplerGeneration>,
-    samplers: Slab<Sampler>,
+    pub storage: Storage<Sampler>,
 }
 
 impl SamplerStorage {
     pub fn new() -> Self {
         Self {
-            generations: vec![],
-            samplers: Slab::new(),
+            storage: Storage::new(),
         }
     }
 
@@ -98,56 +93,23 @@ impl SamplerStorage {
         create_info: SamplerCreateInfo,
     ) -> SamplerHandle {
 
-        let (entry, handle) = {
-
-            let entry = self.samplers.vacant_entry();
-            let key = entry.key();
-
-            let needs_to_grow_storage = self.generations.len() <= key;
-
-            if needs_to_grow_storage {
-                self.generations.push(0);
-            } else {
-                self.generations[key] += 1;
-            }
-
-            let generation = self.generations[key];
-
-            (entry, SamplerHandle(key, generation))
-        };
-
         let sampler = {
             device.device.create_sampler(create_info.into())
         };
 
-        entry.insert(sampler);
-
-        println!("Created sampler {}", handle.0);
+        let (handle, _) = self.storage.insert(sampler);
 
         handle
     }
 
-    pub fn is_alive(&self, sampler: SamplerHandle) -> bool {
-        let fits_inside_storage = self.generations.len() > sampler.0;
-
-        if fits_inside_storage {
-            let is_generation_same = self.generations[sampler.0] == sampler.1;
-            is_generation_same
-        } else {
-            false
-        }
-    }
-
     pub fn destroy(&mut self, device: &DeviceContext, handle: SamplerHandle) -> bool {
-        if self.is_alive(handle) {
-            let sampler = self.samplers.remove(handle.0);
-            device.device.destroy_sampler(sampler);
 
-            println!("Destroyed sampler {}", handle.0);
-
-            true
-        } else {
-            false
+        match self.storage.remove(handle) {
+            None => false,
+            Some(sampler) => {
+                device.device.destroy_sampler(sampler);
+                true
+            }
         }
     }
 }

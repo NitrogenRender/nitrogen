@@ -8,9 +8,9 @@ type SamplerGeneration = u64;
 #[repr(C)]
 pub struct SamplerHandle(pub SamplerId, pub SamplerGeneration);
 
-impl From<SamplerHandle> for sampler::SamplerHandle {
-    fn from(handle: SamplerHandle) -> Self {
-        sampler::SamplerHandle(handle.0, handle.1)
+impl SamplerHandle {
+    pub fn into(self) -> sampler::SamplerHandle {
+        sampler::SamplerHandle::new(self.0, self.1)
     }
 }
 

@@ -11,7 +11,8 @@ use gfxm::SmartAllocator;
 
 use std;
 
-use slab::Slab;
+use util::storage;
+use util::storage::{Storage, Handle};
 
 use super::super::DeviceContext;
 use super::super::QueueType;
@@ -23,11 +24,7 @@ pub enum ImageDimension {
     D3 { x: u32, y: u32, z: u32 },
 }
 
-pub type ImageGeneration = u64;
-pub type ImageId = usize;
-
-#[derive(Copy, Clone)]
-pub struct ImageHandle(pub ImageId, pub ImageGeneration);
+pub type ImageHandle = Handle<(Image, ImageView)>;
 
 pub struct ImageCreateInfo {
     pub dimension: ImageDimension,
@@ -135,9 +132,9 @@ impl From<gfx::image::ViewError> for ImageError {
 
 pub struct ImageStorage {
     dimensions: Vec<ImageDimension>,
-    generations: Vec<ImageGeneration>,
     formats: Vec<gfx::format::Format>,
-    images: Slab<(Image, ImageView)>,
+
+    storage: Storage<(Image, ImageView)>,
 
     command_pool: gfx::CommandPool<back::Backend, gfx::General>,
 }
@@ -160,9 +157,8 @@ impl ImageStorage {
 
         ImageStorage {
             dimensions: vec![],
-            generations: vec![],
             formats: vec![],
-            images: Slab::new(),
+            storage: Storage::new(),
             command_pool,
         }
     }
@@ -194,12 +190,7 @@ impl ImageStorage {
 
             use gfx::memory::Properties;
 
-            let mut alloc = device
-                .memory_allocator
-                .lock()
-                .expect("Memory allocator not accessible");
-
-            alloc.create_image(
+            device.allocator().create_image(
                 &device.device,
                 (gfxm::Type::General, Properties::DEVICE_LOCAL),
                 image_kind,
@@ -226,34 +217,18 @@ impl ImageStorage {
             )?
         };
 
-        let (entry, handle) = {
-            let entry = self.images.vacant_entry();
-            let key = entry.key();
+        let (handle, op) = self.storage.insert((image, image_view));
 
-            let needs_to_grow_storage = self.generations.len() <= key;
-
-            if needs_to_grow_storage {
-                self.generations.push(0);
-                self.dimensions.push(create_info.dimension);
+        match op {
+            storage::InsertOp::Grow => {
                 self.formats.push(format);
-
-                debug_assert!(self.generations.len() == key + 1);
-                debug_assert!(self.dimensions.len() == key + 1);
-                debug_assert!(self.formats.len() == key + 1);
-            } else {
-                self.generations[key] += 1;
-                self.dimensions[key] = create_info.dimension;
-                self.formats[key] = format;
+                self.dimensions.push(create_info.dimension);
+            },
+            storage::InsertOp::Inplace => {
+                self.formats[handle.id()] = format;
+                self.dimensions[handle.id()] = create_info.dimension;
             }
-
-            let generation = self.generations[key];
-
-            (entry, ImageHandle(key, generation))
-        };
-
-        entry.insert((image, image_view));
-
-        println!("Created image {}", handle.0);
+        }
 
         Ok(handle)
     }
@@ -411,7 +386,7 @@ impl ImageStorage {
                         image::Access::TRANSFER_WRITE,
                         image::Layout::TransferDstOptimal,
                     ),
-                    target: self.images[image.0].0.raw(),
+                    target: self.storage[image].0.raw(),
                     range: image::SubresourceRange {
                         aspects: gfx::format::Aspects::COLOR,
                         levels: 0..1,
@@ -427,7 +402,7 @@ impl ImageStorage {
 
                 cmd_buffer.copy_buffer_to_image(
                     staging_buffer.raw(),
-                    self.images[image.0].0.raw(),
+                    self.storage[image].0.raw(),
                     image::Layout::TransferDstOptimal,
                     &[
                         command::BufferImageCopy {
@@ -456,7 +431,7 @@ impl ImageStorage {
                 let image_barrier = memory::Barrier::Image {
                     states: (image::Access::TRANSFER_WRITE, image::Layout::TransferDstOptimal)
                         ..(image::Access::SHADER_READ, image::Layout::ShaderReadOnlyOptimal),
-                    target: self.images[image.0].0.raw(),
+                    target: self.storage[image].0.raw(),
                     range: image::SubresourceRange {
                         aspects: gfx::format::Aspects::COLOR,
                         levels: 0..1,
@@ -491,35 +466,22 @@ impl ImageStorage {
     }
 
     pub fn dimension(&self, image: ImageHandle) -> Option<ImageDimension> {
-        if !self.is_alive(image) {
+        if !self.storage.is_alive(image) {
             None
         } else {
-            Some(self.dimensions[image.0])
-        }
-    }
-
-    pub fn is_alive(&self, image: ImageHandle) -> bool {
-        let fits_inside_storage = self.generations.len() > image.0;
-
-        if fits_inside_storage {
-            let is_generation_same = self.generations[image.0] == image.1;
-            is_generation_same
-        } else {
-            false
+            Some(self.dimensions[image.id()])
         }
     }
 
     pub fn destroy(&mut self, device: &DeviceContext, handle: ImageHandle) -> bool {
-        if self.is_alive(handle) {
-            let (image, view) = self.images.remove(handle.0);
-            device.device.destroy_image_view(view);
-            device.allocator().destroy_image(&device.device, image);
 
-            println!("Destroyed image {}", handle.0);
-
-            true
-        } else {
-            false
+        match self.storage.remove(handle) {
+            None => false,
+            Some((image, view)) => {
+                device.device.destroy_image_view(view);
+                device.allocator().destroy_image(&device.device, image);
+                true
+            }
         }
     }
 }

@@ -7,9 +7,9 @@ type ImageGeneration = u64;
 #[repr(C)]
 pub struct ImageHandle(pub ImageId, pub ImageGeneration);
 
-impl From<ImageHandle> for nitrogen::image::ImageHandle {
-    fn from(handle: ImageHandle) -> Self {
-        nitrogen::image::ImageHandle(handle.0, handle.1)
+impl ImageHandle {
+    pub fn into(self) -> nitrogen::image::ImageHandle {
+        nitrogen::image::ImageHandle::new(self.0, self.1)
     }
 }
 
@@ -143,8 +143,8 @@ pub unsafe extern "C" fn image_create(
         .create(&context.device_ctx, internal_create_info);
 
     match result {
-        Ok(nitrogen::image::ImageHandle(id, gen)) => {
-            *handle = ImageHandle(id, gen);
+        Ok(img_handle) => {
+            *handle = ImageHandle(img_handle.id(), img_handle.generation());
             true
         }
         Err(_) => false,
