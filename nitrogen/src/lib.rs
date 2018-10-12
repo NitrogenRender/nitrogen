@@ -10,17 +10,12 @@ extern crate ash;
 
 extern crate slab;
 
-
 pub mod util;
 pub use util::storage;
-
-
 
 pub mod resources;
 pub use resources::image;
 pub use resources::sampler;
-
-
 
 use gfx::Device;
 use gfx::Instance;
@@ -34,6 +29,15 @@ use ash::vk;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
+
+
+type Swapchain = <back::Backend as gfx::Backend>::Swapchain;
+type Surface = <back::Backend as gfx::Backend>::Surface;
+type Framebuffer = <back::Backend as gfx::Backend>::Framebuffer;
+type RenderPass = <back::Backend as gfx::Backend>::RenderPass;
+
+
+
 
 pub struct CreationInfoX11 {
     pub name: String,
@@ -65,7 +69,8 @@ impl DeviceContext {
         let mut adapter = adapters.remove(0);
 
         let memory_properties = adapter.physical_device.memory_properties();
-        let memory_allocator = SmartAllocator::new(memory_properties, 256, 64, 1024, 256 * 1024 * 1024);
+        let memory_allocator =
+            SmartAllocator::new(memory_properties, 256, 64, 1024, 256 * 1024 * 1024);
 
         let (device, queue_group) = adapter
             .open_with(2, |family| surface.supports_queue_family(family))
@@ -104,7 +109,135 @@ impl DeviceContext {
 
 // TODO put swapchain and stuff
 pub struct DisplayContext {
-    pub surface: Box<dyn gfx::window::Surface<back::Backend>>,
+    pub surface: Surface,
+
+    pub swapchain: Option<Swapchain>,
+
+    pub framebuffers: Vec<Framebuffer>,
+    pub current_framebuffer: usize,
+
+    pub display_renderpass: RenderPass,
+}
+
+impl DisplayContext {
+    pub fn new(
+        surface: Surface,
+        device: &DeviceContext,
+    ) -> Self {
+
+        let renderpass = {
+            use gfx::pass;
+
+            let format = gfx::format::Format::Rgba8Unorm;
+
+            let attachment = pass::Attachment {
+                format: Some(format),
+                samples: 1,
+                ops: pass::AttachmentOps {
+                    load: pass::AttachmentLoadOp::Clear,
+                    store: pass::AttachmentStoreOp::Store,
+                },
+                stencil_ops: pass::AttachmentOps::DONT_CARE,
+                layouts: gfx::image::Layout::Undefined .. gfx::image::Layout::Present,
+            };
+
+            let subpass = pass::SubpassDesc {
+                colors: &[(0, gfx::image::Layout::ColorAttachmentOptimal)],
+                depth_stencil: None,
+                inputs: &[],
+                resolves: &[],
+                preserves: &[],
+            };
+
+            let dependency = pass::SubpassDependency {
+                passes: pass::SubpassRef::External .. pass::SubpassRef::Pass(0),
+                stages: gfx::pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT .. gfx::pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT,
+                accesses: gfx::image::Access::empty() .. (gfx::image::Access::COLOR_ATTACHMENT_READ | gfx::image::Access::COLOR_ATTACHMENT_WRITE),
+            };
+
+            device.device.create_render_pass(
+                &[attachment],
+                &[subpass],
+                &[dependency]
+            )
+        };
+
+        DisplayContext {
+            surface,
+            swapchain: None,
+            framebuffers: vec![],
+            current_framebuffer: 0,
+            display_renderpass: renderpass,
+        }
+    }
+
+    pub fn create_swapchain(
+        &mut self,
+        device: &DeviceContext,
+    ) {
+
+        use gfx::Surface;
+
+        let surface_capability = self.surface.compatibility(&device.adapter.physical_device);
+
+        let format = gfx::format::Format::Rgba8Unorm;
+
+        let config = gfx::SwapchainConfig::from_caps(&surface_capability.0, format);
+        let extent = config.extent.to_extent();
+
+        println!("Swapchain config size: {:?}", extent);
+
+        let old_swapchain = self.swapchain.take();
+
+        let (swapchain, backbuffer) = device.device.create_swapchain(
+            &mut self.surface,
+            config,
+            old_swapchain,
+        );
+
+        self.swapchain = Some(swapchain);
+
+        let (images, fbos) = match backbuffer {
+            gfx::Backbuffer::Images(images) => {
+
+
+                let pairs = images
+                    .into_iter()
+                    .map(|img| {
+                        let view = device.device.create_image_view(
+                            &img,
+                            gfx::image::ViewKind::D2,
+                            format,
+                            gfx::format::Swizzle::NO,
+                            gfx::image::SubresourceRange {
+                                aspects: gfx::format::Aspects::COLOR,
+                                levels: 0..1,
+                                layers: 0..1,
+                            }
+                        ).unwrap();
+                        (img, view)
+                    })
+                    .collect::<Vec<_>>();
+                let fbos = pairs
+                    .iter()
+                    .map(|&(ref _image, ref view)| {
+                        device.device.create_framebuffer(
+                            &self.display_renderpass,
+                            Some(view),
+                            extent,
+                        ).unwrap()
+                    })
+                    .collect::<Vec<_>>();
+
+                (pairs, fbos)
+            },
+            gfx::Backbuffer::Framebuffer(framebuffer) => {
+                (vec![], vec![framebuffer])
+            }
+        };
+
+        
+    }
 }
 
 // DON'T CHANGE THE ORDER OF THE MEMBERS HERE!!!!
@@ -131,9 +264,9 @@ impl Context {
 
         let device_ctx = DeviceContext::new(&instance, &surface);
 
-        let display_ctx = DisplayContext {
-            surface: Box::new(surface),
-        };
+        let mut display_ctx = DisplayContext::new(surface, &device_ctx);
+
+        display_ctx.create_swapchain(&device_ctx);
 
         Self {
             image_storage: image::ImageStorage::new(&device_ctx),

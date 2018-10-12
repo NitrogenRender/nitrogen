@@ -2,9 +2,9 @@ use back;
 use gfx;
 use gfxm;
 
+use gfx::command;
 use gfx::image;
 use gfx::memory;
-use gfx::command;
 use gfx::Device;
 use gfxm::Factory;
 use gfxm::SmartAllocator;
@@ -12,7 +12,7 @@ use gfxm::SmartAllocator;
 use std;
 
 use util::storage;
-use util::storage::{Storage, Handle};
+use util::storage::{Handle, Storage};
 
 use super::super::DeviceContext;
 use super::super::QueueType;
@@ -91,7 +91,6 @@ impl From<ViewKind> for gfx::image::ViewKind {
     }
 }
 
-
 type Image = <SmartAllocator<back::Backend> as Factory<back::Backend>>::Image;
 type ImageView = <back::Backend as gfx::Backend>::ImageView;
 
@@ -143,9 +142,7 @@ pub type Result<T> = std::result::Result<T, ImageError>;
 
 impl ImageStorage {
     pub fn new(device: &DeviceContext) -> Self {
-
         let command_pool = {
-
             let queue_group = device.queue_group();
 
             device.device.create_command_pool_typed(
@@ -203,7 +200,6 @@ impl ImageStorage {
         };
 
         let image_view = {
-
             device.device.create_image_view(
                 image.raw(),
                 create_info.kind.into(),
@@ -213,7 +209,7 @@ impl ImageStorage {
                     aspects: gfx::format::Aspects::COLOR,
                     layers: 0..1,
                     levels: 0..1,
-                }
+                },
             )?
         };
 
@@ -223,7 +219,7 @@ impl ImageStorage {
             storage::InsertOp::Grow => {
                 self.formats.push(format);
                 self.dimensions.push(create_info.dimension);
-            },
+            }
             storage::InsertOp::Inplace => {
                 self.formats[handle.id()] = format;
                 self.dimensions[handle.id()] = create_info.dimension;
@@ -285,7 +281,6 @@ impl ImageStorage {
         let conversion_needed = gfx::format::Format::from(data.format) != self.formats[image.0];
 
         let (buffer_size, row_pitch) = {
-
             use gfx::adapter::PhysicalDevice;
 
             let limits: gfx::Limits = device.adapter.physical_device.limits();
@@ -354,22 +349,22 @@ impl ImageStorage {
             // staging buffer might be bigger than in the upload data, so we need to construct
             // a slice for each row instead of just copying *everything*
             for row in 0..image_height {
-
                 let input_row_offset = (row * image_width * image_stride as u32) as usize;
                 let input_row_end = input_row_offset + image_width as usize * image_stride;
 
-                let row_data = &data.data[input_row_offset .. input_row_end];
+                let row_data = &data.data[input_row_offset..input_row_end];
 
                 let dest_offset = (row * row_pitch) as usize;
                 let dest_end = dest_offset + row_data.len();
 
-                writer[dest_offset .. dest_end].copy_from_slice(row_data);
+                writer[dest_offset..dest_end].copy_from_slice(row_data);
             }
 
             device.device.release_mapping_writer(writer);
         }
 
-        let mut cmd_buffer: gfx::command::CommandBuffer<_, _, command::OneShot> = self.command_pool.acquire_command_buffer(false);
+        let mut cmd_buffer: gfx::command::CommandBuffer<_, _, command::OneShot> =
+            self.command_pool.acquire_command_buffer(false);
 
         let mut fence = device.device.create_fence(false);
 
@@ -377,15 +372,14 @@ impl ImageStorage {
             // compute pass that does conversion. whey.
             println!("Conversion! Wheeeey...");
         } else {
-
             let submission = {
                 // TODO cubemaps? Arrays?? DEEEEPTH?!?!?
                 let image_barrier = memory::Barrier::Image {
                     states: (image::Access::empty(), image::Layout::Undefined)
                         ..(
-                        image::Access::TRANSFER_WRITE,
-                        image::Layout::TransferDstOptimal,
-                    ),
+                            image::Access::TRANSFER_WRITE,
+                            image::Layout::TransferDstOptimal,
+                        ),
                     target: self.storage[image].0.raw(),
                     range: image::SubresourceRange {
                         aspects: gfx::format::Aspects::COLOR,
@@ -404,33 +398,37 @@ impl ImageStorage {
                     staging_buffer.raw(),
                     self.storage[image].0.raw(),
                     image::Layout::TransferDstOptimal,
-                    &[
-                        command::BufferImageCopy {
-                            buffer_offset: 0,
-                            buffer_width: row_pitch,
-                            buffer_height: image_height,
-                            image_layers: image::SubresourceLayers {
-                                aspects: gfx::format::Aspects::COLOR,
-                                level: 0,
-                                layers: 0..1,
-                            },
-                            image_offset: image::Offset {
-                                x: data.target_offset.0 as i32,
-                                y: data.target_offset.1 as i32,
-                                z: data.target_offset.2 as i32,
-                            },
-                            image_extent: image::Extent {
-                                width: image_width,
-                                height: image_height,
-                                depth: 1,
-                            },
-                        }
-                    ]
+                    &[command::BufferImageCopy {
+                        buffer_offset: 0,
+                        buffer_width: row_pitch,
+                        buffer_height: image_height,
+                        image_layers: image::SubresourceLayers {
+                            aspects: gfx::format::Aspects::COLOR,
+                            level: 0,
+                            layers: 0..1,
+                        },
+                        image_offset: image::Offset {
+                            x: data.target_offset.0 as i32,
+                            y: data.target_offset.1 as i32,
+                            z: data.target_offset.2 as i32,
+                        },
+                        image_extent: image::Extent {
+                            width: image_width,
+                            height: image_height,
+                            depth: 1,
+                        },
+                    }],
                 );
 
                 let image_barrier = memory::Barrier::Image {
-                    states: (image::Access::TRANSFER_WRITE, image::Layout::TransferDstOptimal)
-                        ..(image::Access::SHADER_READ, image::Layout::ShaderReadOnlyOptimal),
+                    states: (
+                        image::Access::TRANSFER_WRITE,
+                        image::Layout::TransferDstOptimal,
+                    )
+                        ..(
+                            image::Access::SHADER_READ,
+                            image::Layout::ShaderReadOnlyOptimal,
+                        ),
                     target: self.storage[image].0.raw(),
                     range: image::SubresourceRange {
                         aspects: gfx::format::Aspects::COLOR,
@@ -442,7 +440,7 @@ impl ImageStorage {
                 cmd_buffer.pipeline_barrier(
                     gfx::pso::PipelineStage::TRANSFER..gfx::pso::PipelineStage::FRAGMENT_SHADER,
                     memory::Dependencies::empty(),
-                    &[image_barrier]
+                    &[image_barrier],
                 );
 
                 cmd_buffer.finish()
@@ -450,10 +448,10 @@ impl ImageStorage {
             let submission = gfx::Submission::new().submit(Some(submission));
 
             {
-                device.queue_group().queues[QueueType::ImageStorage as usize].submit(submission, Some(&mut fence));
+                device.queue_group().queues[QueueType::ImageStorage as usize]
+                    .submit(submission, Some(&mut fence));
             }
             device.device.wait_for_fence(&fence, !0);
-
         };
 
         device.device.destroy_fence(fence);
@@ -474,7 +472,6 @@ impl ImageStorage {
     }
 
     pub fn destroy(&mut self, device: &DeviceContext, handle: ImageHandle) -> bool {
-
         match self.storage.remove(handle) {
             None => false,
             Some((image, view)) => {

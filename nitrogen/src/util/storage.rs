@@ -62,7 +62,6 @@ impl<T> IndexMut<Handle<T>> for Storage<T> {
     }
 }
 
-
 impl<T> Storage<T> {
     pub fn new() -> Self {
         Self {

@@ -1,5 +1,5 @@
-use gfx;
 use back;
+use gfx;
 
 use gfx::image;
 use gfx::Device;
@@ -7,8 +7,7 @@ use gfx::Device;
 use super::DeviceContext;
 
 use util::storage;
-use util::storage::{Storage};
-
+use util::storage::Storage;
 
 type Sampler = <back::Backend as gfx::Backend>::Sampler;
 
@@ -44,7 +43,6 @@ impl From<WrapMode> for image::WrapMode {
     }
 }
 
-
 pub struct SamplerCreateInfo {
     pub min_filter: Filter,
     pub mag_filter: Filter,
@@ -72,8 +70,6 @@ impl From<SamplerCreateInfo> for image::SamplerInfo {
     }
 }
 
-
-
 pub type SamplerHandle = storage::Handle<Sampler>;
 
 pub struct SamplerStorage {
@@ -92,10 +88,7 @@ impl SamplerStorage {
         device: &DeviceContext,
         create_info: SamplerCreateInfo,
     ) -> SamplerHandle {
-
-        let sampler = {
-            device.device.create_sampler(create_info.into())
-        };
+        let sampler = { device.device.create_sampler(create_info.into()) };
 
         let (handle, _) = self.storage.insert(sampler);
 
@@ -103,7 +96,6 @@ impl SamplerStorage {
     }
 
     pub fn destroy(&mut self, device: &DeviceContext, handle: SamplerHandle) -> bool {
-
         match self.storage.remove(handle) {
             None => false,
             Some(sampler) => {
