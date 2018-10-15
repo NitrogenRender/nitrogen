@@ -59,3 +59,19 @@ pub unsafe extern "C" fn context_release(context: *mut Context) {
     context.0.release();
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn display_setup_swapchain(context: *mut Context) {
+    let device_ctx = &(*context).device_ctx;
+    let display_ctx = &mut (*context).display_ctx;
+
+    display_ctx.setup_swapchain(device_ctx);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn display_present(context: *mut Context) -> bool {
+    let device_ctx = &(*context).device_ctx;
+    let display_ctx = &mut (*context).display_ctx;
+
+    display_ctx.present(device_ctx)
+
+}

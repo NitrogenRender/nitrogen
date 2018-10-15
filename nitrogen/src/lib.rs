@@ -2,6 +2,8 @@ extern crate gfx_backend_vulkan as back;
 extern crate gfx_hal as gfx;
 extern crate gfx_memory as gfxm;
 
+extern crate shaderc;
+
 extern crate failure;
 #[macro_use]
 extern crate failure_derive;
@@ -10,12 +12,17 @@ extern crate ash;
 
 extern crate slab;
 
+#[cfg(feature = "winit_support")]
+extern crate winit;
+
 pub mod util;
 pub use util::storage;
 
 pub mod resources;
 pub use resources::image;
 pub use resources::sampler;
+
+pub mod graph;
 
 use gfx::Device;
 use gfx::Instance;
@@ -24,7 +31,6 @@ use gfx::PhysicalDevice;
 use gfxm::MemoryAllocator;
 use gfxm::SmartAllocator;
 
-use ash::vk;
 
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -35,10 +41,23 @@ type Swapchain = <back::Backend as gfx::Backend>::Swapchain;
 type Surface = <back::Backend as gfx::Backend>::Surface;
 type Framebuffer = <back::Backend as gfx::Backend>::Framebuffer;
 type RenderPass = <back::Backend as gfx::Backend>::RenderPass;
+type Image = <back::Backend as gfx::Backend>::Image;
+type ImageView = <back::Backend as gfx::Backend>::ImageView;
 
 
 
+#[cfg(feature = "winit_support")]
+pub struct CreationInfo<'a> {
+    pub name: String,
+    pub version: u32,
+    pub window: &'a winit::Window,
+}
 
+
+#[cfg(feature = "x11")]
+use ash::vk;
+
+#[cfg(feature = "x11")]
 pub struct CreationInfoX11 {
     pub name: String,
     pub version: u32,
@@ -114,7 +133,7 @@ pub struct DisplayContext {
     pub swapchain: Option<Swapchain>,
 
     pub framebuffers: Vec<Framebuffer>,
-    pub current_framebuffer: usize,
+    pub images: Vec<(Image, ImageView)>,
 
     pub display_renderpass: RenderPass,
 }
@@ -166,26 +185,50 @@ impl DisplayContext {
             surface,
             swapchain: None,
             framebuffers: vec![],
-            current_framebuffer: 0,
+            images: vec![],
             display_renderpass: renderpass,
         }
     }
 
-    pub fn create_swapchain(
+    pub fn setup_swapchain(
         &mut self,
         device: &DeviceContext,
     ) {
 
         use gfx::Surface;
 
+        // free old stuff
+        {
+            use std::mem::replace;
+            let framebuffers = replace(&mut self.framebuffers, vec![]);
+            let images = replace(&mut self.images, vec![]);
+
+            for framebuffer in framebuffers {
+                device.device.destroy_framebuffer(framebuffer);
+            }
+
+            for (_, image_view) in images {
+                device.device.destroy_image_view(image_view);
+            }
+
+            // FIXME this is a workaround for an issue with gfx:
+            // when you provide an old swapchain upon swapchain creation, it takes ownership of the
+            // old one. The implementation doesn't actually free it, so the swapchain is leaked.
+            // if let Some(old_swapchain) = self.swapchain.take() {
+            //     device.device.destroy_swapchain(old_swapchain);
+            // }
+
+        }
+
         let surface_capability = self.surface.compatibility(&device.adapter.physical_device);
 
         let format = gfx::format::Format::Rgba8Unorm;
 
-        let config = gfx::SwapchainConfig::from_caps(&surface_capability.0, format);
-        let extent = config.extent.to_extent();
+        let mut config = gfx::SwapchainConfig::from_caps(&surface_capability.0, format);
 
-        println!("Swapchain config size: {:?}", extent);
+        config.present_mode = gfx::PresentMode::Immediate;
+
+        let extent = config.extent.to_extent();
 
         let old_swapchain = self.swapchain.take();
 
@@ -236,7 +279,46 @@ impl DisplayContext {
             }
         };
 
-        
+        self.framebuffers = fbos;
+        self.images = images;
+    }
+
+    pub fn present(&mut self, device: &DeviceContext) -> bool {
+
+        use gfx::Swapchain;
+
+        if let Some(ref mut swapchain) = self.swapchain {
+            let mut frame_fence = device.device.create_fence(false);
+
+            let index = match swapchain.acquire_image(!0, gfx::FrameSync::Fence(&mut frame_fence)) {
+                Err(_) => return false,
+                Ok(image) => {
+                    image
+                }
+            };
+
+            device.device.wait_for_fence(&frame_fence, !0);
+            device.device.destroy_fence(frame_fence);
+
+            swapchain.present(&mut device.queue_group().queues[0], index, &[]).is_ok()
+        } else {
+            false
+        }
+    }
+
+    pub fn release(self, device: &DeviceContext) {
+
+        for framebuffer in self.framebuffers {
+            device.device.destroy_framebuffer(framebuffer);
+        }
+
+        for (_, image_view) in self.images {
+            device.device.destroy_image_view(image_view);
+        }
+
+        if let Some(swapchain) = self.swapchain {
+            device.device.destroy_swapchain(swapchain);
+        }
     }
 }
 
@@ -258,6 +340,7 @@ pub struct Context {
 }
 
 impl Context {
+    #[cfg(feature = "x11")]
     pub fn setup_x11(info: CreationInfoX11) -> Self {
         let instance = back::Instance::create(&info.name, info.version);
         let surface = instance.create_surface_from_xlib(info.display, info.window);
@@ -266,7 +349,29 @@ impl Context {
 
         let mut display_ctx = DisplayContext::new(surface, &device_ctx);
 
-        display_ctx.create_swapchain(&device_ctx);
+        display_ctx.setup_swapchain(&device_ctx);
+        display_ctx.present(&device_ctx);
+
+        Self {
+            image_storage: image::ImageStorage::new(&device_ctx),
+            sampler_storage: sampler::SamplerStorage::new(),
+            instance,
+            device_ctx,
+            display_ctx,
+        }
+    }
+
+    #[cfg(feature = "winit_support")]
+    pub fn setup_winit(info: CreationInfo) -> Self {
+        let instance = back::Instance::create(&info.name, info.version);
+        let surface = instance.create_surface(info.window);
+
+        let device_ctx = DeviceContext::new(&instance, &surface);
+
+        let mut display_ctx = DisplayContext::new(surface, &device_ctx);
+
+        display_ctx.setup_swapchain(&device_ctx);
+        display_ctx.present(&device_ctx);
 
         Self {
             image_storage: image::ImageStorage::new(&device_ctx),
@@ -278,6 +383,7 @@ impl Context {
     }
 
     pub fn release(self) {
+        self.display_ctx.release(&self.device_ctx);
         self.device_ctx.release();
     }
 }

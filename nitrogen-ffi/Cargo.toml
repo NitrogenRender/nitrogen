@@ -7,7 +7,11 @@ authors = ["Thomas Herzog <thomas.herzog@simedis.com>"]
 crate-type = ["staticlib"]
 
 [dependencies]
-nitrogen = { path = "../nitrogen" }
+
+[dependencies.nitrogen]
+path = "../nitrogen"
+default-features = false
+features = ["x11"]
 
 [build-dependencies]
 cbindgen = "0.6.3"

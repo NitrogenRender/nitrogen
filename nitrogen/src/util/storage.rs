@@ -118,4 +118,8 @@ impl<T> Storage<T> {
             None
         }
     }
+
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
 }
