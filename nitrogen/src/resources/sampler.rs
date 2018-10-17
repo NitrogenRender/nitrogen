@@ -1,15 +1,13 @@
-use back;
-use gfx;
 
 use gfx::image;
 use gfx::Device;
 
-use super::DeviceContext;
+use device::DeviceContext;
 
 use util::storage;
 use util::storage::Storage;
 
-type Sampler = <back::Backend as gfx::Backend>::Sampler;
+use types::Sampler;
 
 pub enum Filter {
     Nearest,
@@ -93,6 +91,14 @@ impl SamplerStorage {
         let (handle, _) = self.storage.insert(sampler);
 
         handle
+    }
+
+    pub fn raw(&self, sampler: SamplerHandle) -> Option<&Sampler> {
+        if self.storage.is_alive(sampler) {
+            Some(&self.storage[sampler])
+        } else {
+            None
+        }
     }
 
     pub fn destroy(&mut self, device: &DeviceContext, handle: SamplerHandle) -> bool {

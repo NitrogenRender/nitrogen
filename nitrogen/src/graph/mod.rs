@@ -1,5 +1,5 @@
-use storage::Storage;
 use storage::Handle;
+use storage::Storage;
 
 pub type Module = ();
 pub type Pass = ();
@@ -10,7 +10,6 @@ pub struct Graph {
 }
 
 impl Graph {
-
     pub fn new() -> Graph {
         Graph {
             passes: Storage::new(),
@@ -38,5 +37,4 @@ impl Graph {
         self.modules.clear();
         self.passes.clear();
     }
-
 }

@@ -14,8 +14,8 @@ use std;
 use util::storage;
 use util::storage::{Handle, Storage};
 
-use super::super::DeviceContext;
-use super::super::QueueType;
+use device::DeviceContext;
+use device::QueueType;
 
 #[derive(Copy, Clone, Debug)]
 pub enum ImageDimension {
@@ -24,8 +24,15 @@ pub enum ImageDimension {
     D3 { x: u32, y: u32, z: u32 },
 }
 
+impl Default for ImageDimension {
+    fn default() -> Self {
+        ImageDimension::D2 { x: 1, y: 1 }
+    }
+}
+
 pub type ImageHandle = Handle<(Image, ImageView)>;
 
+#[derive(Default)]
 pub struct ImageCreateInfo {
     pub dimension: ImageDimension,
     pub num_layers: u16,
@@ -33,6 +40,14 @@ pub struct ImageCreateInfo {
     pub num_mipmaps: u8,
     pub format: ImageFormat,
     pub kind: ViewKind,
+
+    pub used_as_transfer_src: bool,
+    pub used_as_transfer_dst: bool,
+    pub used_for_sampling: bool,
+    pub used_as_color_attachment: bool,
+    pub used_as_depth_stencil_attachment: bool,
+    pub used_as_storage_image: bool,
+    pub used_as_input_attachment: bool,
 }
 
 pub struct ImageUploadInfo<'a> {
@@ -52,6 +67,12 @@ pub enum ImageFormat {
     E5b9g9r9Float,
 }
 
+impl Default for ImageFormat {
+    fn default() -> Self {
+        ImageFormat::RgbaUnorm
+    }
+}
+
 impl From<ImageFormat> for gfx::format::Format {
     fn from(format: ImageFormat) -> Self {
         use gfx::format::Format;
@@ -66,6 +87,7 @@ impl From<ImageFormat> for gfx::format::Format {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
 pub enum ViewKind {
     D1,
     D1Array,
@@ -74,6 +96,12 @@ pub enum ViewKind {
     D3,
     Cube,
     CubeArray,
+}
+
+impl Default for ViewKind {
+    fn default() -> Self {
+        ViewKind::D2
+    }
 }
 
 impl From<ViewKind> for gfx::image::ViewKind {
@@ -160,6 +188,12 @@ impl ImageStorage {
         }
     }
 
+    pub fn release(self, device: &DeviceContext) {
+        device
+            .device
+            .destroy_command_pool(self.command_pool.into_raw());
+    }
+
     pub fn create(
         &mut self,
         device: &DeviceContext,
@@ -187,14 +221,45 @@ impl ImageStorage {
 
             use gfx::memory::Properties;
 
+            let usage_flags = {
+                use gfx::image::Usage;
+
+                let mut flags = Usage::empty();
+
+                if create_info.used_as_transfer_src {
+                    flags |= Usage::TRANSFER_SRC;
+                }
+                if create_info.used_as_transfer_dst {
+                    flags |= Usage::TRANSFER_DST;
+                }
+
+                if create_info.used_for_sampling {
+                    flags |= Usage::SAMPLED;
+                }
+                if create_info.used_as_color_attachment {
+                    flags |= Usage::COLOR_ATTACHMENT;
+                }
+                if create_info.used_as_depth_stencil_attachment {
+                    flags |= Usage::DEPTH_STENCIL_ATTACHMENT;
+                }
+                if create_info.used_as_storage_image {
+                    flags |= Usage::STORAGE;
+                }
+                if create_info.used_as_input_attachment {
+                    flags |= Usage::INPUT_ATTACHMENT;
+                }
+
+                flags
+            };
+
             device.allocator().create_image(
                 &device.device,
                 (gfxm::Type::General, Properties::DEVICE_LOCAL),
                 image_kind,
-                0,
+                1,
                 format,
                 image::Tiling::Optimal,
-                image::Usage::TRANSFER_DST | image::Usage::SAMPLED,
+                usage_flags,
                 image::ViewCapabilities::empty(),
             )?
         };
@@ -272,54 +337,18 @@ impl ImageStorage {
             ImageDimension::D3 { .. } => unimplemented!("Setting of 3D texture data"),
         };
 
-        let image_stride = data.data.len() / (image_width * image_height) as usize;
-
         if !upload_data_fits {
             return Err(ImageError::UploadDataInvalid);
         }
 
         let conversion_needed = gfx::format::Format::from(data.format) != self.formats[image.0];
 
-        let (buffer_size, row_pitch) = {
-            use gfx::adapter::PhysicalDevice;
+        let (buffer_size, row_pitch, texel_size) = {
+            use gfx::PhysicalDevice;
 
-            let limits: gfx::Limits = device.adapter.physical_device.limits();
-
-            let row_alignment = limits.min_buffer_copy_pitch_alignment as u32;
-
-            // Because low level graphics are low level, we need to take care about buffer
-            // alignment here.
-            //
-            // For example an RGBA8 image with 11 * 11 dims
-            // has
-            //  - "stride" of 4 (4 components (rgba) with 1 byte size)
-            //  - "width" of 11
-            //  - "height" of 10
-            //
-            // If we want to make a buffer used for copying the image, the "row size" is important
-            // since graphics APIs like to have a certain *alignment* for copying the data.
-            //
-            // Let's assume the "row alignment" is 8, that means each row size has to be divisible
-            // by 8. In the RGBA8 example, each row has a size of `width * stride = 44`, which is
-            // not divisible evenly by 8, so we need to add some padding.
-            // In this case the padding we add needs to be 4 bytes, so we get to a row width of 48.
-            //
-            // Generally this padding is there because it seems like GPUs like it when
-            // `offset_of(x, y + 1) = offset_of(x, y) + n * alignment`
-            // (I strongly assume that that's because of SIMD operations)
-            //
-            // To compute the row pitch we need to know how much padding to add.
-            let row_size = image_width * image_stride as u32;
-
-            // If the row size is already aligned, we would do `align - 0`, in which case we would
-            // waste space. So we AND cut away the highest number.
-            // So we can only range from 0..align-1
-            let row_padding = (row_alignment - (row_size % row_alignment)) & (row_alignment - 1);
-
-            let row_pitch = row_size + row_padding;
-            let buffer_size = (image_height * row_pitch) as u64;
-
-            (buffer_size, row_pitch)
+            let limits = device.adapter.physical_device.limits();
+            let row_align = limits.min_buffer_copy_pitch_alignment as u32;
+            image_copy_buffer_size(row_align, &data, (image_width, image_height))
         };
 
         let staging_buffer = {
@@ -348,16 +377,10 @@ impl ImageStorage {
             // Alignment strikes back again! We do copy all the rows, but the row length in the
             // staging buffer might be bigger than in the upload data, so we need to construct
             // a slice for each row instead of just copying *everything*
-            for row in 0..image_height {
-                let input_row_offset = (row * image_width * image_stride as u32) as usize;
-                let input_row_end = input_row_offset + image_width as usize * image_stride;
-
-                let row_data = &data.data[input_row_offset..input_row_end];
-
-                let dest_offset = (row * row_pitch) as usize;
-                let dest_end = dest_offset + row_data.len();
-
-                writer[dest_offset..dest_end].copy_from_slice(row_data);
+            for y in 0..image_height as usize {
+                let row = &data.data[y * (image_width as usize) * texel_size .. (y + 1) * (image_width as usize) * texel_size];
+                let dest_base = y * row_pitch as usize;
+                writer[dest_base .. dest_base + row.len()].copy_from_slice(row);
             }
 
             device.device.release_mapping_writer(writer);
@@ -400,7 +423,7 @@ impl ImageStorage {
                     image::Layout::TransferDstOptimal,
                     &[command::BufferImageCopy {
                         buffer_offset: 0,
-                        buffer_width: row_pitch,
+                        buffer_width: row_pitch / (texel_size as u32),
                         buffer_height: image_height,
                         image_layers: image::SubresourceLayers {
                             aspects: gfx::format::Aspects::COLOR,
@@ -448,7 +471,8 @@ impl ImageStorage {
             let submission = gfx::Submission::new().submit(Some(submission));
 
             {
-                device.queue_group().queues[QueueType::ImageStorage as usize]
+                let mut queue_group = device.queue_group();
+                queue_group.queues[QueueType::ImageStorage as usize]
                     .submit(submission, Some(&mut fence));
             }
             device.device.wait_for_fence(&fence, !0);
@@ -471,6 +495,14 @@ impl ImageStorage {
         }
     }
 
+    pub fn raw(&self, image: ImageHandle) -> Option<&(Image, ImageView)> {
+        if self.storage.is_alive(image) {
+            Some(&self.storage[image])
+        } else {
+            None
+        }
+    }
+
     pub fn destroy(&mut self, device: &DeviceContext, handle: ImageHandle) -> bool {
         match self.storage.remove(handle) {
             None => false,
@@ -481,4 +513,42 @@ impl ImageStorage {
             }
         }
     }
+}
+
+/// Compute the total size in bytes and the row stride
+/// for a buffer that should be used to copy data into an image.
+fn image_copy_buffer_size(
+    row_align: u32,
+    upload_info: &ImageUploadInfo,
+    (width, height): (u32, u32),
+) -> (u64, u32, usize) {
+    let texel_size = upload_info.data.len() / (width * height) as usize;
+
+    // Because low level graphics are low level, we need to take care about buffer
+    // alignment here.
+    //
+    // For example an RGBA8 image with 11 * 11 dims
+    // has
+    //  - "texel_size" of 4 (4 components (rgba) with 1 byte size)
+    //  - "width" of 11
+    //  - "height" of 10
+    //
+    // If we want to make a buffer used for copying the image, the "row size" is important
+    // since graphics APIs like to have a certain *alignment* for copying the data.
+    //
+    // Let's assume the "row alignment" is 8, that means each row size has to be divisible
+    // by 8. In the RGBA8 example, each row has a size of `width * stride = 44`, which is
+    // not divisible evenly by 8, so we need to add some padding.
+    // In this case the padding we add needs to be 4 bytes, so we get to a row width of 48.
+    //
+    // Generally this padding is there because it seems like GPUs like it when
+    // `offset_of(x, y + 1) = offset_of(x, y) + n * alignment`
+    // (I strongly assume that that's because of SIMD operations)
+    //
+
+    let row_alignment_mask = row_align as u32 - 1;
+    let row_pitch = (width * texel_size as u32 + row_alignment_mask) & !row_alignment_mask;
+    let buffer_size = (height * row_pitch) as u64;
+
+    (buffer_size, row_pitch, texel_size)
 }

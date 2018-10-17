@@ -123,3 +123,43 @@ impl<T> Storage<T> {
         self.entries.clear();
     }
 }
+
+
+use std::iter::IntoIterator;
+
+pub struct StorageIter<T> {
+    storage: Storage<T>,
+    index: usize,
+}
+
+impl<T> IntoIterator for Storage<T> {
+    type Item = T;
+    type IntoIter = StorageIter<T>;
+
+    fn into_iter(self) -> <Self as IntoIterator>::IntoIter {
+        StorageIter {
+            storage: self,
+            index: 0,
+        }
+    }
+}
+
+impl<T> Iterator for StorageIter<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<T> {
+        if self.index >= self.storage.entries.len() {
+            return None;
+        }
+
+        if !self.storage.entries.contains(self.index) {
+            return None;
+        }
+
+        let data = self.storage.entries.remove(self.index);
+
+        self.index += 1;
+
+        Some(data)
+    }
+}

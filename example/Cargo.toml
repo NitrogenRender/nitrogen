@@ -6,3 +6,6 @@ authors = ["Thomas Herzog <thomas.herzog@simedis.com>"]
 [dependencies]
 nitrogen = { path = "../nitrogen", features = ["winit"] }
 winit = "0.17.2"
+image = "0.20.0"
+log = "0.4.5"
+env_logger = "0.5.13"

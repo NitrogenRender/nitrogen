@@ -21,6 +21,14 @@ pub struct ImageCreateInfo {
     pub num_mipmaps: u8,
     pub format: ImageFormat,
     pub kind: ImageViewKind,
+
+    pub used_as_transfer_src: bool,
+    pub used_as_transfer_dst: bool,
+    pub used_for_sampling: bool,
+    pub used_as_color_attachment: bool,
+    pub used_as_depth_stencil_attachment: bool,
+    pub used_as_storage_image: bool,
+    pub used_as_input_attachment: bool,
 }
 
 #[repr(C)]
@@ -136,6 +144,14 @@ pub unsafe extern "C" fn image_create(
         num_samples: create_info.num_samples,
         num_layers: create_info.num_layers,
         kind: create_info.kind.into(),
+
+        used_as_transfer_src: create_info.used_as_transfer_dst,
+        used_as_transfer_dst: create_info.used_as_transfer_src,
+        used_for_sampling: create_info.used_for_sampling,
+        used_as_color_attachment: create_info.used_as_color_attachment,
+        used_as_depth_stencil_attachment: create_info.used_as_depth_stencil_attachment,
+        used_as_storage_image: create_info.used_as_storage_image,
+        used_as_input_attachment: create_info.used_as_input_attachment,
     };
 
     let result = context
