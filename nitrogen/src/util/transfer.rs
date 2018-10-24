@@ -118,10 +118,10 @@ impl TransferContext {
             queue_group.queues[0].submit(submission, Some(&fence));
         }
 
-        self.command_pool.reset();
-
         device.device.wait_for_fence(&fence, !0);
         device.device.destroy_fence(fence);
+
+        self.command_pool.reset();
     }
 
     pub fn copy_buffers_to_images(
@@ -162,7 +162,7 @@ impl TransferContext {
 
                 let exit_barrier = Barrier::Image {
                     states: (Access::TRANSFER_WRITE, Layout::TransferDstOptimal)
-                        .. (Access::SHADER_READ, Layout::ShaderReadOnlyOptimal),
+                        .. (Access::MEMORY_READ, Layout::General),
                     target: transfer.dst.raw(),
                     range: transfer.subresource_range.clone(),
                 };
@@ -188,10 +188,10 @@ impl TransferContext {
             queue_group.queues[0].submit(submission, Some(&fence));
         }
 
-        self.command_pool.reset();
-
         device.device.wait_for_fence(&fence, !0);
         device.device.destroy_fence(fence);
+
+        self.command_pool.reset();
 
     }
 }

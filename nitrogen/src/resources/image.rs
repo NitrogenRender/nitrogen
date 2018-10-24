@@ -456,9 +456,11 @@ impl ImageStorage {
                     {
                         use gfxm::Block;
 
+                        let range = staging.range();
+
                         let mut writer = match device
                             .device
-                            .acquire_mapping_writer(staging.memory(), 0..upload_size) {
+                            .acquire_mapping_writer(staging.memory(), range) {
                             Err(e) => {
                                 results[*idx] = Err(e.into());
                                 return None;
