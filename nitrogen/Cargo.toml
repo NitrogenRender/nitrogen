@@ -18,7 +18,8 @@ slab = "0.4.1"
 failure = "0.1.2"
 failure_derive = "0.1.2"
 shaderc = "0.3.11"
-
+bitflags = "1.0.4"
+smallvec = "0.6.5"
 winit = { version = "0.17.2", optional = true }
 
 [dependencies.gfx-hal]

@@ -10,9 +10,14 @@ use gfxm::Factory;
 use gfxm::SmartAllocator;
 
 use std;
+use std::collections::BTreeSet;
+
+use smallvec::SmallVec;
 
 use util::storage;
 use util::storage::{Handle, Storage};
+
+use transfer::TransferContext;
 
 use device::DeviceContext;
 use device::QueueType;
@@ -30,7 +35,7 @@ impl Default for ImageDimension {
     }
 }
 
-pub type ImageHandle = Handle<(Image, ImageView)>;
+pub type ImageHandle = Handle<Image>;
 
 #[derive(Default)]
 pub struct ImageCreateInfo {
@@ -119,10 +124,17 @@ impl From<ViewKind> for gfx::image::ViewKind {
     }
 }
 
-type Image = <SmartAllocator<back::Backend> as Factory<back::Backend>>::Image;
+pub type ImageType = <SmartAllocator<back::Backend> as Factory<back::Backend>>::Image;
 type ImageView = <back::Backend as gfx::Backend>::ImageView;
 
-#[derive(Debug, Fail)]
+pub struct Image {
+    pub image: ImageType,
+    pub view: ImageView,
+    pub dimension: ImageDimension,
+    pub format: gfx::format::Format,
+}
+
+#[derive(Debug, Fail, Clone)]
 pub enum ImageError {
     #[fail(display = "The specified image handle was invalid")]
     HandleInvalid,
@@ -138,6 +150,9 @@ pub enum ImageError {
 
     #[fail(display = "Image View could not be created")]
     ViewError(#[cause] gfx::image::ViewError),
+
+    #[fail(display = "Image can not be used a transfer destination")]
+    CantWriteToImage,
 }
 
 impl From<gfxm::FactoryError> for ImageError {
@@ -158,344 +173,374 @@ impl From<gfx::image::ViewError> for ImageError {
 }
 
 pub struct ImageStorage {
-    dimensions: Vec<ImageDimension>,
-    formats: Vec<gfx::format::Format>,
+    // TODO handle host visible images??
+    transfer_dst: BTreeSet<usize>,
 
-    storage: Storage<(Image, ImageView)>,
-
-    command_pool: gfx::CommandPool<back::Backend, gfx::General>,
+    storage: Storage<Image>,
 }
 
 pub type Result<T> = std::result::Result<T, ImageError>;
 
 impl ImageStorage {
-    pub fn new(device: &DeviceContext) -> Self {
-        let command_pool = {
-            let queue_group = device.queue_group();
-
-            device.device.create_command_pool_typed(
-                &queue_group,
-                gfx::pool::CommandPoolCreateFlags::empty(),
-                16,
-            )
-        };
-
+    pub fn new() -> Self {
         ImageStorage {
-            dimensions: vec![],
-            formats: vec![],
+            transfer_dst: BTreeSet::new(),
             storage: Storage::new(),
-            command_pool,
         }
     }
 
-    pub fn release(self, device: &DeviceContext) {
-        device
-            .device
-            .destroy_command_pool(self.command_pool.into_raw());
-    }
+    pub fn release(self) {}
 
     pub fn create(
         &mut self,
         device: &DeviceContext,
-        create_info: ImageCreateInfo,
-    ) -> Result<ImageHandle> {
+        create_infos: &[ImageCreateInfo],
+    ) -> Vec<Result<ImageHandle>> {
         use gfx::format::Format;
 
-        let format = create_info.format.into();
+        let mut result = Vec::with_capacity(create_infos.len());
 
-        // some formats are not supported on most GPUs, for example most 24 bit ones.
-        // TODO: this should not use hardcoded values but values from the device info maybe?
-        let format = match format {
-            Format::Rgb8Unorm => Format::Rgba8Unorm,
-            format => format,
-        };
+        let mut allocator = device.allocator();
 
-        let image = {
-            let image_kind = match create_info.dimension {
-                ImageDimension::D1 { x } => image::Kind::D1(x, create_info.num_layers),
-                ImageDimension::D2 { x, y } => {
-                    image::Kind::D2(x, y, create_info.num_layers, create_info.num_samples)
-                }
-                ImageDimension::D3 { x, y, z } => image::Kind::D3(x, y, z),
+        for create_info in create_infos {
+            let format = create_info.format.into();
+
+            // some formats are not supported on most GPUs, for example most 24 bit ones.
+            // TODO: this should not use hardcoded values but values from the device info maybe?
+            let format = match format {
+                Format::Rgb8Unorm => Format::Rgba8Unorm,
+                format => format,
             };
 
-            use gfx::memory::Properties;
+            let (image, usage) = {
+                let image_kind = match create_info.dimension {
+                    ImageDimension::D1 { x } => image::Kind::D1(x, create_info.num_layers),
+                    ImageDimension::D2 { x, y } => {
+                        image::Kind::D2(x, y, create_info.num_layers, create_info.num_samples)
+                    }
+                    ImageDimension::D3 { x, y, z } => image::Kind::D3(x, y, z),
+                };
 
-            let usage_flags = {
-                use gfx::image::Usage;
+                use gfx::memory::Properties;
 
-                let mut flags = Usage::empty();
+                let usage_flags = {
+                    use gfx::image::Usage;
 
-                if create_info.used_as_transfer_src {
-                    flags |= Usage::TRANSFER_SRC;
-                }
-                if create_info.used_as_transfer_dst {
-                    flags |= Usage::TRANSFER_DST;
-                }
+                    let mut flags = Usage::empty();
 
-                if create_info.used_for_sampling {
-                    flags |= Usage::SAMPLED;
-                }
-                if create_info.used_as_color_attachment {
-                    flags |= Usage::COLOR_ATTACHMENT;
-                }
-                if create_info.used_as_depth_stencil_attachment {
-                    flags |= Usage::DEPTH_STENCIL_ATTACHMENT;
-                }
-                if create_info.used_as_storage_image {
-                    flags |= Usage::STORAGE;
-                }
-                if create_info.used_as_input_attachment {
-                    flags |= Usage::INPUT_ATTACHMENT;
-                }
+                    if create_info.used_as_transfer_src {
+                        flags |= Usage::TRANSFER_SRC;
+                    }
+                    if create_info.used_as_transfer_dst {
+                        flags |= Usage::TRANSFER_DST;
+                    }
 
-                flags
+                    if create_info.used_for_sampling {
+                        flags |= Usage::SAMPLED;
+                    }
+                    if create_info.used_as_color_attachment {
+                        flags |= Usage::COLOR_ATTACHMENT;
+                    }
+                    if create_info.used_as_depth_stencil_attachment {
+                        flags |= Usage::DEPTH_STENCIL_ATTACHMENT;
+                    }
+                    if create_info.used_as_storage_image {
+                        flags |= Usage::STORAGE;
+                    }
+                    if create_info.used_as_input_attachment {
+                        flags |= Usage::INPUT_ATTACHMENT;
+                    }
+
+                    flags
+                };
+
+                let image = allocator.create_image(
+                    &device.device,
+                    (gfxm::Type::General, Properties::DEVICE_LOCAL),
+                    image_kind,
+                    1,
+                    format,
+                    image::Tiling::Optimal,
+                    usage_flags,
+                    image::ViewCapabilities::empty(),
+                );
+
+                match image {
+                    Err(e) => {
+                        result.push(Err(e.into()));
+                        continue;
+                    }
+                    Ok(i) => (i, usage_flags),
+                }
             };
 
-            device.allocator().create_image(
-                &device.device,
-                (gfxm::Type::General, Properties::DEVICE_LOCAL),
-                image_kind,
-                1,
+            let image_view = {
+                match device.device.create_image_view(
+                    image.raw(),
+                    create_info.kind.into(),
+                    format,
+                    gfx::format::Swizzle::NO,
+                    image::SubresourceRange {
+                        aspects: gfx::format::Aspects::COLOR,
+                        layers: 0..1,
+                        levels: 0..1,
+                    },
+                ) {
+                    Err(e) => {
+                        result.push(Err(e.into()));
+                        continue;
+                    }
+                    Ok(iv) => iv,
+                }
+            };
+
+            let img_store = Image {
+                image,
                 format,
-                image::Tiling::Optimal,
-                usage_flags,
-                image::ViewCapabilities::empty(),
-            )?
-        };
+                dimension: create_info.dimension,
+                view: image_view,
+            };
 
-        let image_view = {
-            device.device.create_image_view(
-                image.raw(),
-                create_info.kind.into(),
-                format,
-                gfx::format::Swizzle::NO,
-                image::SubresourceRange {
-                    aspects: gfx::format::Aspects::COLOR,
-                    layers: 0..1,
-                    levels: 0..1,
-                },
-            )?
-        };
+            let (handle, _) = self.storage.insert(img_store);
 
-        let (handle, op) = self.storage.insert((image, image_view));
-
-        match op {
-            storage::InsertOp::Grow => {
-                self.formats.push(format);
-                self.dimensions.push(create_info.dimension);
+            if usage.contains(gfx::image::Usage::TRANSFER_DST) {
+                self.transfer_dst.insert(handle.id());
             }
-            storage::InsertOp::Inplace => {
-                self.formats[handle.id()] = format;
-                self.dimensions[handle.id()] = create_info.dimension;
-            }
+
+            result.push(Ok(handle));
         }
 
-        Ok(handle)
+        result
     }
 
     pub fn upload_data(
-        &mut self,
+        &self,
         device: &DeviceContext,
-        image: ImageHandle,
-        data: ImageUploadInfo,
-    ) -> Result<()> {
-        use gfxm::Factory;
+        transfer: &mut TransferContext,
+        images: &[(ImageHandle, ImageUploadInfo)],
+    ) -> Vec<Result<()>> {
+        let mut results = vec![Ok(()); images.len()];
 
-        let image_dimensions = self.dimension(image).ok_or(ImageError::HandleInvalid)?;
+        let mut data: SmallVec<[_; 16]> = images.iter().enumerate().collect();
+        data.as_mut_slice()
+            .sort_by_key(|(_, (handle, _))| handle.id());
 
-        let upload_data_fits = {
-            use self::ImageDimension as I;
-            match (image_dimensions, data.dimension) {
-                (I::D1 { x: dx }, I::D1 { x: sx }) => (sx + data.target_offset.0) <= dx,
-                (I::D2 { x: dx, y: dy }, I::D2 { x: sx, y: sy }) => {
-                    (sx + data.target_offset.0) <= dx && (sy + data.target_offset.1) <= dy
+        // categorize images
+        let (transferable, other) = {
+            let mut transferable = SmallVec::<[_; 16]>::new();
+            let mut other = SmallVec::<[_; 16]>::new();
+
+            for (idx, (handle, data)) in data {
+                let handle = *handle;
+                if !self.storage.is_alive(handle) {
+                    results[idx] = Err(ImageError::HandleInvalid);
+                    continue;
                 }
-                (
-                    I::D3 {
-                        x: dx,
-                        y: dy,
-                        z: dz,
-                    },
-                    I::D3 {
-                        x: sx,
-                        y: sy,
-                        z: sz,
-                    },
-                ) => {
-                    (sx + data.target_offset.0) <= dx
-                        && (sy + data.target_offset.1) <= dy
-                        && (sz + data.target_offset.2) <= dz
+
+                if self.transfer_dst.contains(&handle.id()) {
+                    transferable.push((idx, handle, data));
+                } else {
+                    other.push((idx, handle, data));
                 }
-                _ => false,
             }
+
+            (transferable, other)
         };
 
-        let (image_width, image_height) = match data.dimension {
-            ImageDimension::D1 { x } => (x, 1),
-            ImageDimension::D2 { x, y } => (x, y),
-            ImageDimension::D3 { .. } => unimplemented!("Setting of 3D texture data"),
-        };
-
-        if !upload_data_fits {
-            return Err(ImageError::UploadDataInvalid);
+        // Can't upload to those..
+        for (idx, _, _) in other {
+            results[idx] = Err(ImageError::CantWriteToImage);
         }
 
-        let conversion_needed = gfx::format::Format::from(data.format) != self.formats[image.0];
+        use gfx::memory::Properties;
+        use gfx::PhysicalDevice;
 
-        let (buffer_size, row_pitch, texel_size) = {
-            use gfx::PhysicalDevice;
+        let limits: gfx::Limits = device.adapter.physical_device.limits();
 
-            let limits = device.adapter.physical_device.limits();
-            let row_align = limits.min_buffer_copy_pitch_alignment as u32;
-            image_copy_buffer_size(row_align, &data, (image_width, image_height))
-        };
+        let mut allocator = device.allocator();
 
-        let staging_buffer = {
-            use gfx::memory::Properties;
+        let staging_data = transferable
+            .as_slice()
+            .iter()
+            .filter_map(|(idx, handle, data)| {
+                let idx = *idx;
 
-            let mut alloc = device.allocator();
+                let image = &self.storage[*handle];
+                let dimensions = image.dimension;
 
-            alloc.create_buffer(
-                &device.device,
-                (
-                    gfxm::Type::ShortLived,
-                    Properties::CPU_VISIBLE | Properties::COHERENT,
-                ),
-                buffer_size,
-                gfx::buffer::Usage::TRANSFER_SRC | gfx::buffer::Usage::TRANSFER_DST,
-            )?
-        };
+                let upload_data_fits = {
+                    use self::ImageDimension as I;
+                    match (dimensions, data.dimension) {
+                        (I::D1 { x: dx }, I::D1 { x: sx }) => (sx + data.target_offset.0) <= dx,
+                        (I::D2 { x: dx, y: dy }, I::D2 { x: sx, y: sy }) => {
+                            (sx + data.target_offset.0) <= dx && (sy + data.target_offset.1) <= dy
+                        }
+                        (
+                            I::D3 {
+                                x: dx,
+                                y: dy,
+                                z: dz,
+                            },
+                            I::D3 {
+                                x: sx,
+                                y: sy,
+                                z: sz,
+                            },
+                        ) => {
+                            (sx + data.target_offset.0) <= dx
+                                && (sy + data.target_offset.1) <= dy
+                                && (sz + data.target_offset.2) <= dz
+                        }
+                        _ => false,
+                    }
+                };
+
+                if !upload_data_fits {
+                    results[idx] = Err(ImageError::UploadDataInvalid);
+                    return None;
+                }
+
+                let (upload_width, upload_height) = match data.dimension {
+                    ImageDimension::D1 { x } => (x, 1),
+                    ImageDimension::D2 { x, y } => (x, y),
+                    ImageDimension::D3 { .. } => {
+                        // TODO support 3D data?
+                        results[idx] = Err(ImageError::UploadDataInvalid);
+                        return None;
+                    }
+                };
+
+                let upload_nums = {
+                    let row_align = limits.min_buffer_copy_pitch_alignment as u32;
+                    image_copy_buffer_size(row_align, &data, (upload_width, upload_height))
+                };
+                let (upload_size, row_pitch, texel_size) = upload_nums;
+
+                debug_assert!(upload_size >= upload_width as u64 * upload_height as u64 * texel_size as u64);
+
+                let staging_buffer = match allocator.create_buffer(
+                    &device.device,
+                    (
+                        gfxm::Type::ShortLived,
+                        Properties::CPU_VISIBLE | Properties::COHERENT,
+                    ),
+                    upload_size,
+                    gfx::buffer::Usage::TRANSFER_SRC | gfx::buffer::Usage::TRANSFER_DST,
+                ) {
+                    Err(e) => {
+                        results[idx] = Err(e.into());
+                        return None;
+                    }
+                    Ok(buffer) => buffer,
+                };
+
+                Some((
+                    idx,
+                    image,
+                    data,
+                    staging_buffer,
+                    upload_nums,
+                    (upload_width, upload_height),
+                ))
+            }).collect::<SmallVec<[_; 16]>>();
 
         {
-            use gfxm::Block;
+            let upload_data = staging_data.as_slice()
+                .iter()
+                .filter_map(|(idx, image, data, staging, upload_nums, upload_dims)| {
+                    let (upload_size, row_pitch, texel_size) = *upload_nums;
 
-            let mut writer = device
-                .device
-                .acquire_mapping_writer(staging_buffer.memory(), 0..buffer_size)?;
+                    let (width, height) = *upload_dims;
 
-            // Alignment strikes back again! We do copy all the rows, but the row length in the
-            // staging buffer might be bigger than in the upload data, so we need to construct
-            // a slice for each row instead of just copying *everything*
-            for y in 0..image_height as usize {
-                let row = &data.data[y * (image_width as usize) * texel_size .. (y + 1) * (image_width as usize) * texel_size];
-                let dest_base = y * row_pitch as usize;
-                writer[dest_base .. dest_base + row.len()].copy_from_slice(row);
-            }
+                    // write to staging buffer
+                    {
+                        use gfxm::Block;
 
-            device.device.release_mapping_writer(writer);
-        }
+                        let mut writer = match device
+                            .device
+                            .acquire_mapping_writer(staging.memory(), 0..upload_size) {
+                            Err(e) => {
+                                results[*idx] = Err(e.into());
+                                return None;
+                            }
+                            Ok(x) => x,
+                        };
 
-        let mut cmd_buffer: gfx::command::CommandBuffer<_, _, command::OneShot> =
-            self.command_pool.acquire_command_buffer(false);
+                        // Alignment strikes back again! We do copy all the rows, but the row length in the
+                        // staging buffer might be bigger than in the upload data, so we need to construct
+                        // a slice for each row instead of just copying *everything*
+                        for y in 0..height as usize {
 
-        let mut fence = device.device.create_fence(false);
+                            let src_start = y * (width as usize) * texel_size;
+                            let src_end = (y + 1) * (width as usize) * texel_size;
 
-        if conversion_needed {
-            // compute pass that does conversion. whey.
-            println!("Conversion! Wheeeey...");
-        } else {
-            let submission = {
-                // TODO cubemaps? Arrays?? DEEEEPTH?!?!?
-                let image_barrier = memory::Barrier::Image {
-                    states: (image::Access::empty(), image::Layout::Undefined)
-                        ..(
-                            image::Access::TRANSFER_WRITE,
-                            image::Layout::TransferDstOptimal,
-                        ),
-                    target: self.storage[image].0.raw(),
-                    range: image::SubresourceRange {
-                        aspects: gfx::format::Aspects::COLOR,
-                        levels: 0..1,
-                        layers: 0..1,
-                    },
-                };
+                            let row = &data.data[src_start .. src_end];
 
-                cmd_buffer.pipeline_barrier(
-                    gfx::pso::PipelineStage::TOP_OF_PIPE..gfx::pso::PipelineStage::TRANSFER,
-                    memory::Dependencies::empty(),
-                    &[image_barrier],
-                );
+                            let dst_start = y * row_pitch as usize;
+                            let dst_end = dst_start + row.len();
 
-                cmd_buffer.copy_buffer_to_image(
-                    staging_buffer.raw(),
-                    self.storage[image].0.raw(),
-                    image::Layout::TransferDstOptimal,
-                    &[command::BufferImageCopy {
-                        buffer_offset: 0,
-                        buffer_width: row_pitch / (texel_size as u32),
-                        buffer_height: image_height,
-                        image_layers: image::SubresourceLayers {
+                            writer[dst_start..dst_end].copy_from_slice(row);
+                        }
+
+                        device.device.release_mapping_writer(writer);
+                    }
+
+                    // create image upload data
+
+                    use transfer::BufferImageTransfer;
+
+                    let transfer_data = BufferImageTransfer {
+                        src: staging,
+                        dst: &image.image,
+                        subresource_range: gfx::image::SubresourceRange {
                             aspects: gfx::format::Aspects::COLOR,
-                            level: 0,
+                            levels: 0..1,
                             layers: 0..1,
                         },
-                        image_offset: image::Offset {
-                            x: data.target_offset.0 as i32,
-                            y: data.target_offset.1 as i32,
-                            z: data.target_offset.2 as i32,
+                        copy_information: gfx::command::BufferImageCopy {
+                            buffer_offset: 0,
+                            buffer_width: row_pitch / (texel_size as u32),
+                            buffer_height: height,
+                            image_layers: gfx::image::SubresourceLayers {
+                                aspects: gfx::format::Aspects::COLOR,
+                                level: 0,
+                                layers: 0..1,
+                            },
+                            image_offset: image::Offset {
+                                x: data.target_offset.0 as i32,
+                                y: data.target_offset.1 as i32,
+                                z: data.target_offset.2 as i32,
+                            },
+                            image_extent: image::Extent {
+                                width,
+                                height,
+                                depth: 1,
+                            }
                         },
-                        image_extent: image::Extent {
-                            width: image_width,
-                            height: image_height,
-                            depth: 1,
-                        },
-                    }],
-                );
+                    };
 
-                let image_barrier = memory::Barrier::Image {
-                    states: (
-                        image::Access::TRANSFER_WRITE,
-                        image::Layout::TransferDstOptimal,
-                    )
-                        ..(
-                            image::Access::SHADER_READ,
-                            image::Layout::ShaderReadOnlyOptimal,
-                        ),
-                    target: self.storage[image].0.raw(),
-                    range: image::SubresourceRange {
-                        aspects: gfx::format::Aspects::COLOR,
-                        levels: 0..1,
-                        layers: 0..1,
-                    },
-                };
+                    Some(transfer_data)
+                }).collect::<SmallVec<[_; 16]>>();
 
-                cmd_buffer.pipeline_barrier(
-                    gfx::pso::PipelineStage::TRANSFER..gfx::pso::PipelineStage::FRAGMENT_SHADER,
-                    memory::Dependencies::empty(),
-                    &[image_barrier],
-                );
-
-                cmd_buffer.finish()
-            };
-            let submission = gfx::Submission::new().submit(Some(submission));
-
-            {
-                let mut queue_group = device.queue_group();
-                queue_group.queues[QueueType::ImageStorage as usize]
-                    .submit(submission, Some(&mut fence));
-            }
-            device.device.wait_for_fence(&fence, !0);
-        };
-
-        device.device.destroy_fence(fence);
-
-        device
-            .allocator()
-            .destroy_buffer(&device.device, staging_buffer);
-
-        Ok(())
-    }
-
-    pub fn dimension(&self, image: ImageHandle) -> Option<ImageDimension> {
-        if !self.storage.is_alive(image) {
-            None
-        } else {
-            Some(self.dimensions[image.id()])
+            transfer.copy_buffers_to_images(device, upload_data.as_slice());
         }
+
+        staging_data.into_iter()
+            .for_each(|(
+                    _,
+                    _,
+                    _,
+                    staging_buffer,
+                    _,
+                    _,
+                )| {
+                allocator.destroy_buffer(&device.device, staging_buffer);
+            });
+
+        results
     }
 
-    pub fn raw(&self, image: ImageHandle) -> Option<&(Image, ImageView)> {
+    pub fn raw(&self, image: ImageHandle) -> Option<&Image> {
         if self.storage.is_alive(image) {
             Some(&self.storage[image])
         } else {
@@ -503,13 +548,20 @@ impl ImageStorage {
         }
     }
 
-    pub fn destroy(&mut self, device: &DeviceContext, handle: ImageHandle) -> bool {
-        match self.storage.remove(handle) {
-            None => false,
-            Some((image, view)) => {
-                device.device.destroy_image_view(view);
-                device.allocator().destroy_image(&device.device, image);
-                true
+    pub fn destroy(&mut self, device: &DeviceContext, handles: &[ImageHandle]) {
+        let mut allocator = device.allocator();
+
+        for handle in handles {
+            match self.storage.remove(*handle) {
+                Some(image) => {
+                    allocator.destroy_image(&device.device, image.image);
+                    device.device.destroy_image_view(image.view);
+
+                    if self.transfer_dst.contains(&handle.id()) {
+                        self.transfer_dst.remove(&handle.id());
+                    }
+                }
+                None => {}
             }
         }
     }
@@ -546,8 +598,12 @@ fn image_copy_buffer_size(
     // (I strongly assume that that's because of SIMD operations)
     //
 
+    // This mask says how many bits from the right need to be 0
     let row_alignment_mask = row_align as u32 - 1;
+
+    // We add the alignment mask, then cut away everything stuff on the right so it's all 0s
     let row_pitch = (width * texel_size as u32 + row_alignment_mask) & !row_alignment_mask;
+
     let buffer_size = (height * row_pitch) as u64;
 
     (buffer_size, row_pitch, texel_size)

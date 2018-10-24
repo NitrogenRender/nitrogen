@@ -2,10 +2,16 @@ use nitrogen;
 
 use nitrogen::sampler;
 
+use smallvec::SmallVec;
+
+use std::slice;
+
+
 type SamplerId = usize;
 type SamplerGeneration = u64;
 
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub struct SamplerHandle(pub SamplerId, pub SamplerGeneration);
 
 impl SamplerHandle {
@@ -51,6 +57,7 @@ impl From<SamplerWrapMode> for sampler::WrapMode {
 }
 
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub struct SamplerCreateInfo {
     min_filter: SamplerFilter,
     mag_filter: SamplerFilter,
@@ -77,25 +84,43 @@ impl From<SamplerCreateInfo> for sampler::SamplerCreateInfo {
 #[no_mangle]
 pub unsafe extern "C" fn sampler_create(
     context: *mut nitrogen::Context,
-    create_info: SamplerCreateInfo,
-    handle: *mut SamplerHandle,
-) -> bool {
+    create_infos: *const SamplerCreateInfo,
+    handles: *mut SamplerHandle,
+    count: usize,
+) {
+
     let context = &mut *context;
 
-    let internal_create = create_info.into();
+    let internal_create_infos = slice::from_raw_parts(create_infos, count);
+    let handles = slice::from_raw_parts_mut(handles, count);
 
-    let sampler_handle = context.sampler_storage.create(&context.device_ctx, internal_create);
+    let internal_create = internal_create_infos
+        .iter()
+        .map(|c| {
+            let create_info = Into::<sampler::SamplerCreateInfo>::into(*c);
+            create_info
+        })
+        .collect::<SmallVec<[_; 16]>>();
 
-    *handle = SamplerHandle(sampler_handle.0, sampler_handle.1);
+    let sampler_handles = context.sampler_storage.create(&context.device_ctx, internal_create.as_slice());
 
-    true
+    for (i, sampler) in sampler_handles.into_iter().enumerate() {
+        handles[i] = SamplerHandle(sampler.id(), sampler.generation());
+    }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn sampler_destroy(
     context: *mut nitrogen::Context,
-    sampler: SamplerHandle,
-) -> bool {
+    samplers: *const SamplerHandle,
+    sampler_count: usize,
+) {
     let context = &mut *context;
-    context.sampler_storage.destroy(&context.device_ctx, sampler.into())
+
+    let samplers = slice::from_raw_parts(samplers, sampler_count)
+        .iter()
+        .map(|s| SamplerHandle::into(s.clone()))
+        .collect::<SmallVec<[_; 16]>>();
+
+    context.sampler_storage.destroy(&context.device_ctx, samplers.as_slice());
 }

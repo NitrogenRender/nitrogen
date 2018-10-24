@@ -1,10 +1,15 @@
 use nitrogen;
 
+use smallvec::SmallVec;
+
+use std::slice;
+
 
 type ImageId = usize;
 type ImageGeneration = u64;
 
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub struct ImageHandle(pub ImageId, pub ImageGeneration);
 
 impl ImageHandle {
@@ -14,6 +19,7 @@ impl ImageHandle {
 }
 
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub struct ImageCreateInfo {
     pub dimension: ImageDimension,
     pub num_layers: u16,
@@ -32,6 +38,7 @@ pub struct ImageCreateInfo {
 }
 
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub enum ImageViewKind {
     D1,
     D1Array,
@@ -58,6 +65,7 @@ impl From<ImageViewKind> for nitrogen::image::ViewKind {
 }
 
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub enum ImageFormat {
     RUnorm,
     RgUnorm,
@@ -82,6 +90,7 @@ impl From<ImageFormat> for nitrogen::image::ImageFormat {
 }
 
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub enum ImageDimension {
     D1 { x: u32 },
     D2 { x: u32, y: u32 },
@@ -121,6 +130,7 @@ impl From<nitrogen::image::ImageDimension> for ImageDimension {
 }
 
 #[repr(C)]
+#[derive(Copy, Clone)]
 pub struct ImageUploadInfo {
     pub data: *const u8,
     pub data_len: u64,
@@ -132,54 +142,54 @@ pub struct ImageUploadInfo {
 #[no_mangle]
 pub unsafe extern "C" fn image_create(
     context: *mut nitrogen::Context,
-    create_info: ImageCreateInfo,
-    handle: *mut ImageHandle,
-) -> bool {
+    create_infos: *const ImageCreateInfo,
+    handles: *mut ImageHandle,
+    successes: *mut bool,
+    count: usize,
+) {
     let context = &mut *context;
 
-    let internal_create_info = nitrogen::image::ImageCreateInfo {
-        dimension: create_info.dimension.into(),
-        format: create_info.format.into(),
-        num_mipmaps: create_info.num_mipmaps,
-        num_samples: create_info.num_samples,
-        num_layers: create_info.num_layers,
-        kind: create_info.kind.into(),
+    let create_infos = slice::from_raw_parts(create_infos, count);
 
-        used_as_transfer_src: create_info.used_as_transfer_dst,
-        used_as_transfer_dst: create_info.used_as_transfer_src,
-        used_for_sampling: create_info.used_for_sampling,
-        used_as_color_attachment: create_info.used_as_color_attachment,
-        used_as_depth_stencil_attachment: create_info.used_as_depth_stencil_attachment,
-        used_as_storage_image: create_info.used_as_storage_image,
-        used_as_input_attachment: create_info.used_as_input_attachment,
-    };
+    let internal_create_infos = (0..count).into_iter().map(|i| {
+        let create_info = &create_infos[i];
 
-    let result = context
-        .image_storage
-        .create(&context.device_ctx, internal_create_info);
+        nitrogen::image::ImageCreateInfo {
+            dimension: create_info.dimension.into(),
+            format: create_info.format.into(),
+            num_mipmaps: create_info.num_mipmaps,
+            num_samples: create_info.num_samples,
+            num_layers: create_info.num_layers,
+            kind: create_info.kind.into(),
 
-    match result {
-        Ok(img_handle) => {
-            *handle = ImageHandle(img_handle.id(), img_handle.generation());
-            true
+            used_as_transfer_src: create_info.used_as_transfer_dst,
+            used_as_transfer_dst: create_info.used_as_transfer_src,
+            used_for_sampling: create_info.used_for_sampling,
+            used_as_color_attachment: create_info.used_as_color_attachment,
+            used_as_depth_stencil_attachment: create_info.used_as_depth_stencil_attachment,
+            used_as_storage_image: create_info.used_as_storage_image,
+            used_as_input_attachment: create_info.used_as_input_attachment,
         }
-        Err(_) => false,
-    }
-}
 
-#[no_mangle]
-pub unsafe extern "C" fn image_dimension(
-    context: *const nitrogen::Context,
-    handle: ImageHandle,
-    dimension: *mut ImageDimension,
-) -> bool {
-    let context = &*context;
+    }).collect::<SmallVec<[_; 16]>>();
 
-    match context.image_storage.dimension(handle.into()) {
-        None => false,
-        Some(x) => {
-            *dimension = x.into();
-            true
+
+    let results = context
+        .image_storage
+        .create(&context.device_ctx, &internal_create_infos);
+
+    let handles = slice::from_raw_parts_mut(handles, count);
+    let successes = slice::from_raw_parts_mut(successes, count);
+
+    for (i, result) in results.into_iter().enumerate() {
+        match result {
+            Ok(t) => {
+                handles[i] = ImageHandle(t.id(), t.generation());
+                successes[i] = true;
+            },
+            Err(_) => {
+                successes[i] = false;
+            }
         }
     }
 }
@@ -187,37 +197,62 @@ pub unsafe extern "C" fn image_dimension(
 #[no_mangle]
 pub unsafe extern "C" fn image_upload_data(
     context: *mut nitrogen::Context,
-    image: ImageHandle,
-    data: ImageUploadInfo,
-) -> bool {
+    images: *const ImageHandle,
+    data: *const ImageUploadInfo,
+    successes: *mut bool,
+    count: usize,
+) {
     let context = &mut *context;
 
-    use std::slice;
+    let images = slice::from_raw_parts(images, count);
+    let data = slice::from_raw_parts(data, count);
+    let successes = slice::from_raw_parts_mut(successes, count);
 
-    let upload_info = nitrogen::image::ImageUploadInfo {
-        data: slice::from_raw_parts(data.data, data.data_len as usize),
-        format: data.format.into(),
-        dimension: data.dimension.into(),
-        target_offset: (
-            data.target_offset[0],
-            data.target_offset[1],
-            data.target_offset[2],
-        ),
-    };
+    let upload_infos = images
+        .iter()
+        .zip(data)
+        .map(|(handle, data)| {
+            let handle = handle.clone().into();
+            let upload_info = nitrogen::image::ImageUploadInfo {
+                data: slice::from_raw_parts(data.data, data.data_len as usize),
+                format: data.format.into(),
+                dimension: data.dimension.into(),
+                target_offset: (
+                    data.target_offset[0],
+                    data.target_offset[1],
+                    data.target_offset[2],
+                ),
+            };
 
-    let result = context
+            (handle, upload_info)
+        })
+        .collect::<SmallVec<[_; 16]>>();
+
+    let results = context
         .image_storage
-        .upload_data(&context.device_ctx, image.into(), upload_info);
+        .upload_data(&context.device_ctx, &mut context.transfer, upload_infos.as_slice());
 
-    result.is_ok()
+    for (i, result) in results.into_iter().enumerate() {
+        successes[i] = result.is_ok();
+    }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn image_destroy(
     context: *mut nitrogen::Context,
-    image: ImageHandle,
-) -> bool {
+    images: *const ImageHandle,
+    images_count: usize,
+) {
+    use std;
+
     let context = &mut *context;
 
-    context.image_storage.destroy(&context.device_ctx, image.into())
+    let images = std::slice::from_raw_parts(images, images_count)
+        .iter()
+        .map(|image| {
+            (*image).into()
+        })
+        .collect::<Vec<_>>();
+
+    context.image_storage.destroy(&context.device_ctx, &images);
 }

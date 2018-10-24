@@ -9,6 +9,7 @@ use util::storage::Storage;
 
 use types::Sampler;
 
+#[derive(Copy, Clone)]
 pub enum Filter {
     Nearest,
     Linear,
@@ -23,6 +24,7 @@ impl From<Filter> for image::Filter {
     }
 }
 
+#[derive(Copy, Clone)]
 pub enum WrapMode {
     Tile,
     Mirror,
@@ -41,6 +43,7 @@ impl From<WrapMode> for image::WrapMode {
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct SamplerCreateInfo {
     pub min_filter: Filter,
     pub mag_filter: Filter,
@@ -84,13 +87,23 @@ impl SamplerStorage {
     pub fn create(
         &mut self,
         device: &DeviceContext,
-        create_info: SamplerCreateInfo,
-    ) -> SamplerHandle {
-        let sampler = { device.device.create_sampler(create_info.into()) };
+        create_infos: &[SamplerCreateInfo],
+    ) -> Vec<SamplerHandle> {
 
-        let (handle, _) = self.storage.insert(sampler);
+        let mut results = Vec::with_capacity(create_infos.len());
 
-        handle
+        for create_info in create_infos {
+
+            let create_info = create_info.clone().into();
+
+            let sampler = { device.device.create_sampler(create_info) };
+
+            let (handle, _) = self.storage.insert(sampler);
+
+            results.push(handle);
+        }
+
+        results
     }
 
     pub fn raw(&self, sampler: SamplerHandle) -> Option<&Sampler> {
@@ -101,12 +114,13 @@ impl SamplerStorage {
         }
     }
 
-    pub fn destroy(&mut self, device: &DeviceContext, handle: SamplerHandle) -> bool {
-        match self.storage.remove(handle) {
-            None => false,
-            Some(sampler) => {
-                device.device.destroy_sampler(sampler);
-                true
+    pub fn destroy(&mut self, device: &DeviceContext, handles: &[SamplerHandle]) {
+        for handle in handles {
+            match self.storage.remove(*handle) {
+                Some(sampler) => {
+                    device.device.destroy_sampler(sampler);
+                },
+                None => {}
             }
         }
     }

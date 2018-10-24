@@ -1,5 +1,6 @@
 extern crate nitrogen;
 extern crate env_logger;
+extern crate smallvec;
 
 pub mod image;
 pub mod sampler;

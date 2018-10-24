@@ -2,14 +2,11 @@ use gfx;
 
 use gfx::Device;
 use gfx::Instance;
-use gfx::PhysicalDevice;
-use gfx::Surface;
 
 use gfxm::MemoryAllocator;
 use gfxm::SmartAllocator;
 
 use back;
-use types;
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -35,7 +32,7 @@ impl DeviceContext {
         let mut adapters = instance.enumerate_adapters();
 
         // TODO select best fitting adapter
-        let mut adapter = adapters.remove(0);
+        let adapter = adapters.remove(0);
 
         let memory_properties = adapter.physical_device.memory_properties();
         let memory_allocator =

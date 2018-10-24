@@ -2,11 +2,15 @@ extern crate gfx_backend_vulkan as back;
 extern crate gfx_hal as gfx;
 extern crate gfx_memory as gfxm;
 
+extern crate smallvec;
 extern crate shaderc;
 
 extern crate failure;
 #[macro_use]
 extern crate failure_derive;
+
+#[macro_use]
+extern crate bitflags;
 
 extern crate ash;
 
@@ -27,12 +31,14 @@ use device::DeviceContext;
 
 pub mod util;
 pub use util::storage;
+pub use util::transfer;
 
 use storage::{Storage, Handle};
 
 pub mod resources;
 pub use resources::image;
 pub use resources::sampler;
+pub use resources::buffer;
 
 pub mod graph;
 
@@ -60,8 +66,10 @@ pub type DisplayHandle = Handle<Display>;
 pub struct Context {
     pub image_storage: image::ImageStorage,
     pub sampler_storage: sampler::SamplerStorage,
+    pub buffer_storage: buffer::BufferStorage,
 
     pub displays: Storage<Display>,
+    pub transfer: transfer::TransferContext,
     pub device_ctx: DeviceContext,
     pub instance: back::Instance,
 }
@@ -72,15 +80,21 @@ impl Context {
     pub fn new(name: &str, version: u32) -> Self {
         let instance = back::Instance::create(name, version);
         let device_ctx = DeviceContext::new(&instance);
-        let image_storage = image::ImageStorage::new(&device_ctx);
+
+        let transfer = transfer::TransferContext::new(&device_ctx);
+
+        let image_storage = image::ImageStorage::new();
         let sampler_storage = sampler::SamplerStorage::new();
+        let buffer_storage = buffer::BufferStorage::new();
 
         Context {
             instance,
             device_ctx,
+            transfer,
             displays: Storage::new(),
             image_storage,
             sampler_storage,
+            buffer_storage,
         }
     }
 
@@ -129,11 +143,14 @@ impl Context {
     }
 
     pub fn release(self) {
-        self.image_storage.release(&self.device_ctx);
+        self.buffer_storage.release();
+        self.image_storage.release();
 
         for display in self.displays {
             display.release(&self.device_ctx);
         }
+
+        self.transfer.release(&self.device_ctx);
 
         self.device_ctx.release();
     }

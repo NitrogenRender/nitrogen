@@ -2,3 +2,59 @@ pub use super::*;
 
 pub mod image;
 pub mod sampler;
+pub mod buffer;
+pub mod vertex_buffer;
+
+
+bitflags!(
+
+    /// Memory property flags.
+    pub struct MemoryProperties: u16 {
+        /// Device local memory on the GPU.
+        const DEVICE_LOCAL   = 0x1;
+
+        /// CPU-GPU coherent.
+        ///
+        /// Non-coherent memory requires explicit flushing.
+        const COHERENT     = 0x2;
+
+        /// Host visible memory can be accessed by the CPU.
+        ///
+        /// Backends must provide at least one cpu visible memory.
+        const CPU_VISIBLE   = 0x4;
+
+        /// Cached memory by the CPU
+        const CPU_CACHED = 0x8;
+
+        /// Memory that may be lazily allocated as needed on the GPU
+        /// and *must not* be visible to the CPU.
+        const LAZILY_ALLOCATED = 0x20;
+    }
+
+);
+
+impl From<MemoryProperties> for gfx::memory::Properties {
+    fn from(props: MemoryProperties) -> Self {
+        use gfx::memory::Properties;
+
+        let mut p = Properties::empty();
+
+        if props.contains(MemoryProperties::DEVICE_LOCAL) {
+            p |= Properties::DEVICE_LOCAL;
+        }
+        if props.contains(MemoryProperties::COHERENT) {
+            p |= Properties::COHERENT;
+        }
+        if props.contains(MemoryProperties::CPU_VISIBLE) {
+            p |= Properties::CPU_VISIBLE;
+        }
+        if props.contains(MemoryProperties::CPU_CACHED) {
+            p |= Properties::CPU_CACHED;
+        }
+        if props.contains(MemoryProperties::LAZILY_ALLOCATED) {
+            p |= Properties::LAZILY_ALLOCATED;
+        }
+
+        p
+    }
+}

@@ -41,7 +41,7 @@ impl Display {
         use gfx::DescriptorPool;
         use gfx::Surface;
 
-        let mut command_pool = {
+        let command_pool = {
             let queue_group = device.queue_group();
 
             device.device.create_command_pool_typed(
@@ -334,7 +334,7 @@ impl Display {
         use gfx::pso;
         use gfx::Swapchain;
 
-        let (_img, img_view) = {
+        let image = {
             if let Some(raw) = image_storage.raw(image) {
                 raw
             } else {
@@ -375,7 +375,7 @@ impl Display {
                     binding: 0,
                     array_offset: 0,
                     descriptors: Some(pso::Descriptor::Image(
-                        img_view,
+                        &image.view,
                         gfx::image::Layout::Undefined,
                     )),
                 },
