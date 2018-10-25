@@ -96,7 +96,9 @@ impl SamplerStorage {
 
             let create_info = create_info.clone().into();
 
-            let sampler = { device.device.create_sampler(create_info) };
+            let sampler = {
+                device.device.create_sampler(create_info).expect("Can't create sampler")
+            };
 
             let (handle, _) = self.storage.insert(sampler);
 

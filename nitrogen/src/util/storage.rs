@@ -133,7 +133,7 @@ pub struct StorageIter<T> {
 }
 
 impl<T> IntoIterator for Storage<T> {
-    type Item = T;
+    type Item = (usize, T);
     type IntoIter = StorageIter<T>;
 
     fn into_iter(self) -> <Self as IntoIterator>::IntoIter {
@@ -145,21 +145,23 @@ impl<T> IntoIterator for Storage<T> {
 }
 
 impl<T> Iterator for StorageIter<T> {
-    type Item = T;
+    type Item = (usize, T);
 
-    fn next(&mut self) -> Option<T> {
-        if self.index >= self.storage.entries.len() {
+    fn next(&mut self) -> Option<(usize, T)> {
+        let idx = self.index;
+
+        if idx >= self.storage.entries.len() {
             return None;
         }
 
-        if !self.storage.entries.contains(self.index) {
+        if !self.storage.entries.contains(idx) {
             return None;
         }
 
-        let data = self.storage.entries.remove(self.index);
+        let data = self.storage.entries.remove(idx);
 
         self.index += 1;
 
-        Some(data)
+        Some((idx, data))
     }
 }

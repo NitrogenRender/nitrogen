@@ -4,13 +4,9 @@ use std;
 
 use gfx::Device;
 
-use buffer::Buffer;
 use buffer::BufferTypeInternal;
 
 use image::ImageType;
-use image::ImageDimension;
-
-use types::CommandPool;
 
 use device::DeviceContext;
 
@@ -44,7 +40,7 @@ impl TransferContext {
                 &queue_group,
                 gfx::pool::CommandPoolCreateFlags::TRANSIENT,
                 1,
-            )
+            ).expect("Can't create command pool")
         };
 
         TransferContext {
@@ -108,7 +104,7 @@ impl TransferContext {
             cmd.finish()
         };
 
-        let mut fence = device.device.create_fence(false);
+        let fence = device.device.create_fence(false).expect("can't create submission fence");
 
         {
             let submission = gfx::Submission::new()
@@ -178,7 +174,7 @@ impl TransferContext {
             cmd.finish()
         };
 
-        let mut fence = device.device.create_fence(false);
+        let fence = device.device.create_fence(false).expect("Can't create submission fence");
 
         {
             let submission = gfx::Submission::new()

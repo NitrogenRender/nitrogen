@@ -43,13 +43,6 @@ pub use resources::buffer;
 pub mod graph;
 
 
-#[cfg(feature = "winit_support")]
-pub struct CreationInfo<'a> {
-    pub name: String,
-    pub version: u32,
-    pub window: &'a winit::Window,
-}
-
 #[cfg(feature = "x11")]
 use ash::vk;
 
@@ -144,9 +137,9 @@ impl Context {
 
     pub fn release(self) {
         self.buffer_storage.release();
-        self.image_storage.release();
+        self.image_storage.release(&self.device_ctx);
 
-        for display in self.displays {
+        for (_, display) in self.displays {
             display.release(&self.device_ctx);
         }
 

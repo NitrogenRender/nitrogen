@@ -10,8 +10,6 @@ use transfer::TransferContext;
 
 use util::storage::{Handle,  Storage};
 
-use gfx::Device;
-
 use gfxm::Factory;
 use gfxm::SmartAllocator;
 

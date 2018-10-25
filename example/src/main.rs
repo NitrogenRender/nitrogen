@@ -1,14 +1,9 @@
-extern crate winit;
-extern crate nitrogen;
 extern crate image;
+extern crate nitrogen;
+extern crate winit;
 
 #[macro_use]
 extern crate log;
-
-struct Vertex {
-    pub position: [f32; 3],
-    pub uv: [f32; 2],
-}
 
 fn main() {
     let mut events = winit::EventsLoop::new();
@@ -26,7 +21,10 @@ fn main() {
             .to_rgba();
 
         let (width, height) = image.dimensions();
-        let dimension = nitrogen::image::ImageDimension::D2 { x: width, y: height };
+        let dimension = nitrogen::image::ImageDimension::D2 {
+            x: width,
+            y: height,
+        };
 
         let create_info = nitrogen::image::ImageCreateInfo {
             dimension,
@@ -39,8 +37,11 @@ fn main() {
             ..Default::default()
         };
 
-        let img = ntg.image_storage.create(&ntg.device_ctx, &[create_info]).remove(0).unwrap();
-
+        let img = ntg
+            .image_storage
+            .create(&ntg.device_ctx, &[create_info])
+            .remove(0)
+            .unwrap();
 
         debug!("width {}, height {}", width, height);
 
@@ -52,7 +53,10 @@ fn main() {
                 target_offset: (0, 0, 0),
             };
 
-            ntg.image_storage.upload_data(&ntg.device_ctx, &mut ntg.transfer, &[(img, data)]).remove(0).unwrap()
+            ntg.image_storage
+                .upload_data(&ntg.device_ctx, &mut ntg.transfer, &[(img, data)])
+                .remove(0)
+                .unwrap()
         }
 
         drop(image);
@@ -67,7 +71,9 @@ fn main() {
                 wrap_mode: (WrapMode::Clamp, WrapMode::Clamp, WrapMode::Clamp),
             };
 
-            ntg.sampler_storage.create(&ntg.device_ctx, &[sampler_create]).remove(0)
+            ntg.sampler_storage
+                .create(&ntg.device_ctx, &[sampler_create])
+                .remove(0)
         };
 
         (img, sampler)
@@ -82,7 +88,10 @@ fn main() {
             usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC,
             properties: nitrogen::resources::MemoryProperties::DEVICE_LOCAL,
         };
-        ntg.buffer_storage.create(&ntg.device_ctx, &[create_info]).remove(0).unwrap()
+        ntg.buffer_storage
+            .create(&ntg.device_ctx, &[create_info])
+            .remove(0)
+            .unwrap()
     };
 
     {
@@ -91,36 +100,31 @@ fn main() {
             data: &[],
         };
 
-        ntg.buffer_storage.upload_data(&ntg.device_ctx, &mut ntg.transfer, &[(buffer, upload_data)]);
+        ntg.buffer_storage.upload_data(
+            &ntg.device_ctx,
+            &mut ntg.transfer,
+            &[(buffer, upload_data)],
+        );
     }
 
     let mut running = true;
     let mut resized = true;
 
     while running {
-
-        events.poll_events(|event| {
-            match event {
-                winit::Event::WindowEvent { event, .. } => {
-                    match event {
-                        winit::WindowEvent::CloseRequested => {
-                            running = false;
-                        },
-                        winit::WindowEvent::Resized(_size) => {
-                            resized = true;
-                        },
-                        _ => {
-                        }
-                    }
-                },
-                _ => {
+        events.poll_events(|event| match event {
+            winit::Event::WindowEvent { event, .. } => match event {
+                winit::WindowEvent::CloseRequested => {
+                    running = false;
                 }
-            }
+                winit::WindowEvent::Resized(_size) => {
+                    resized = true;
+                }
+                _ => {}
+            },
+            _ => {}
         });
 
-
         if resized {
-
             debug!("resize!");
 
             ntg.displays[display].setup_swapchain(&ntg.device_ctx);
@@ -133,9 +137,8 @@ fn main() {
             &ntg.image_storage,
             image,
             &ntg.sampler_storage,
-            sampler
+            sampler,
         );
-
     }
 
     ntg.buffer_storage.destroy(&ntg.device_ctx, &[buffer]);
@@ -144,6 +147,4 @@ fn main() {
     ntg.image_storage.destroy(&ntg.device_ctx, &[image]);
 
     ntg.release();
-
-
 }

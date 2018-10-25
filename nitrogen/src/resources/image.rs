@@ -2,9 +2,7 @@ use back;
 use gfx;
 use gfxm;
 
-use gfx::command;
 use gfx::image;
-use gfx::memory;
 use gfx::Device;
 use gfxm::Factory;
 use gfxm::SmartAllocator;
@@ -14,13 +12,11 @@ use std::collections::BTreeSet;
 
 use smallvec::SmallVec;
 
-use util::storage;
 use util::storage::{Handle, Storage};
 
 use transfer::TransferContext;
 
 use device::DeviceContext;
-use device::QueueType;
 
 #[derive(Copy, Clone, Debug)]
 pub enum ImageDimension {
@@ -189,7 +185,14 @@ impl ImageStorage {
         }
     }
 
-    pub fn release(self) {}
+    pub fn release(self, device: &DeviceContext) {
+        let mut alloc = device.allocator();
+
+        for (_, image) in self.storage.into_iter() {
+            alloc.destroy_image(&device.device, image.image);
+            device.device.destroy_image_view(image.view);
+        }
+    }
 
     pub fn create(
         &mut self,
@@ -414,7 +417,7 @@ impl ImageStorage {
                     let row_align = limits.min_buffer_copy_pitch_alignment as u32;
                     image_copy_buffer_size(row_align, &data, (upload_width, upload_height))
                 };
-                let (upload_size, row_pitch, texel_size) = upload_nums;
+                let (upload_size, _row_pitch, texel_size) = upload_nums;
 
                 debug_assert!(upload_size >= upload_width as u64 * upload_height as u64 * texel_size as u64);
 
@@ -448,7 +451,7 @@ impl ImageStorage {
             let upload_data = staging_data.as_slice()
                 .iter()
                 .filter_map(|(idx, image, data, staging, upload_nums, upload_dims)| {
-                    let (upload_size, row_pitch, texel_size) = *upload_nums;
+                    let (_upload_size, row_pitch, texel_size) = *upload_nums;
 
                     let (width, height) = *upload_dims;
 

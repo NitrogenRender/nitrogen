@@ -48,7 +48,7 @@ impl Display {
                 &queue_group,
                 gfx::pool::CommandPoolCreateFlags::empty(),
                 1,
-            )
+            ).expect("Can't create command pool")
         };
 
         let (_, formats, _) = surface.compatibility(&device.adapter.physical_device);
@@ -89,6 +89,7 @@ impl Display {
             device
                 .device
                 .create_render_pass(&[attachment], &[subpass], &[dependency])
+                .expect("Can't create renderpass")
         };
 
         let set_layout = device.device.create_descriptor_set_layout(
@@ -109,7 +110,7 @@ impl Display {
                 },
             ],
             &[],
-        );
+        ).expect("Can't create descriptor set layout");
 
         let mut set_pool = device.device.create_descriptor_pool(
             1,
@@ -123,14 +124,14 @@ impl Display {
                     count: 1,
                 },
             ],
-        );
+        ).expect("Can't create descriptor pool");
 
         let desc_set = set_pool.allocate_set(&set_layout).unwrap();
 
         let pipeline_layout = device.device.create_pipeline_layout(
             std::iter::once(&set_layout),
             &[], // TODO push constants
-        );
+        ).expect("Can't create pipeline layout");
 
         let pipeline = {
             use shaderc::*;
@@ -275,7 +276,8 @@ impl Display {
         let (swapchain, backbuffer) =
             device
                 .device
-                .create_swapchain(&mut self.surface, config, old_swapchain);
+                .create_swapchain(&mut self.surface, config, old_swapchain)
+                .expect("Can't create swapchain");
 
         self.swapchain = Some(swapchain);
 
@@ -351,7 +353,7 @@ impl Display {
         };
 
         if let Some(ref mut swapchain) = self.swapchain {
-            let mut swapchain_sem = device.device.create_semaphore();
+            let mut swapchain_sem = device.device.create_semaphore().expect("Can't create swapchain semaphore");
 
             let index =
                 match swapchain.acquire_image(!0, gfx::FrameSync::Semaphore(&mut swapchain_sem)) {
@@ -421,7 +423,7 @@ impl Display {
                 cmd.finish()
             };
 
-            let mut submit_fence = device.device.create_fence(false);
+            let mut submit_fence = device.device.create_fence(false).expect("can't create submission fence");
 
             {
                 let submission = gfx::Submission::new()

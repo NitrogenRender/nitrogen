@@ -24,12 +24,12 @@ winit = { version = "0.17.2", optional = true }
 
 [dependencies.gfx-hal]
 git = "https://github.com/gfx-rs/gfx"
-rev = "bdabfc00f4e259e8650a78451c8d7b7782d18ed4"
+rev = "bd7f058efe78d7626a1cc6fbc0c1d3702fb6d2e7"
 default-features = false
 
 [dependencies.gfx-backend-vulkan]
 git = "https://github.com/gfx-rs/gfx"
-rev = "bdabfc00f4e259e8650a78451c8d7b7782d18ed4"
+rev = "bd7f058efe78d7626a1cc6fbc0c1d3702fb6d2e7"
 default-features = false
 
 [dependencies.gfx-memory]
