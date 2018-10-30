@@ -1,10 +1,14 @@
 pub use super::*;
 
-pub mod image;
-pub mod sampler;
 pub mod buffer;
+pub mod descriptor;
+pub mod image;
+pub mod pipeline;
+pub mod render_pass;
+pub mod sampler;
 pub mod vertex_buffer;
 
+use bitflags::bitflags;
 
 bitflags!(
 

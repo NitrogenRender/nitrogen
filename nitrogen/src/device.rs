@@ -38,59 +38,59 @@ impl DeviceContext {
         let memory_allocator =
             SmartAllocator::new(memory_properties, 256, 64, 1024, 256 * 1024 * 1024);
 
-//        TODO better queue handling than just requiring a `General` queue.
-//
-//        let (device, queues) = {
-//            let mut display_queues = vec![];
-//            let mut render_queues = vec![];
-//            let mut compute_queues = vec![];
-//
-//            adapter
-//                .queue_families
-//                .iter()
-//                .enumerate()
-//                .for_each(|(idx, family)| {
-//                    for surface in surfaces {
-//                        if surface.supports_queue_family(family) {
-//                            display_queues.push(family);
-//                        }
-//                    }
-//
-//                    if family.supports_graphics() {
-//                        render_queues.push(family);
-//                    }
-//                    if family.supports_compute() {
-//                        compute_queues.push(family);
-//                    }
-//                });
-//
-//            let queue_for_display = display_queues[0]; // TODO have proper selection?
-//            let queue_for_rendering = render_queues[0]; // TODO have a proper selection?
-//            let queue_for_compute = compute_queues[0]; // TODO have proper selection?
-//
-//            // deduplicate queues
-//            let mut families = [
-//                queue_for_rendering,
-//                queue_for_display,
-//                queue_for_compute,
-//            ];
-//
-//            let families = families
-//                .iter()
-//                .map(|fam| (*fam, &[1.0; 1][..]))
-//                .collect::<Vec<_>>();
-//
-//            let mut gpu: gfx::Gpu<back::Backend> = adapter
-//                .physical_device
-//                .open(&families[..])
-//                .expect("Can't open device");
-//
-//            let render_queue = gpu.queues.take::<gfx::Graphics>(queue_for_rendering.id());
-//            let display_queue = gpu.queues.take::<gfx::Graphics>(queue_for_display.id());
-//            let compute_queue = gpu.queues.take::<gfx::Compute>(queue_for_compute.id());
-//
-//            (gpu.device, gpu.queues)
-//        };
+        //        TODO better queue handling than just requiring a `General` queue.
+        //
+        //        let (device, queues) = {
+        //            let mut display_queues = vec![];
+        //            let mut render_queues = vec![];
+        //            let mut compute_queues = vec![];
+        //
+        //            adapter
+        //                .queue_families
+        //                .iter()
+        //                .enumerate()
+        //                .for_each(|(idx, family)| {
+        //                    for surface in surfaces {
+        //                        if surface.supports_queue_family(family) {
+        //                            display_queues.push(family);
+        //                        }
+        //                    }
+        //
+        //                    if family.supports_graphics() {
+        //                        render_queues.push(family);
+        //                    }
+        //                    if family.supports_compute() {
+        //                        compute_queues.push(family);
+        //                    }
+        //                });
+        //
+        //            let queue_for_display = display_queues[0]; // TODO have proper selection?
+        //            let queue_for_rendering = render_queues[0]; // TODO have a proper selection?
+        //            let queue_for_compute = compute_queues[0]; // TODO have proper selection?
+        //
+        //            // deduplicate queues
+        //            let mut families = [
+        //                queue_for_rendering,
+        //                queue_for_display,
+        //                queue_for_compute,
+        //            ];
+        //
+        //            let families = families
+        //                .iter()
+        //                .map(|fam| (*fam, &[1.0; 1][..]))
+        //                .collect::<Vec<_>>();
+        //
+        //            let mut gpu: gfx::Gpu<back::Backend> = adapter
+        //                .physical_device
+        //                .open(&families[..])
+        //                .expect("Can't open device");
+        //
+        //            let render_queue = gpu.queues.take::<gfx::Graphics>(queue_for_rendering.id());
+        //            let display_queue = gpu.queues.take::<gfx::Graphics>(queue_for_display.id());
+        //            let compute_queue = gpu.queues.take::<gfx::Compute>(queue_for_compute.id());
+        //
+        //            (gpu.device, gpu.queues)
+        //        };
 
         let (device, queue_group) = adapter
             .open_with(2, |family| {

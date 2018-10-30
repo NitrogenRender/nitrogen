@@ -44,11 +44,13 @@ impl Display {
         let command_pool = {
             let queue_group = device.queue_group();
 
-            device.device.create_command_pool_typed(
-                &queue_group,
-                gfx::pool::CommandPoolCreateFlags::empty(),
-                1,
-            ).expect("Can't create command pool")
+            device
+                .device
+                .create_command_pool_typed(
+                    &queue_group,
+                    gfx::pool::CommandPoolCreateFlags::empty(),
+                    1,
+                ).expect("Can't create command pool")
         };
 
         let (_, formats, _) = surface.compatibility(&device.adapter.physical_device);
@@ -92,46 +94,52 @@ impl Display {
                 .expect("Can't create renderpass")
         };
 
-        let set_layout = device.device.create_descriptor_set_layout(
-            &[
-                pso::DescriptorSetLayoutBinding {
-                    binding: 0,
-                    ty: pso::DescriptorType::SampledImage,
-                    count: 1,
-                    stage_flags: pso::ShaderStageFlags::FRAGMENT,
-                    immutable_samplers: false,
-                },
-                pso::DescriptorSetLayoutBinding {
-                    binding: 1,
-                    ty: pso::DescriptorType::Sampler,
-                    count: 1,
-                    stage_flags: pso::ShaderStageFlags::FRAGMENT,
-                    immutable_samplers: false,
-                },
-            ],
-            &[],
-        ).expect("Can't create descriptor set layout");
+        let set_layout = device
+            .device
+            .create_descriptor_set_layout(
+                &[
+                    pso::DescriptorSetLayoutBinding {
+                        binding: 0,
+                        ty: pso::DescriptorType::SampledImage,
+                        count: 1,
+                        stage_flags: pso::ShaderStageFlags::FRAGMENT,
+                        immutable_samplers: false,
+                    },
+                    pso::DescriptorSetLayoutBinding {
+                        binding: 1,
+                        ty: pso::DescriptorType::Sampler,
+                        count: 1,
+                        stage_flags: pso::ShaderStageFlags::FRAGMENT,
+                        immutable_samplers: false,
+                    },
+                ],
+                &[],
+            ).expect("Can't create descriptor set layout");
 
-        let mut set_pool = device.device.create_descriptor_pool(
-            1,
-            &[
-                pso::DescriptorRangeDesc {
-                    ty: pso::DescriptorType::SampledImage,
-                    count: 1,
-                },
-                pso::DescriptorRangeDesc {
-                    ty: pso::DescriptorType::Sampler,
-                    count: 1,
-                },
-            ],
-        ).expect("Can't create descriptor pool");
+        let mut set_pool = device
+            .device
+            .create_descriptor_pool(
+                1,
+                &[
+                    pso::DescriptorRangeDesc {
+                        ty: pso::DescriptorType::SampledImage,
+                        count: 1,
+                    },
+                    pso::DescriptorRangeDesc {
+                        ty: pso::DescriptorType::Sampler,
+                        count: 1,
+                    },
+                ],
+            ).expect("Can't create descriptor pool");
 
         let desc_set = set_pool.allocate_set(&set_layout).unwrap();
 
-        let pipeline_layout = device.device.create_pipeline_layout(
-            std::iter::once(&set_layout),
-            &[], // TODO push constants
-        ).expect("Can't create pipeline layout");
+        let pipeline_layout = device
+            .device
+            .create_pipeline_layout(
+                std::iter::once(&set_layout),
+                &[], // TODO push constants
+            ).expect("Can't create pipeline layout");
 
         let pipeline = {
             use shaderc::*;
@@ -273,11 +281,10 @@ impl Display {
 
         let old_swapchain = self.swapchain.take();
 
-        let (swapchain, backbuffer) =
-            device
-                .device
-                .create_swapchain(&mut self.surface, config, old_swapchain)
-                .expect("Can't create swapchain");
+        let (swapchain, backbuffer) = device
+            .device
+            .create_swapchain(&mut self.surface, config, old_swapchain)
+            .expect("Can't create swapchain");
 
         self.swapchain = Some(swapchain);
 
@@ -353,7 +360,10 @@ impl Display {
         };
 
         if let Some(ref mut swapchain) = self.swapchain {
-            let mut swapchain_sem = device.device.create_semaphore().expect("Can't create swapchain semaphore");
+            let mut swapchain_sem = device
+                .device
+                .create_semaphore()
+                .expect("Can't create swapchain semaphore");
 
             let index =
                 match swapchain.acquire_image(!0, gfx::FrameSync::Semaphore(&mut swapchain_sem)) {
@@ -423,7 +433,10 @@ impl Display {
                 cmd.finish()
             };
 
-            let mut submit_fence = device.device.create_fence(false).expect("can't create submission fence");
+            let mut submit_fence = device
+                .device
+                .create_fence(false)
+                .expect("can't create submission fence");
 
             {
                 let submission = gfx::Submission::new()

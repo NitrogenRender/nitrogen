@@ -173,7 +173,6 @@ pub unsafe extern "C" fn image_create(
 
     }).collect::<SmallVec<[_; 16]>>();
 
-
     let results = context
         .image_storage
         .create(&context.device_ctx, &internal_create_infos);

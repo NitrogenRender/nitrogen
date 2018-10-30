@@ -2,6 +2,8 @@ use back;
 use gfx;
 use gfxm;
 
+use failure_derive::Fail;
+
 use gfx::image;
 use gfx::Device;
 use gfxm::Factory;
@@ -10,6 +12,7 @@ use gfxm::SmartAllocator;
 use std;
 use std::collections::BTreeSet;
 
+use smallvec::smallvec;
 use smallvec::SmallVec;
 
 use util::storage::{Handle, Storage};
@@ -29,6 +32,12 @@ impl Default for ImageDimension {
     fn default() -> Self {
         ImageDimension::D2 { x: 1, y: 1 }
     }
+}
+
+#[derive(PartialOrd, PartialEq, Debug, Clone, Copy)]
+pub enum ImageSizeMode {
+    SwapChainRelative { width: f32, height: f32 },
+    Absolute { width: u32, height: u32 },
 }
 
 pub type ImageHandle = Handle<Image>;
@@ -198,10 +207,10 @@ impl ImageStorage {
         &mut self,
         device: &DeviceContext,
         create_infos: &[ImageCreateInfo],
-    ) -> Vec<Result<ImageHandle>> {
+    ) -> SmallVec<[Result<ImageHandle>; 16]> {
         use gfx::format::Format;
 
-        let mut result = Vec::with_capacity(create_infos.len());
+        let mut result = SmallVec::with_capacity(create_infos.len());
 
         let mut allocator = device.allocator();
 
@@ -321,8 +330,8 @@ impl ImageStorage {
         device: &DeviceContext,
         transfer: &mut TransferContext,
         images: &[(ImageHandle, ImageUploadInfo)],
-    ) -> Vec<Result<()>> {
-        let mut results = vec![Ok(()); images.len()];
+    ) -> SmallVec<[Result<()>; 16]> {
+        let mut results = smallvec![Ok(()); images.len()];
 
         let mut data: SmallVec<[_; 16]> = images.iter().enumerate().collect();
         data.as_mut_slice()
@@ -419,7 +428,9 @@ impl ImageStorage {
                 };
                 let (upload_size, _row_pitch, texel_size) = upload_nums;
 
-                debug_assert!(upload_size >= upload_width as u64 * upload_height as u64 * texel_size as u64);
+                debug_assert!(
+                    upload_size >= upload_width as u64 * upload_height as u64 * texel_size as u64
+                );
 
                 let staging_buffer = match allocator.create_buffer(
                     &device.device,
@@ -448,7 +459,8 @@ impl ImageStorage {
             }).collect::<SmallVec<[_; 16]>>();
 
         {
-            let upload_data = staging_data.as_slice()
+            let upload_data = staging_data
+                .as_slice()
                 .iter()
                 .filter_map(|(idx, image, data, staging, upload_nums, upload_dims)| {
                     let (_upload_size, row_pitch, texel_size) = *upload_nums;
@@ -463,7 +475,8 @@ impl ImageStorage {
 
                         let mut writer = match device
                             .device
-                            .acquire_mapping_writer(staging.memory(), range) {
+                            .acquire_mapping_writer(staging.memory(), range)
+                        {
                             Err(e) => {
                                 results[*idx] = Err(e.into());
                                 return None;
@@ -475,11 +488,10 @@ impl ImageStorage {
                         // staging buffer might be bigger than in the upload data, so we need to construct
                         // a slice for each row instead of just copying *everything*
                         for y in 0..height as usize {
-
                             let src_start = y * (width as usize) * texel_size;
                             let src_end = (y + 1) * (width as usize) * texel_size;
 
-                            let row = &data.data[src_start .. src_end];
+                            let row = &data.data[src_start..src_end];
 
                             let dst_start = y * row_pitch as usize;
                             let dst_end = dst_start + row.len();
@@ -520,7 +532,7 @@ impl ImageStorage {
                                 width,
                                 height,
                                 depth: 1,
-                            }
+                            },
                         },
                     };
 
@@ -530,15 +542,9 @@ impl ImageStorage {
             transfer.copy_buffers_to_images(device, upload_data.as_slice());
         }
 
-        staging_data.into_iter()
-            .for_each(|(
-                    _,
-                    _,
-                    _,
-                    staging_buffer,
-                    _,
-                    _,
-                )| {
+        staging_data
+            .into_iter()
+            .for_each(|(_, _, _, staging_buffer, _, _)| {
                 allocator.destroy_buffer(&device.device, staging_buffer);
             });
 

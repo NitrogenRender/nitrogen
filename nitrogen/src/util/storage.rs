@@ -124,7 +124,6 @@ impl<T> Storage<T> {
     }
 }
 
-
 use std::iter::IntoIterator;
 
 pub struct StorageIter<T> {

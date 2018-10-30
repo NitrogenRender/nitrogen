@@ -1,5 +1,5 @@
-use gfx;
 use back;
+use gfx;
 
 pub type GraphicsPipeline = <back::Backend as gfx::Backend>::GraphicsPipeline;
 pub type PipelineLayout = <back::Backend as gfx::Backend>::PipelineLayout;
@@ -14,4 +14,4 @@ pub type RenderPass = <back::Backend as gfx::Backend>::RenderPass;
 pub type Image = <back::Backend as gfx::Backend>::Image;
 pub type ImageView = <back::Backend as gfx::Backend>::ImageView;
 pub type CommandPool = <back::Backend as gfx::Backend>::CommandPool;
-
+pub type ShaderModule = <back::Backend as gfx::Backend>::ShaderModule;

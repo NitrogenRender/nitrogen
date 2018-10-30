@@ -2,17 +2,21 @@ use back;
 use gfx;
 use gfxm;
 
+use bitflags::bitflags;
+use failure_derive::Fail;
+
 use std;
 use std::collections::BTreeMap;
 
 use device::DeviceContext;
 use transfer::TransferContext;
 
-use util::storage::{Handle,  Storage};
+use util::storage::{Handle, Storage};
 
 use gfxm::Factory;
 use gfxm::SmartAllocator;
 
+use smallvec::smallvec;
 use smallvec::SmallVec;
 
 use resources::MemoryProperties;
@@ -153,15 +157,14 @@ impl BufferStorage {
         }
     }
 
-    pub fn release(self) {
-    }
+    pub fn release(self) {}
 
     pub fn create(
         &mut self,
         device: &DeviceContext,
         create_infos: &[BufferCreateInfo],
-    ) -> Vec<Result<BufferHandle>> {
-        let mut results = Vec::with_capacity(create_infos.len());
+    ) -> SmallVec<[Result<BufferHandle>; 16]> {
+        let mut results = SmallVec::with_capacity(create_infos.len());
 
         // TODO This is a big critical section, need to check if it's better to do
         // a lot of small locks or just this one big one.
@@ -212,7 +215,7 @@ impl BufferStorage {
             match ty {
                 BufferType::DeviceAccessible => {
                     self.local_buffers.insert(handle.id(), buffer);
-                },
+                }
                 BufferType::HostAccessible => {
                     self.host_visible_buffers.insert(handle.id(), buffer);
                 }
@@ -232,16 +235,12 @@ impl BufferStorage {
         for handle in buffers {
             let id = handle.id();
             let buffer = match self.storage.remove(*handle) {
-                Some(BufferType::DeviceAccessible) => {
-                    self.local_buffers.remove(&id).unwrap()
-                },
-                Some(BufferType::HostAccessible) => {
-                    self.host_visible_buffers.remove(&id).unwrap()
-                },
-                Some(BufferType::UnAccessible) => {
-                    self.other_buffers.remove(&id).unwrap()
+                Some(BufferType::DeviceAccessible) => self.local_buffers.remove(&id).unwrap(),
+                Some(BufferType::HostAccessible) => self.host_visible_buffers.remove(&id).unwrap(),
+                Some(BufferType::UnAccessible) => self.other_buffers.remove(&id).unwrap(),
+                _ => {
+                    return;
                 }
-                _ => { return; }
             };
 
             allocator.destroy_buffer(&device.device, buffer.buffer);
@@ -252,18 +251,17 @@ impl BufferStorage {
         &mut self,
         device: &DeviceContext,
         transfer: &mut TransferContext,
-        data: &[(BufferHandle, BufferUploadInfo)]
-    ) -> Vec<Result<()>> {
-        let mut results = vec![Ok(()); data.len()];
+        data: &[(BufferHandle, BufferUploadInfo)],
+    ) -> SmallVec<[Result<()>; 16]> {
+        let mut results = smallvec![Ok(()); data.len()];
 
         // sort for linear access pattern
         let mut data: SmallVec<[_; 16]> = data.iter().enumerate().collect();
-        data.as_mut_slice().sort_by_key(|(_, (handle, _))| handle.id());
-
+        data.as_mut_slice()
+            .sort_by_key(|(_, (handle, _))| handle.id());
 
         // categorize buffers
         let (cpu_accessible, dev_local, other) = {
-
             let mut cpu_accessible = SmallVec::<[_; 16]>::new();
             let mut dev_local = SmallVec::<[_; 16]>::new();
             let mut other = SmallVec::<[_; 16]>::new();
@@ -279,10 +277,10 @@ impl BufferStorage {
                 match ty {
                     BufferType::HostAccessible => {
                         cpu_accessible.push((idx, handle, data));
-                    },
+                    }
                     BufferType::DeviceAccessible => {
                         dev_local.push((idx, handle, data));
-                    },
+                    }
                     BufferType::UnAccessible => {
                         other.push((idx, handle, data));
                     }
@@ -291,7 +289,6 @@ impl BufferStorage {
 
             (cpu_accessible, dev_local, other)
         };
-
 
         // Can't write to those...
         for (idx, _, _) in other {
@@ -319,7 +316,8 @@ impl BufferStorage {
 
         let mut allocator = device.allocator();
         let staging_data = {
-            dev_local.as_slice()
+            dev_local
+                .as_slice()
                 .iter()
                 .map(|(idx, handle, data)| {
                     let buffer = self.local_buffers.get(&handle.id()).unwrap();
@@ -331,56 +329,52 @@ impl BufferStorage {
                     } else {
                         (*idx, Some((data, buffer)))
                     }
-                })
-                .filter_map(|(idx, res)| {
+                }).filter_map(|(idx, res)| {
                     let (data, buffer) = match res {
                         None => {
                             results[idx] = Err(BufferError::UploadOutOfBounds);
                             return None;
-                        },
-                        Some((data, buffer)) => (data, buffer)
+                        }
+                        Some((data, buffer)) => (data, buffer),
                     };
 
-
-                    use gfx::memory::Properties;
                     use gfx::buffer::Usage;
+                    use gfx::memory::Properties;
 
                     let result = allocator.create_buffer(
                         &device.device,
-                        (gfxm::Type::ShortLived, Properties::CPU_VISIBLE | Properties::COHERENT),
+                        (
+                            gfxm::Type::ShortLived,
+                            Properties::CPU_VISIBLE | Properties::COHERENT,
+                        ),
                         data.data.len() as u64,
-                        Usage::TRANSFER_SRC | Usage::TRANSFER_DST
+                        Usage::TRANSFER_SRC | Usage::TRANSFER_DST,
                     );
 
                     match result {
                         Err(e) => {
                             results[idx] = Err(e.into());
                             None
-                        },
-                        Ok(staging) => {
-                            Some((idx, data, buffer, staging))
                         }
+                        Ok(staging) => Some((idx, data, buffer, staging)),
                     }
-                })
-                .collect::<SmallVec<[_; 16]>>()
+                }).collect::<SmallVec<[_; 16]>>()
         };
 
         // do copying and writing
         {
-            let buffer_transfers = staging_data.as_slice()
+            let buffer_transfers = staging_data
+                .as_slice()
                 .iter()
                 .filter_map(|(idx, data, buffer, staging)| {
                     match write_data_to_buffer(device, staging, 0, data.data) {
                         Err(e) => {
                             results[*idx] = Err(e.into());
                             None
-                        },
-                        Ok(()) => {
-                            Some((data, buffer, staging))
                         }
+                        Ok(()) => Some((data, buffer, staging)),
                     }
-                })
-                .map(|(data, buffer, staging)| {
+                }).map(|(data, buffer, staging)| {
                     use transfer::BufferTransfer;
 
                     BufferTransfer {
@@ -389,21 +383,17 @@ impl BufferStorage {
                         offset: data.offset,
                         data: data.data,
                     }
-                })
-                .collect::<SmallVec<[_; 16]>>();
+                }).collect::<SmallVec<[_; 16]>>();
 
             transfer.copy_buffers(device, buffer_transfers.as_slice());
         }
 
-
-        staging_data.into_iter()
-            .for_each(|(_, _, _, staging)| {
-                allocator.destroy_buffer(&device.device, staging);
-            });
+        staging_data.into_iter().for_each(|(_, _, _, staging)| {
+            allocator.destroy_buffer(&device.device, staging);
+        });
 
         results
     }
-
 }
 
 fn write_data_to_buffer(
@@ -426,14 +416,12 @@ fn write_data_to_buffer(
     Ok(())
 }
 
-
 fn buffer_type(properties: gfx::memory::Properties, usage: gfx::buffer::Usage) -> BufferType {
-
-    use gfx::memory::Properties;
     use gfx::buffer::Usage;
+    use gfx::memory::Properties;
 
-    let is_device_accessible = properties.contains(Properties::DEVICE_LOCAL) &&
-        usage.contains(Usage::TRANSFER_DST);
+    let is_device_accessible =
+        properties.contains(Properties::DEVICE_LOCAL) && usage.contains(Usage::TRANSFER_DST);
     let is_cpu_accessible = properties.contains(Properties::CPU_VISIBLE | Properties::COHERENT);
 
     if is_device_accessible {

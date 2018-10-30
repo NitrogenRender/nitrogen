@@ -1,4 +1,3 @@
-
 use gfx::image;
 use gfx::Device;
 
@@ -6,6 +5,8 @@ use device::DeviceContext;
 
 use util::storage;
 use util::storage::Storage;
+
+use smallvec::SmallVec;
 
 use types::Sampler;
 
@@ -88,16 +89,17 @@ impl SamplerStorage {
         &mut self,
         device: &DeviceContext,
         create_infos: &[SamplerCreateInfo],
-    ) -> Vec<SamplerHandle> {
-
-        let mut results = Vec::with_capacity(create_infos.len());
+    ) -> SmallVec<[SamplerHandle; 16]> {
+        let mut results = SmallVec::with_capacity(create_infos.len());
 
         for create_info in create_infos {
-
             let create_info = create_info.clone().into();
 
             let sampler = {
-                device.device.create_sampler(create_info).expect("Can't create sampler")
+                device
+                    .device
+                    .create_sampler(create_info)
+                    .expect("Can't create sampler")
             };
 
             let (handle, _) = self.storage.insert(sampler);
@@ -121,7 +123,7 @@ impl SamplerStorage {
             match self.storage.remove(*handle) {
                 Some(sampler) => {
                     device.device.destroy_sampler(sampler);
-                },
+                }
                 None => {}
             }
         }
