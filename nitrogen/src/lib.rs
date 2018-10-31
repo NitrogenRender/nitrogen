@@ -31,6 +31,8 @@ pub mod util;
 pub use util::storage;
 pub use util::transfer;
 
+pub use util::CowString;
+
 use storage::{Handle, Storage};
 
 pub mod resources;
@@ -200,11 +202,11 @@ impl Context {
         self.graph_storage.create()
     }
 
-    pub fn graph_add_pass(&mut self, graph: graph::GraphHandle, name: &str, info: graph::PassInfo, pass_impl: Box<dyn graph::PassImpl>) -> graph::PassId {
+    pub fn graph_add_pass(&mut self, graph: graph::GraphHandle, name: CowString, info: graph::PassInfo, pass_impl: Box<dyn graph::PassImpl>) -> graph::PassId {
         self.graph_storage.add_pass(graph, name, info, pass_impl)
     }
 
-    pub fn graph_add_output_image(&mut self, graph: graph::GraphHandle, image_name: &str) -> bool {
+    pub fn graph_add_output_image(&mut self, graph: graph::GraphHandle, image_name: CowString) -> bool {
         self.graph_storage.add_output_image(graph, image_name)
     }
 
@@ -213,6 +215,6 @@ impl Context {
     }
 
     pub fn graph_construct(&mut self, graph: graph::GraphHandle) {
-        self.graph_storage.construct(graph)
+        self.graph_storage.construct(graph);
     }
 }

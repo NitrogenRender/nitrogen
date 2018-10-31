@@ -3,14 +3,19 @@ use nitrogen::graph::PassImpl;
 extern crate image as img;
 extern crate nitrogen;
 extern crate winit;
+extern crate env_logger;
+extern crate log;
 
 use nitrogen::graph;
 use nitrogen::image;
 
-#[macro_use]
-extern crate log;
+use log::debug;
 
 fn main() {
+
+    std::env::set_var("RUST_LOG", "debug");
+    env_logger::init();
+
     let mut events = winit::EventsLoop::new();
     let window = winit::Window::new(&events).unwrap();
 
@@ -135,7 +140,7 @@ fn main() {
             resized = false;
         }
 
-        let graph_constructed = ntg.graph_construct(graph);
+        ntg.graph_construct(graph);
 
         ntg.displays[display].present(
             &ntg.device_ctx,
@@ -180,9 +185,7 @@ fn setup_graphs(ntg: &mut nitrogen::Context) -> graph::GraphHandle {
                     }
                 };
 
-                builder.create_image("TestColor", image_create);
-
-                builder.write_image("TestColor");
+                builder.image_create("TestColor".into(), image_create);
 
                 builder.enable();
             }
@@ -192,10 +195,54 @@ fn setup_graphs(ntg: &mut nitrogen::Context) -> graph::GraphHandle {
             }
         }
 
-        ntg.graph_add_pass(graph, "TestPass", pass_info, Box::new(TestPass {}));
+        ntg.graph_add_pass(graph, "TestPass".into(), pass_info, Box::new(TestPass {}));
 
-        ntg.graph_add_output_image(graph, "TestColor");
     };
+
+    {
+        let pass_info = nitrogen::graph::PassInfo::Graphics {
+            vertex_desc: None,
+            shaders: nitrogen::graph::Shaders {
+                vertex: include_str!("../shaders/test.vert").into(),
+                fragment: Some(include_str!("../shaders/test.frag").into()),
+            },
+            primitive: nitrogen::pipeline::Primitive::TriangleList,
+            blend_mode: nitrogen::render_pass::BlendMode::Alpha,
+        };
+
+        struct FlipPass {};
+
+        impl PassImpl for FlipPass {
+            fn setup(&mut self, builder: &mut graph::GraphBuilder) {
+                let image_create = nitrogen::graph::ImageCreateInfo {
+                    format: nitrogen::image::ImageFormat::RgbaUnorm,
+                    size_mode: nitrogen::image::ImageSizeMode::SwapChainRelative {
+                        width: 1.0,
+                        height: 1.0,
+                    }
+                };
+
+                builder.image_copy("TestColor".into(), "TestColorBlurred".into());
+
+                builder.image_create("TestColorFlipped".into(), image_create);
+
+                builder.image_read("TestColor".into());
+
+                builder.enable();
+            }
+
+            fn execute(&self, command_buffer: &mut graph::CommandBuffer) {
+                command_buffer.draw(0..6, 0..1)
+            }
+        }
+
+        ntg.graph_add_pass(graph, "FlipPass".into(), pass_info, Box::new(FlipPass {}));
+
+    };
+
+
+
+    ntg.graph_add_output_image(graph, "TestColorFlip".into());
 
     graph
 

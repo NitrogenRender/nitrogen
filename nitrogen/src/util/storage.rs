@@ -1,10 +1,12 @@
 use slab::Slab;
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
+use std::hash::{Hash, Hasher};
 
 pub type Generation = u64;
 pub type Id = usize;
 
+#[derive(Debug)]
 pub struct Handle<T>(pub Id, pub Generation, PhantomData<T>);
 
 // huh. Derive doesn't work here because Rust can't prove that `T` is Copy.
@@ -15,6 +17,19 @@ impl<T> Clone for Handle<T> {
         *self
     }
 }
+impl<T> Hash for Handle<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+        self.1.hash(state);
+    }
+}
+impl<T> PartialEq for Handle<T> {
+    fn eq(&self, other: &Handle<T>) -> bool {
+        self.id() == other.id() && self.generation() == other.generation()
+    }
+}
+impl<T> Eq for Handle<T> {}
+
 
 impl<T> Handle<T> {
     pub fn new(id: Id, gen: Generation) -> Self {
