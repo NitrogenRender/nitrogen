@@ -135,9 +135,9 @@ pub struct BufferCreateInfo {
 }
 
 #[derive(Copy, Clone)]
-pub struct BufferUploadInfo<'a> {
+pub struct BufferUploadInfo<'a, T: 'a> {
     pub offset: u64,
-    pub data: &'a [u8],
+    pub data: &'a [T],
 }
 
 pub struct BufferStorage {
@@ -247,11 +247,11 @@ impl BufferStorage {
         }
     }
 
-    pub fn upload_data(
+    pub fn upload_data<T>(
         &mut self,
         device: &DeviceContext,
         transfer: &mut TransferContext,
-        data: &[(BufferHandle, BufferUploadInfo)],
+        data: &[(BufferHandle, BufferUploadInfo<T>)],
     ) -> SmallVec<[Result<()>; 16]> {
         let mut results = smallvec![Ok(()); data.len()];
 
@@ -302,7 +302,9 @@ impl BufferStorage {
             let upload_fits = data.offset + data.data.len() as u64 <= buffer.size;
 
             let result = if upload_fits {
-                write_data_to_buffer(device, &buffer.buffer, data.offset, data.data).into()
+                unsafe {
+                    write_data_to_buffer(device, &buffer.buffer, data.offset, to_u8_slice(data.data)).into()
+                }
             } else {
                 Err(BufferError::UploadOutOfBounds)
             };
@@ -367,7 +369,10 @@ impl BufferStorage {
                 .as_slice()
                 .iter()
                 .filter_map(|(idx, data, buffer, staging)| {
-                    match write_data_to_buffer(device, staging, 0, data.data) {
+
+                    let upload_sice = unsafe { to_u8_slice(data.data) };
+
+                    match write_data_to_buffer(device, staging, 0, upload_sice) {
                         Err(e) => {
                             results[*idx] = Err(e.into());
                             None
@@ -377,11 +382,13 @@ impl BufferStorage {
                 }).map(|(data, buffer, staging)| {
                     use transfer::BufferTransfer;
 
+                    let upload_sice = unsafe { to_u8_slice(data.data) };
+
                     BufferTransfer {
                         src: &staging,
                         dst: &buffer.buffer,
                         offset: data.offset,
-                        data: data.data,
+                        data: upload_sice,
                     }
                 }).collect::<SmallVec<[_; 16]>>();
 
@@ -394,6 +401,18 @@ impl BufferStorage {
 
         results
     }
+}
+
+unsafe fn to_u8_slice<T>(slice: &[T]) -> &[u8] {
+    use std::mem;
+
+    let t_ptr = slice.as_ptr();
+    let t_len = slice.len();
+
+    let b_ptr = mem::transmute(t_ptr);
+    let b_len = t_len * mem::size_of::<T>();
+
+    std::slice::from_raw_parts(b_ptr, b_len)
 }
 
 fn write_data_to_buffer(

@@ -2,6 +2,7 @@ use device::DeviceContext;
 use storage::{Handle, Storage};
 
 use render_pass::{RenderPassHandle, RenderPassStorage};
+use vertex_attrib::{VertexAttribHandle, VertexAttribStorage};
 
 use smallvec::SmallVec;
 
@@ -51,13 +52,14 @@ pub type Result<T> = std::result::Result<T, PipelineError>;
 
 pub type PipelineHandle = Handle<Pipeline>;
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum Pipeline {
     Graphics,
     Compute,
 }
 
-struct GraphicsPipeline {
-    pipeline: types::GraphicsPipeline,
+pub(crate) struct GraphicsPipeline {
+    pub(crate) pipeline: types::GraphicsPipeline,
 }
 
 struct ComputePipeline {}
@@ -93,6 +95,8 @@ impl From<Primitive> for gfx::Primitive {
 pub struct GraphicsPipelineCreateInfo<'a> {
     pub primitive: Primitive,
 
+    pub vertex_attribs: Option<VertexAttribHandle>,
+
     pub shader_vertex: ShaderInfo<'a>,
     pub shader_fragment: Option<ShaderInfo<'a>>,
     pub shader_geometry: Option<ShaderInfo<'a>>,
@@ -117,6 +121,7 @@ impl PipelineStorage {
         &mut self,
         device: &DeviceContext,
         render_pass_storage: &RenderPassStorage,
+        vertex_attrib_storage: &VertexAttribStorage,
         render_pass_handle: RenderPassHandle,
         create_infos: &[GraphicsPipelineCreateInfo],
     ) -> SmallVec<[Result<PipelineHandle>; 16]> {
@@ -126,6 +131,7 @@ impl PipelineStorage {
                 self.create_graphics_pipeline(
                     device,
                     render_pass_storage,
+                    vertex_attrib_storage,
                     render_pass_handle,
                     create_info.clone(),
                 )
@@ -137,6 +143,7 @@ impl PipelineStorage {
         &mut self,
         device: &DeviceContext,
         render_pass_storage: &RenderPassStorage,
+        vertex_attrib_storage: &VertexAttribStorage,
         render_pass_handle: RenderPassHandle,
         create_info: GraphicsPipelineCreateInfo,
     ) -> Result<PipelineHandle> {
@@ -219,6 +226,7 @@ impl PipelineStorage {
 
             let rasterizer = { pso::Rasterizer::FILL };
 
+            // TODO what about descriptor sets?
             let layout = { device.device.create_pipeline_layout(&[], &[])? };
 
             let render_pass = render_pass_storage.raw(render_pass_handle).unwrap();
@@ -230,6 +238,18 @@ impl PipelineStorage {
 
             let mut desc =
                 pso::GraphicsPipelineDesc::new(shaders, primitive, rasterizer, &layout, subpass);
+
+            // TODO add attributes
+            if let Some(handle) = create_info.vertex_attribs {
+                if let Some(data) = vertex_attrib_storage.raw(handle) {
+                    desc.attributes.extend_from_slice(&data[..]);
+                }
+            }
+
+            desc.blender.targets.push(pso::ColorBlendDesc(
+                pso::ColorMask::ALL,
+                pso::BlendState::ALPHA,
+            ));
 
             device.device.create_graphics_pipeline(&desc, None)?
         };
@@ -253,6 +273,19 @@ impl PipelineStorage {
             .insert(handle.id(), GraphicsPipeline { pipeline });
 
         Ok(handle)
+    }
+
+    pub(crate) fn raw_graphics(&self, handle: PipelineHandle) -> Option<&GraphicsPipeline> {
+        if self.storage.is_alive(handle) {
+            let ty = self.storage[handle];
+            if ty == Pipeline::Graphics {
+                Some(&self.graphic_pipelines[&handle.0])
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 
     pub fn release(self) {}

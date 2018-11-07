@@ -1,5 +1,5 @@
 extern crate gfx_backend_vulkan as back;
-extern crate gfx_hal as gfx;
+pub extern crate gfx_hal as gfx;
 extern crate gfx_memory as gfxm;
 
 extern crate smallvec;
@@ -40,11 +40,13 @@ pub use resources::image;
 pub use resources::pipeline;
 pub use resources::render_pass;
 pub use resources::sampler;
+pub use resources::vertex_attrib;
 
 pub mod graph;
 
 #[cfg(feature = "x11")]
 use ash::vk;
+
 
 pub type DisplayHandle = Handle<Display>;
 
@@ -64,6 +66,7 @@ pub struct Context {
     pub image_storage: image::ImageStorage,
     pub sampler_storage: sampler::SamplerStorage,
     pub buffer_storage: buffer::BufferStorage,
+    pub vertex_attrib_storage: vertex_attrib::VertexAttribStorage,
 
     pub displays: Storage<Display>,
     pub transfer: transfer::TransferContext,
@@ -81,6 +84,7 @@ impl Context {
         let image_storage = image::ImageStorage::new();
         let sampler_storage = sampler::SamplerStorage::new();
         let buffer_storage = buffer::BufferStorage::new();
+        let vertex_attrib_storage = vertex_attrib::VertexAttribStorage::new();
         let pipeline_storage = pipeline::PipelineStorage::new();
         let render_pass_storage = render_pass::RenderPassStorage::new();
 
@@ -96,6 +100,7 @@ impl Context {
             image_storage,
             sampler_storage,
             buffer_storage,
+            vertex_attrib_storage,
             graph_storage,
         }
     }
@@ -198,6 +203,16 @@ impl Context {
         self.sampler_storage.destroy(&self.device_ctx, handles)
     }
 
+    // vertex attribs
+
+    pub fn vertex_attribs_create(&mut self, infos: &[vertex_attrib::VertexAttribInfo]) -> SmallVec<[vertex_attrib::VertexAttribHandle; 16]> {
+        self.vertex_attrib_storage.create(infos)
+    }
+
+    pub fn vertex_attribs_destroy(&mut self, handles: &[vertex_attrib::VertexAttribHandle]) {
+        self.vertex_attrib_storage.destroy(handles);
+    }
+
     // graph
 
     pub fn graph_create(&mut self) -> graph::GraphHandle {
@@ -208,8 +223,8 @@ impl Context {
         self.graph_storage.add_pass(graph, name, info, pass_impl)
     }
 
-    pub fn graph_add_output_image(&mut self, graph: graph::GraphHandle, image_name: CowString) {
-        self.graph_storage.add_output_image(graph, image_name);
+    pub fn graph_set_output_image(&mut self, graph: graph::GraphHandle, image_name: CowString) {
+        self.graph_storage.set_output_image(graph, image_name);
     }
 
     pub fn graph_destroy(&mut self, graph: graph::GraphHandle) {
@@ -221,16 +236,53 @@ impl Context {
     }
 
 
-    pub fn render_graph(&mut self, graph: graph::GraphHandle, exec_context: &graph::ExecutionContext, resources: Option<graph::GraphResources>) -> graph::GraphResources {
+    pub fn render_graph(&mut self, graph: graph::GraphHandle, exec_context: &graph::ExecutionContext) {
         self.graph_storage.execute(
             &self.device_ctx,
             &mut self.render_pass_storage,
             &mut self.pipeline_storage,
+            &self.vertex_attrib_storage,
             &mut self.image_storage,
             &mut self.sampler_storage,
             graph,
             exec_context,
-            resources,
-        )
+        );
+    }
+
+    // display
+
+    pub fn display_present(&mut self, display: DisplayHandle, graph_handle: graph::GraphHandle) {
+
+        if !self.graph_storage.graphs.is_alive(graph_handle) {
+            return;
+        }
+
+        let graph = &self.graph_storage.graphs[graph_handle];
+
+        if !self.graph_storage.compiled_graphs.contains_key(&graph_handle) {
+            return;
+        }
+        let cgraph = &self.graph_storage.compiled_graphs[&graph_handle];
+
+        if !self.graph_storage.resources.contains_key(&graph_handle) {
+            return;
+        }
+
+        let resources = &self.graph_storage.resources[&graph_handle];
+
+        let (image_handle, sampler_handle) = if let Some(name) = &graph.output_image {
+            let id = cgraph.image_name_lookup[name];
+            resources.images[id.0].unwrap()
+        } else {
+            return;
+        };
+
+        self.displays[display].present(
+            &self.device_ctx,
+            &self.image_storage,
+            image_handle,
+            &self.sampler_storage,
+            sampler_handle,
+        );
     }
 }

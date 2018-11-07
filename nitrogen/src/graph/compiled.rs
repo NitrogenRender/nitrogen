@@ -42,11 +42,11 @@ impl CompiledGraph {
             let mut images =
                 Vec::with_capacity(cgraph.image_copies.len() + cgraph.image_creates.len());
 
-            for (name, info) in cgraph.image_creates {
+            for (name, info) in &cgraph.image_creates {
                 let image_id = ImageId(images.len());
-                images.push((name.clone(), ImageCreateType::Create(info.1)));
+                images.push((name.clone(), ImageCreateType::Create(info.1.clone())));
 
-                lookup.insert(name, image_id);
+                lookup.insert(name.clone(), image_id);
 
                 image_creates
                     .entry(info.0)
@@ -54,11 +54,11 @@ impl CompiledGraph {
                     .insert(image_id);
             }
 
-            for (name, info) in cgraph.image_copies {
+            for (name, info) in &cgraph.image_copies {
                 let image_id = ImageId(images.len());
                 images.push((name.clone(), ImageCreateType::Copy(lookup[&info.1])));
 
-                lookup.insert(name, image_id);
+                lookup.insert(name.clone(), image_id);
 
                 image_copies
                     .entry(info.0)
@@ -111,6 +111,26 @@ impl CompiledGraph {
                         .or_insert(HashSet::new())
                         .insert(*image_id);
                 }
+            });
+        cgraph
+            .image_creates
+            .iter()
+            .for_each(|(name, (pass,_))| {
+                let image_id = &lookup[name];
+                image_writes
+                    .entry(*pass)
+                    .or_insert(HashSet::new())
+                    .insert(*image_id);
+            });
+        cgraph
+            .image_copies
+            .iter()
+            .for_each(|(name, (pass,_))| {
+                let image_id = &lookup[name];
+                image_writes
+                    .entry(*pass)
+                    .or_insert(HashSet::new())
+                    .insert(*image_id);
             });
 
         CompiledGraph {

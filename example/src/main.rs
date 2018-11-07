@@ -13,6 +13,20 @@ use log::debug;
 
 use std::borrow::Cow;
 
+#[derive(Debug, Clone, Copy)]
+struct Vertex {
+    pub pos: [f32; 2],
+    pub uv: [f32; 2],
+}
+
+
+const TRIANGLE: [Vertex; 3] = [
+    Vertex { pos: [0.0, -0.5], uv: [0.0, 0.0] }, // TOP
+    Vertex { pos: [-0.5, 0.5], uv: [0.0, 0.0] }, // LEFT
+    Vertex { pos: [0.5, 0.5], uv: [0.0, 0.0] }, // RIGHT
+];
+
+
 fn main() {
 
     std::env::set_var("RUST_LOG", "debug");
@@ -91,21 +105,19 @@ fn main() {
 
     let buffer = {
         let create_info = nitrogen::buffer::BufferCreateInfo {
-            size: 64,
+            size: std::mem::size_of_val(&TRIANGLE) as u64,
             is_transient: false,
             usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC,
             properties: nitrogen::resources::MemoryProperties::DEVICE_LOCAL,
         };
-        ntg.buffer_storage
+        let buffer = ntg.buffer_storage
             .create(&ntg.device_ctx, &[create_info])
             .remove(0)
-            .unwrap()
-    };
+            .unwrap();
 
-    {
         let upload_data = nitrogen::buffer::BufferUploadInfo {
             offset: 0,
-            data: &[],
+            data: &TRIANGLE,
         };
 
         ntg.buffer_storage.upload_data(
@@ -113,14 +125,39 @@ fn main() {
             &mut ntg.transfer,
             &[(buffer, upload_data)],
         );
-    }
 
-    let graph = setup_graphs(&mut ntg);
+        buffer
+    };
+
+
+    let vertex_attrib = {
+        let info = nitrogen::vertex_attrib::VertexAttribInfo {
+            buffer_infos: &[
+                nitrogen::vertex_attrib::VertexAttribBufferInfo {
+                    index: 0,
+                    elements: &[
+                        nitrogen::vertex_attrib::VertexAttribBufferElementInfo {
+                            location: 0,
+                            format: nitrogen::gfx::format::Format::Rg32Float,
+                            offset: 0,
+                        },
+                        nitrogen::vertex_attrib::VertexAttribBufferElementInfo {
+                            location: 0,
+                            format: nitrogen::gfx::format::Format::Rg32Float,
+                            offset: 8,
+                        }
+                    ]
+                }
+            ]
+        };
+
+        ntg.vertex_attribs_create(&[info]).remove(0)
+    };
+
+    let graph = setup_graphs(&mut ntg, vertex_attrib);
 
     let mut running = true;
     let mut resized = true;
-
-    let mut resources = None;
 
     while running {
         events.poll_events(|event| match event {
@@ -150,17 +187,9 @@ fn main() {
             reference_size: (400, 400),
         };
 
-        let tmp_resources = ntg.render_graph(graph, &exec_context, resources);
+        ntg.render_graph(graph, &exec_context);
 
-        resources = Some(tmp_resources);
-
-        ntg.displays[display].present(
-            &ntg.device_ctx,
-            &ntg.image_storage,
-            image,
-            &ntg.sampler_storage,
-            sampler,
-        );
+        ntg.display_present(display, graph);
     }
 
     ntg.buffer_storage.destroy(&ntg.device_ctx, &[buffer]);
@@ -171,13 +200,13 @@ fn main() {
     ntg.release();
 }
 
-fn setup_graphs(ntg: &mut nitrogen::Context) -> graph::GraphHandle {
+fn setup_graphs(ntg: &mut nitrogen::Context, vertex_attrib: nitrogen::vertex_attrib::VertexAttribHandle) -> graph::GraphHandle {
     let graph = ntg.graph_create();
 
     {
 
         let pass_info = nitrogen::graph::PassInfo::Graphics {
-            vertex_desc: None,
+            vertex_attrib: None, //Some(vertex_attrib),
             shaders: nitrogen::graph::Shaders {
                 vertex: nitrogen::graph::ShaderInfo {
                     content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/test.hlsl.vert.spirv"))),
@@ -211,6 +240,7 @@ fn setup_graphs(ntg: &mut nitrogen::Context) -> graph::GraphHandle {
             }
 
             fn execute(&self, command_buffer: &mut graph::CommandBuffer) {
+
                 command_buffer.draw(0..6, 0..1)
             }
         }
@@ -219,101 +249,7 @@ fn setup_graphs(ntg: &mut nitrogen::Context) -> graph::GraphHandle {
 
     };
 
-    if false {
-        let pass_info = nitrogen::graph::PassInfo::Graphics {
-            vertex_desc: None,
-            shaders: nitrogen::graph::Shaders {
-                vertex: nitrogen::graph::ShaderInfo {
-                    content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/test.vert.spirv"))),
-                    entry: "main".into(),
-                } ,
-                fragment: Some(nitrogen::graph::ShaderInfo {
-                    content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/test.frag.spirv"))),
-                    entry: "main".into(),
-                }),
-            },
-            primitive: nitrogen::pipeline::Primitive::TriangleList,
-            blend_mode: nitrogen::render_pass::BlendMode::Alpha,
-        };
-
-        struct FlipPass {};
-
-        impl PassImpl for FlipPass {
-            fn setup(&mut self, builder: &mut graph::GraphBuilder) {
-                let image_create = nitrogen::graph::ImageCreateInfo {
-                    format: nitrogen::image::ImageFormat::RgbaUnorm,
-                    size_mode: nitrogen::image::ImageSizeMode::ContextRelative {
-                        width: 1.0,
-                        height: 1.0,
-                    }
-                };
-
-                builder.image_copy("TestColor".into(), "TestColorBlurred".into());
-
-                builder.image_create("TestColorFlipped".into(), image_create);
-
-                builder.image_read("TestColor".into());
-
-                builder.backbuffer_image("TestColorFlipped".into());
-
-                builder.enable();
-            }
-
-            fn execute(&self, command_buffer: &mut graph::CommandBuffer) {
-                command_buffer.draw(0..6, 0..1)
-            }
-        }
-
-        ntg.graph_add_pass(graph, "FlipPass".into(), pass_info, Box::new(FlipPass {}));
-
-    };
-
-
-
-    ntg.graph_add_output_image(graph, "TestColor".into());
+    ntg.graph_set_output_image(graph, "TestColor".into());
 
     graph
-
-    /*
-    var pass = NtgDefaultPasses.create(NtgPasses.SCREEN_IMAGE)
-    pass.fragment = "shader code ........."
-    pass.set_input("modulate", color.red)
-    pass.set_output(mygraph.outputs.get("screen_texture"))
-    pass.set_uniform_input(mygraph.outputs.get("3d_world_rendered"), "my_uniform_name")
-    pass.set_instance_data("vertex_buffer", my_vert_buffer)
-    my_graph.add_pass(pass)
-
-
-    my_object.subscribe_to_pass(get_graph().get_pass("albedo"))
-    */
-
-    // bind_shader()
-    // bind_quad()
-    // render()
-    // blit_to_screen()
-
-    /*
-
-    class my_screen_pass{
-        func exposes():
-            return string ("vertex", "Vec3"; "uv", vec2)
-
-    func bind_inputs("name", value){
-        inputs[name] = value
-    }
-
-    func bind_outputs(){...}
-
-    func execute_pass(){
-        for uniforms in uniformarray:
-            ntg::bind(uniform, value)
-        for instance in instancedataaray:
-            ntg::bind\
-        //horrible graphics code goes here
-
-
-
-    }
-    }
-    */
 }

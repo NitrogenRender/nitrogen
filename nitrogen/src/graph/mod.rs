@@ -8,6 +8,8 @@ use storage::{Handle, Storage};
 
 use device::DeviceContext;
 
+use vertex_attrib::{VertexAttribStorage, VertexAttribHandle};
+
 use pipeline::{GraphicsPipelineCreateInfo, PipelineHandle, PipelineStorage};
 use render_pass::{RenderPassCreateInfo, RenderPassHandle, RenderPassStorage};
 use image::{ImageStorage, ImageHandle}; // can't import ImageCreateInfo because it's shadowed here.
@@ -27,6 +29,8 @@ pub use self::constructed::ConstructedGraph;
 
 use util::CowString;
 
+use types::Framebuffer;
+
 use image;
 use sampler;
 use pipeline;
@@ -42,14 +46,14 @@ macro_rules! impl_id {
 impl_id!(ImageId);
 impl_id!(BufferId);
 impl_id!(PassId);
-impl_id!(VertexDescId);
 
 pub type GraphHandle = Handle<Graph>;
 pub type ConstructedGraphHandle = Handle<ConstructedGraph>;
 
 pub struct GraphStorge {
-    graphs: Storage<Graph>,
-    compiled_graphs: HashMap<GraphHandle, CompiledGraph>,
+    pub(crate) graphs: Storage<Graph>,
+    pub(crate) compiled_graphs: HashMap<GraphHandle, CompiledGraph>,
+    pub(crate) resources: HashMap<GraphHandle, GraphResources>,
 }
 
 impl GraphStorge {
@@ -57,6 +61,7 @@ impl GraphStorge {
         GraphStorge {
             graphs: Storage::new(),
             compiled_graphs: HashMap::new(),
+            resources: HashMap::new(),
         }
     }
 
@@ -94,8 +99,8 @@ impl GraphStorge {
         id
     }
 
-    pub fn add_output_image(&mut self, graph: GraphHandle, image_name: CowString) {
-        self.graphs[graph].output_images.push(image_name);
+    pub fn set_output_image(&mut self, graph: GraphHandle, image_name: CowString) {
+        self.graphs[graph].output_image = Some(image_name);
     }
 
     // TODO This needs to be revisited. The profiler says this function takes quite some resources..
@@ -127,30 +132,53 @@ impl GraphStorge {
     }
 
     pub fn execute(
-        &self,
+        &mut self,
         device: &DeviceContext,
         render_pass_storage: &mut RenderPassStorage,
         pipeline_storage: &mut PipelineStorage,
+        vertex_attrib_storage: &VertexAttribStorage,
         image_storage: &mut ImageStorage,
         sampler_storage: &mut SamplerStorage,
         graph_handle: GraphHandle,
         context: &ExecutionContext,
-        resources: Option<GraphResources>,
-    ) -> GraphResources {
+    ) {
+
+        use gfx::Device;
+
+
+
         let graph = &self.graphs[graph_handle];
         let compiled_graph = &self.compiled_graphs[&graph_handle];
 
-        let mut resources = resources.unwrap_or_else(|| {
-            let images_len = compiled_graph.images.len();
-            let passes_len = graph.passes.len();
+        let mut command_pool = {
+            let queue_group = device.queue_group();
 
-            GraphResources {
-                backbuffer_images: HashMap::with_capacity(compiled_graph.image_backbuffers.len()),
-                pipelines: vec![None; passes_len],
-                passes: vec![None; passes_len],
-                images_transient: vec![None; images_len],
-            }
-        });
+            device.device.create_command_pool_typed(
+                &queue_group,
+                gfx::pool::CommandPoolCreateFlags::empty(),
+                graph.passes.len(),
+            ).unwrap()
+        };
+
+        let resources = self.resources
+            .entry(graph_handle)
+            .or_insert_with(|| {
+                let images_len = compiled_graph.images.len();
+                let passes_len = graph.passes.len();
+
+                let mut framebuffers = Vec::with_capacity(passes_len);
+                for i in 0..passes_len {
+                    framebuffers.push(None);
+                }
+
+                GraphResources {
+                    backbuffer_images: HashSet::with_capacity(compiled_graph.image_backbuffers.len()),
+                    pipelines: vec![None; passes_len],
+                    passes: vec![None; passes_len],
+                    images: vec![None; images_len],
+                    framebuffers,
+                }
+            });
 
         for group in &compiled_graph.execution_list {
             for pass in group {
@@ -180,6 +208,7 @@ impl GraphStorge {
                                     device,
                                     render_pass_storage,
                                     resources.passes[pass.0].unwrap(),
+                                    vertex_attrib_storage,
                                     pipeline_storage,
                                     compiled_graph,
                                     *pass,
@@ -199,7 +228,7 @@ impl GraphStorge {
 
                         if compiled_graph.image_backbuffers.contains(img) {
                             // this will be a backbuffer image, so not a transient resource.
-                            if resources.backbuffer_images.contains_key(img) {
+                            if resources.backbuffer_images.contains(img) {
                                 continue;
                             }
 
@@ -213,6 +242,12 @@ impl GraphStorge {
                                 false,
                             );
 
+                            if image.is_some() {
+                                resources.backbuffer_images.insert(*img);
+                            }
+
+                            resources.images[img.0] = image;
+
                         } else {
                             // transient image.
                             let image = create_image(
@@ -223,14 +258,149 @@ impl GraphStorge {
                                 compiled_graph.image_info(*img).unwrap(),
                                 true,
                             );
+
+                            resources.images[img.0] = image;
                         }
 
                     }
                 }
+
+                // create framebuffers
+                {
+                    if resources.framebuffers[pass.0].is_none() {
+
+                        use gfx::Device;
+
+                        // to create a framebuffer we need a render pass which the framebuffer
+                        // will be compatible with.
+                        // Also we need a list of image views for the attachments.
+                        // The framebuffer itself has an extent. Here we just take the extent from
+                        // the first attachment we find.
+
+                        let render_pass = render_pass_storage.raw(resources.passes[pass.0].unwrap()).unwrap();
+
+                        let (views, dimensions) = {
+                            compiled_graph.image_writes[pass]
+                                .iter()
+                                .map(|x| {
+                                    let handle = resources.images[x.0].unwrap();
+                                    let image = image_storage.raw(handle.0).unwrap();
+                                    (&image.view, image.dimension)
+                                })
+                                .unzip::<_, _, SmallVec<[_; 16]>, SmallVec<[_; 16]>>()
+                        };
+
+                        let extent = {
+                            dimensions.as_slice()
+                                .iter()
+                                .map(|img_dim| {
+                                    match img_dim {
+                                        image::ImageDimension::D1 { x, } => {
+                                            (*x, 1, 1)
+                                        }
+                                        image::ImageDimension::D2 { x, y, } => {
+                                            (*x, *y, 1)
+                                        },
+                                        image::ImageDimension::D3 { x, y, z, } => {
+                                            (*x, *y, *z)
+                                        }
+                                    }
+                                })
+                                .map(|(x, y, z)| {
+                                    gfx::image::Extent {
+                                        width: x,
+                                        height: y,
+                                        depth: z,
+                                    }
+                                }).next().unwrap()
+                        };
+
+                        let framebuffer = device.device.create_framebuffer(
+                            render_pass,
+                            views,
+                            extent,
+                        );
+
+                        resources.framebuffers[pass.0] = framebuffer.ok();
+                    }
+                }
+
+                // Run!!!
+                {
+                    let pass_impl = &graph.pass_impls[pass.0];
+
+                    let mut raw_cmd_buf = command_pool.acquire_command_buffer(
+                        false,
+                    );
+
+                    let pipeline = {
+                        let handle = resources.pipelines[pass.0].unwrap();
+
+                        &pipeline_storage.raw_graphics(handle).unwrap().pipeline
+                    };
+                    let render_pass = {
+                        let handle = resources.passes[pass.0].unwrap();
+
+                        render_pass_storage.raw(handle).unwrap()
+                    };
+                    let framebuffer = {
+                        resources.framebuffers[pass.0].as_ref().unwrap()
+                    };
+
+                    let viewport = gfx::pso::Viewport {
+                        depth: 0.0..1.0,
+                        rect: gfx::pso::Rect {
+                            x: 0,
+                            y: 0,
+                            w: context.reference_size.0 as i16,
+                            h: context.reference_size.1 as i16,
+                        },
+                    };
+
+                    raw_cmd_buf.bind_graphics_pipeline(pipeline);
+
+                    raw_cmd_buf.set_viewports(0, &[viewport.clone()]);
+                    raw_cmd_buf.set_scissors(0, &[viewport.rect]);
+
+                    {
+                        let mut encoder = raw_cmd_buf.begin_render_pass_inline(
+                            render_pass,
+                            framebuffer,
+                            viewport.rect,
+                            &[
+                                gfx::command::ClearValue::Color(
+                                    gfx::command::ClearColor::Float(
+                                        [0.0, 0.0, 0.0, 0.0]
+                                    )
+                                ),
+                            ]
+                        );
+
+                        let mut command_buffer = command::CommandBuffer::new(encoder);
+                        pass_impl.execute(&mut command_buffer);
+                    }
+
+                    let submit_buffer = raw_cmd_buf.finish();
+
+                    let mut submit_fence = device.device.create_fence(false).unwrap();
+
+                    {
+                        let submission = gfx::Submission::new()
+                            .submit(Some(submit_buffer));
+                        device.queue_group().queues[0].submit(submission, Some(&mut submit_fence));
+                    }
+
+                    device.device.wait_for_fence(&submit_fence, !0);
+                    device.device.destroy_fence(submit_fence);
+                }
+
             }
+
         }
 
-        resources
+        command_pool.reset();
+
+        device.device.destroy_command_pool(command_pool.into_raw());
     }
 }
 
@@ -335,15 +505,16 @@ fn create_graphics_pipeline(
     device: &DeviceContext,
     render_pass_storage: &RenderPassStorage,
     render_pass: RenderPassHandle,
+    vertex_attrib_storage: &VertexAttribStorage,
     pipeline_storage: &mut PipelineStorage,
     graph: &CompiledGraph,
     pass_id: PassId,
     pass_info: &PassInfo,
 ) -> Option<PipelineHandle> {
 
-    let (primitive, shaders,) = match pass_info {
-        PassInfo::Graphics { primitive, shaders, .. } => {
-            (*primitive, shaders,)
+    let (primitive, shaders, vertex_attribs,) = match pass_info {
+        PassInfo::Graphics { primitive, shaders, vertex_attrib, .. } => {
+            (*primitive, shaders, vertex_attrib,)
         },
         _ => {
             return None;
@@ -351,6 +522,7 @@ fn create_graphics_pipeline(
     };
 
     let create_info = GraphicsPipelineCreateInfo {
+        vertex_attribs: vertex_attribs.clone(),
         primitive,
         shader_vertex: pipeline::ShaderInfo {
             content: &shaders.vertex.content,
@@ -371,6 +543,7 @@ fn create_graphics_pipeline(
     let handle = pipeline_storage.create_graphics_pipelines(
         device,
         render_pass_storage,
+        vertex_attrib_storage,
         render_pass,
         &[create_info]
     ).remove(0).ok();
@@ -451,14 +624,15 @@ pub struct Graph {
     pass_names: BTreeMap<CowString, PassId>,
     pass_impls: Vec<Box<dyn PassImpl>>,
     passes: Vec<PassInfo>,
-    output_images: Vec<CowString>,
+    pub(crate) output_image: Option<CowString>,
 }
 
 pub struct GraphResources {
-    pub(crate) backbuffer_images: HashMap<ImageId, image::ImageHandle>,
+    pub(crate) backbuffer_images: HashSet<ImageId>,
     pub(crate) pipelines: Vec<Option<PipelineHandle>>,
     pub(crate) passes: Vec<Option<RenderPassHandle>>,
-    pub(crate) images_transient: Vec<Option<image::ImageHandle>>,
+    pub(crate) images: Vec<Option<(image::ImageHandle, sampler::SamplerHandle)>>,
+    pub(crate) framebuffers: Vec<Option<Framebuffer>>,
 }
 
 pub struct ExecutionContext {
@@ -475,7 +649,7 @@ struct InstanceData {}
 pub enum PassInfo {
     Compute,
     Graphics {
-        vertex_desc: Option<VertexDescId>,
+        vertex_attrib: Option<VertexAttribHandle>,
         shaders: Shaders,
         primitive: pipeline::Primitive,
         blend_mode: render_pass::BlendMode,

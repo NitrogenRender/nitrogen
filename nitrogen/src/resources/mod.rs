@@ -6,7 +6,7 @@ pub mod image;
 pub mod pipeline;
 pub mod render_pass;
 pub mod sampler;
-pub mod vertex_buffer;
+pub mod vertex_attrib;
 
 use bitflags::bitflags;
 

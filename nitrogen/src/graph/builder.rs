@@ -26,13 +26,11 @@ impl GraphBuilder {
     }
 
     pub fn image_create(&mut self, name: CowString, create_info: graph::ImageCreateInfo) {
-        self.images_create.insert(name.clone(), create_info);
-        self.images_write.insert(name);
+        self.images_create.insert(name, create_info);
     }
 
     pub fn image_copy(&mut self, src: CowString, new: CowString) {
-        self.images_copy.insert(new.clone(), src);
-        self.images_write.insert(new);
+        self.images_copy.insert(new, src);
     }
 
     pub fn image_write(&mut self, name: CowString) {
