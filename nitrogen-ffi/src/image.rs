@@ -35,6 +35,7 @@ pub struct ImageCreateInfo {
     pub used_as_depth_stencil_attachment: bool,
     pub used_as_storage_image: bool,
     pub used_as_input_attachment: bool,
+    pub is_transient: bool,
 }
 
 #[repr(C)]
@@ -169,6 +170,8 @@ pub unsafe extern "C" fn image_create(
             used_as_depth_stencil_attachment: create_info.used_as_depth_stencil_attachment,
             used_as_storage_image: create_info.used_as_storage_image,
             used_as_input_attachment: create_info.used_as_input_attachment,
+
+            is_transient: create_info.is_transient,
         }
 
     }).collect::<SmallVec<[_; 16]>>();

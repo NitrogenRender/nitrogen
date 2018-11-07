@@ -36,7 +36,7 @@ impl Default for ImageDimension {
 
 #[derive(PartialOrd, PartialEq, Debug, Clone, Copy)]
 pub enum ImageSizeMode {
-    SwapChainRelative { width: f32, height: f32 },
+    ContextRelative { width: f32, height: f32 },
     Absolute { width: u32, height: u32 },
 }
 
@@ -58,6 +58,8 @@ pub struct ImageCreateInfo {
     pub used_as_depth_stencil_attachment: bool,
     pub used_as_storage_image: bool,
     pub used_as_input_attachment: bool,
+
+    pub is_transient: bool,
 }
 
 pub struct ImageUploadInfo<'a> {
@@ -266,9 +268,15 @@ impl ImageStorage {
                     flags
                 };
 
+                let alloc_type = if create_info.is_transient {
+                    gfxm::Type::ShortLived
+                } else {
+                    gfxm::Type::General
+                };
+
                 let image = allocator.create_image(
                     &device.device,
-                    (gfxm::Type::General, Properties::DEVICE_LOCAL),
+                    (alloc_type, Properties::DEVICE_LOCAL),
                     image_kind,
                     1,
                     format,

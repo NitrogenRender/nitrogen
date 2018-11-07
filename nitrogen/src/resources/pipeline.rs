@@ -1,6 +1,8 @@
 use device::DeviceContext;
 use storage::{Handle, Storage};
 
+use render_pass::{RenderPassHandle, RenderPassStorage};
+
 use smallvec::SmallVec;
 
 use types;
@@ -114,18 +116,28 @@ impl PipelineStorage {
     pub fn create_graphics_pipelines(
         &mut self,
         device: &DeviceContext,
+        render_pass_storage: &RenderPassStorage,
+        render_pass_handle: RenderPassHandle,
         create_infos: &[GraphicsPipelineCreateInfo],
     ) -> SmallVec<[Result<PipelineHandle>; 16]> {
         create_infos
             .iter()
-            .map(|create_info| self.create_graphics_pipeline(device, create_info.clone()))
-            .collect()
+            .map(|create_info| {
+                self.create_graphics_pipeline(
+                    device,
+                    render_pass_storage,
+                    render_pass_handle,
+                    create_info.clone(),
+                )
+            }).collect()
     }
 
     // I'm sorry Mike Acton
     fn create_graphics_pipeline(
         &mut self,
         device: &DeviceContext,
+        render_pass_storage: &RenderPassStorage,
+        render_pass_handle: RenderPassHandle,
         create_info: GraphicsPipelineCreateInfo,
     ) -> Result<PipelineHandle> {
         struct ShaderModules {
@@ -153,78 +165,85 @@ impl PipelineStorage {
             },
         };
 
-        struct ShaderEntries<'a> {
-            vertex: pso::EntryPoint<'a, back::Backend>,
-            fragment: Option<pso::EntryPoint<'a, back::Backend>>,
-            geometry: Option<pso::EntryPoint<'a, back::Backend>>,
-        };
+        let pipeline = {
+            struct ShaderEntries<'a> {
+                vertex: pso::EntryPoint<'a, back::Backend>,
+                fragment: Option<pso::EntryPoint<'a, back::Backend>>,
+                geometry: Option<pso::EntryPoint<'a, back::Backend>>,
+            };
 
-        let shader_entries = {
-            ShaderEntries {
-                vertex: pso::EntryPoint {
-                    entry: create_info.shader_vertex.entry,
-                    module: &module.vertex,
-                    specialization: pso::Specialization {
-                        constants: &[],
-                        data: &[],
+            let shader_entries = {
+                ShaderEntries {
+                    vertex: pso::EntryPoint {
+                        entry: create_info.shader_vertex.entry,
+                        module: &module.vertex,
+                        specialization: pso::Specialization {
+                            constants: &[],
+                            data: &[],
+                        },
                     },
-                },
-                fragment: create_info
-                    .shader_fragment
-                    .as_ref()
-                    .map(|s| pso::EntryPoint {
-                        entry: s.entry,
-                        module: module.fragment.as_ref().unwrap(),
-                        specialization: pso::Specialization {
-                            constants: &[],
-                            data: &[],
-                        },
-                    }),
-                geometry: create_info
-                    .shader_geometry
-                    .as_ref()
-                    .map(|s| pso::EntryPoint {
-                        entry: s.entry,
-                        module: module.geometry.as_ref().unwrap(),
-                        specialization: pso::Specialization {
-                            constants: &[],
-                            data: &[],
-                        },
-                    }),
-            }
+                    fragment: create_info
+                        .shader_fragment
+                        .as_ref()
+                        .map(|s| pso::EntryPoint {
+                            entry: s.entry,
+                            module: module.fragment.as_ref().unwrap(),
+                            specialization: pso::Specialization {
+                                constants: &[],
+                                data: &[],
+                            },
+                        }),
+                    geometry: create_info
+                        .shader_geometry
+                        .as_ref()
+                        .map(|s| pso::EntryPoint {
+                            entry: s.entry,
+                            module: module.geometry.as_ref().unwrap(),
+                            specialization: pso::Specialization {
+                                constants: &[],
+                                data: &[],
+                            },
+                        }),
+                }
+            };
+
+            let shaders = pso::GraphicsShaderSet {
+                vertex: shader_entries.vertex,
+                hull: None,
+                domain: None,
+                geometry: shader_entries.geometry,
+                fragment: shader_entries.fragment,
+            };
+
+            let primitive = create_info.primitive.into();
+
+            let rasterizer = { pso::Rasterizer::FILL };
+
+            let layout = { device.device.create_pipeline_layout(&[], &[])? };
+
+            let render_pass = render_pass_storage.raw(render_pass_handle).unwrap();
+
+            let subpass = gfx::pass::Subpass {
+                index: 0,
+                main_pass: render_pass,
+            };
+
+            let mut desc =
+                pso::GraphicsPipelineDesc::new(shaders, primitive, rasterizer, &layout, subpass);
+
+            device.device.create_graphics_pipeline(&desc, None)?
         };
-
-        let shaders = pso::GraphicsShaderSet {
-            vertex: shader_entries.vertex,
-            hull: None,
-            domain: None,
-            geometry: shader_entries.geometry,
-            fragment: shader_entries.fragment,
-        };
-
-        let primitive = create_info.primitive.into();
-
-        let rasterizer = { pso::Rasterizer::FILL };
-
-        let layout = { device.device.create_pipeline_layout(&[], &[])? };
-
-        let subpass = unimplemented!();
-
-        let mut desc =
-            pso::GraphicsPipelineDesc::new(shaders, primitive, rasterizer, &layout, subpass);
-
-        let pipeline = device.device.create_graphics_pipeline(&desc, None)?;
 
         // destroy shader modules
         {
-            device.device.destroy_shader_module(module.vertex);
+            let ShaderModules { vertex, fragment, geometry } = module;
 
-            module
-                .fragment
+            device.device.destroy_shader_module(vertex);
+
+            fragment
                 .map(|frag| device.device.destroy_shader_module(frag));
 
-            module
-                .geometry
+            geometry
                 .map(|geom| device.device.destroy_shader_module(geom));
         }
 

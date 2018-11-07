@@ -2,8 +2,6 @@ use std::collections::{HashMap, HashSet};
 
 use graph;
 
-use graph::ConstructedGraph;
-
 use util::CowString;
 
 #[derive(Default)]
@@ -28,11 +26,13 @@ impl GraphBuilder {
     }
 
     pub fn image_create(&mut self, name: CowString, create_info: graph::ImageCreateInfo) {
-        self.images_create.insert(name, create_info);
+        self.images_create.insert(name.clone(), create_info);
+        self.images_write.insert(name);
     }
 
     pub fn image_copy(&mut self, src: CowString, new: CowString) {
-        self.images_copy.insert(new, src);
+        self.images_copy.insert(new.clone(), src);
+        self.images_write.insert(new);
     }
 
     pub fn image_write(&mut self, name: CowString) {

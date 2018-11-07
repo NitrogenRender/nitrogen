@@ -142,28 +142,14 @@ impl Display {
             ).expect("Can't create pipeline layout");
 
         let pipeline = {
-            use shaderc::*;
-
-            let mut compiler = Compiler::new().unwrap();
-
             let vs_mod = {
-                let src = include_str!("core_shaders/present.vert");
-
-                let artifact = compiler
-                    .compile_into_spirv(src, ShaderKind::Vertex, "present.vert", "main", None)
-                    .unwrap();
-                let binary = artifact.as_binary_u8();
+                let binary = include_bytes!(concat!(env!("OUT_DIR"), "/present.hlsl.vert.spirv"));
 
                 device.device.create_shader_module(binary).unwrap()
             };
 
             let fs_mod = {
-                let src = include_str!("core_shaders/present.frag");
-
-                let artifact = compiler
-                    .compile_into_spirv(src, ShaderKind::Fragment, "present.vert", "main", None)
-                    .unwrap();
-                let binary = artifact.as_binary_u8();
+                let binary = include_bytes!(concat!(env!("OUT_DIR"), "/present.hlsl.frag.spirv"));
 
                 device.device.create_shader_module(binary).unwrap()
             };
@@ -171,12 +157,12 @@ impl Display {
             let pipe = {
                 let (vs_entry, fs_entry) = (
                     pso::EntryPoint {
-                        entry: "main",
+                        entry: "VertexMain",
                         module: &vs_mod,
                         specialization: pso::Specialization::default(),
                     },
                     pso::EntryPoint {
-                        entry: "main",
+                        entry: "FragmentMain",
                         module: &fs_mod,
                         specialization: pso::Specialization::default(),
                     },
@@ -358,6 +344,7 @@ impl Display {
                 return false;
             }
         };
+
 
         if let Some(ref mut swapchain) = self.swapchain {
             let mut swapchain_sem = device

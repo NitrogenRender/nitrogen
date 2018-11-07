@@ -2,7 +2,6 @@ extern crate gfx_backend_vulkan as back;
 extern crate gfx_hal as gfx;
 extern crate gfx_memory as gfxm;
 
-extern crate shaderc;
 extern crate smallvec;
 
 extern crate failure;
@@ -60,6 +59,7 @@ pub type DisplayHandle = Handle<Display>;
 pub struct Context {
     pub graph_storage: graph::GraphStorge,
 
+    pub render_pass_storage: render_pass::RenderPassStorage,
     pub pipeline_storage: pipeline::PipelineStorage,
     pub image_storage: image::ImageStorage,
     pub sampler_storage: sampler::SamplerStorage,
@@ -82,6 +82,7 @@ impl Context {
         let sampler_storage = sampler::SamplerStorage::new();
         let buffer_storage = buffer::BufferStorage::new();
         let pipeline_storage = pipeline::PipelineStorage::new();
+        let render_pass_storage = render_pass::RenderPassStorage::new();
 
         let graph_storage = graph::GraphStorge::new();
 
@@ -91,6 +92,7 @@ impl Context {
             transfer,
             displays: Storage::new(),
             pipeline_storage,
+            render_pass_storage,
             image_storage,
             sampler_storage,
             buffer_storage,
@@ -206,15 +208,29 @@ impl Context {
         self.graph_storage.add_pass(graph, name, info, pass_impl)
     }
 
-    pub fn graph_add_output_image(&mut self, graph: graph::GraphHandle, image_name: CowString) -> bool {
-        self.graph_storage.add_output_image(graph, image_name)
+    pub fn graph_add_output_image(&mut self, graph: graph::GraphHandle, image_name: CowString) {
+        self.graph_storage.add_output_image(graph, image_name);
     }
 
     pub fn graph_destroy(&mut self, graph: graph::GraphHandle) {
         self.graph_storage.destroy(graph);
     }
 
-    pub fn graph_construct(&mut self, graph: graph::GraphHandle) {
-        self.graph_storage.construct(graph);
+    pub fn graph_compile(&mut self, graph: graph::GraphHandle) {
+        self.graph_storage.compile(graph);
+    }
+
+
+    pub fn render_graph(&mut self, graph: graph::GraphHandle, exec_context: &graph::ExecutionContext, resources: Option<graph::GraphResources>) -> graph::GraphResources {
+        self.graph_storage.execute(
+            &self.device_ctx,
+            &mut self.render_pass_storage,
+            &mut self.pipeline_storage,
+            &mut self.image_storage,
+            &mut self.sampler_storage,
+            graph,
+            exec_context,
+            resources,
+        )
     }
 }

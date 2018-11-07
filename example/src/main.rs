@@ -11,6 +11,8 @@ use nitrogen::image;
 
 use log::debug;
 
+use std::borrow::Cow;
+
 fn main() {
 
     std::env::set_var("RUST_LOG", "debug");
@@ -118,6 +120,8 @@ fn main() {
     let mut running = true;
     let mut resized = true;
 
+    let mut resources = None;
+
     while running {
         events.poll_events(|event| match event {
             winit::Event::WindowEvent { event, .. } => match event {
@@ -140,7 +144,15 @@ fn main() {
             resized = false;
         }
 
-        ntg.graph_construct(graph);
+        ntg.graph_compile(graph);
+
+        let exec_context = nitrogen::graph::ExecutionContext {
+            reference_size: (400, 400),
+        };
+
+        let tmp_resources = ntg.render_graph(graph, &exec_context, resources);
+
+        resources = Some(tmp_resources);
 
         ntg.displays[display].present(
             &ntg.device_ctx,
@@ -163,11 +175,18 @@ fn setup_graphs(ntg: &mut nitrogen::Context) -> graph::GraphHandle {
     let graph = ntg.graph_create();
 
     {
+
         let pass_info = nitrogen::graph::PassInfo::Graphics {
             vertex_desc: None,
             shaders: nitrogen::graph::Shaders {
-                vertex: include_str!("../shaders/test.vert").into(),
-                fragment: Some(include_str!("../shaders/test.frag").into()),
+                vertex: nitrogen::graph::ShaderInfo {
+                    content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/test.hlsl.vert.spirv"))),
+                    entry: "VertexMain".into(),
+                } ,
+                fragment: Some(nitrogen::graph::ShaderInfo {
+                    content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/test.hlsl.frag.spirv"))),
+                    entry: "FragmentMain".into(),
+                }),
             },
             primitive: nitrogen::pipeline::Primitive::TriangleList,
             blend_mode: nitrogen::render_pass::BlendMode::Alpha,
@@ -179,13 +198,14 @@ fn setup_graphs(ntg: &mut nitrogen::Context) -> graph::GraphHandle {
             fn setup(&mut self, builder: &mut graph::GraphBuilder) {
                 let image_create = nitrogen::graph::ImageCreateInfo {
                     format: nitrogen::image::ImageFormat::RgbaUnorm,
-                    size_mode: nitrogen::image::ImageSizeMode::SwapChainRelative {
+                    size_mode: nitrogen::image::ImageSizeMode::ContextRelative {
                         width: 1.0,
                         height: 1.0,
                     }
                 };
 
                 builder.image_create("TestColor".into(), image_create);
+                builder.backbuffer_image("TestColor".into());
 
                 builder.enable();
             }
@@ -199,12 +219,18 @@ fn setup_graphs(ntg: &mut nitrogen::Context) -> graph::GraphHandle {
 
     };
 
-    {
+    if false {
         let pass_info = nitrogen::graph::PassInfo::Graphics {
             vertex_desc: None,
             shaders: nitrogen::graph::Shaders {
-                vertex: include_str!("../shaders/test.vert").into(),
-                fragment: Some(include_str!("../shaders/test.frag").into()),
+                vertex: nitrogen::graph::ShaderInfo {
+                    content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/test.vert.spirv"))),
+                    entry: "main".into(),
+                } ,
+                fragment: Some(nitrogen::graph::ShaderInfo {
+                    content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/test.frag.spirv"))),
+                    entry: "main".into(),
+                }),
             },
             primitive: nitrogen::pipeline::Primitive::TriangleList,
             blend_mode: nitrogen::render_pass::BlendMode::Alpha,
@@ -216,7 +242,7 @@ fn setup_graphs(ntg: &mut nitrogen::Context) -> graph::GraphHandle {
             fn setup(&mut self, builder: &mut graph::GraphBuilder) {
                 let image_create = nitrogen::graph::ImageCreateInfo {
                     format: nitrogen::image::ImageFormat::RgbaUnorm,
-                    size_mode: nitrogen::image::ImageSizeMode::SwapChainRelative {
+                    size_mode: nitrogen::image::ImageSizeMode::ContextRelative {
                         width: 1.0,
                         height: 1.0,
                     }
@@ -227,6 +253,8 @@ fn setup_graphs(ntg: &mut nitrogen::Context) -> graph::GraphHandle {
                 builder.image_create("TestColorFlipped".into(), image_create);
 
                 builder.image_read("TestColor".into());
+
+                builder.backbuffer_image("TestColorFlipped".into());
 
                 builder.enable();
             }
@@ -242,7 +270,7 @@ fn setup_graphs(ntg: &mut nitrogen::Context) -> graph::GraphHandle {
 
 
 
-    ntg.graph_add_output_image(graph, "TestColorFlip".into());
+    ntg.graph_add_output_image(graph, "TestColor".into());
 
     graph
 
