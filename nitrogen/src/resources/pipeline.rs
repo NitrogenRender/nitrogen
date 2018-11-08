@@ -256,15 +256,17 @@ impl PipelineStorage {
 
         // destroy shader modules
         {
-            let ShaderModules { vertex, fragment, geometry } = module;
+            let ShaderModules {
+                vertex,
+                fragment,
+                geometry,
+            } = module;
 
             device.device.destroy_shader_module(vertex);
 
-            fragment
-                .map(|frag| device.device.destroy_shader_module(frag));
+            fragment.map(|frag| device.device.destroy_shader_module(frag));
 
-            geometry
-                .map(|geom| device.device.destroy_shader_module(geom));
+            geometry.map(|geom| device.device.destroy_shader_module(geom));
         }
 
         let (handle, _) = self.storage.insert(Pipeline::Graphics);

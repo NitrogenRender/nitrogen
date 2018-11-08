@@ -1,15 +1,17 @@
 use std::ops::Range;
 
-use gfx;
 use back;
+use gfx;
 
 pub struct CommandBuffer<'a> {
-    pub(crate) command_buffer: gfx::command::RenderPassInlineEncoder<'a, back::Backend, gfx::command::Primary>,
+    pub(crate) command_buffer:
+        gfx::command::RenderPassInlineEncoder<'a, back::Backend, gfx::command::Primary>,
 }
 
 impl<'a> CommandBuffer<'a> {
-
-    pub(crate) fn new(cmd_buffer: gfx::command::RenderPassInlineEncoder<'a, back::Backend, gfx::command::Primary>) -> Self {
+    pub(crate) fn new(
+        cmd_buffer: gfx::command::RenderPassInlineEncoder<'a, back::Backend, gfx::command::Primary>,
+    ) -> Self {
         CommandBuffer {
             command_buffer: cmd_buffer,
         }

@@ -10,7 +10,7 @@ pub struct GraphBuilder {
 
     pub(crate) images_create: HashMap<CowString, graph::ImageCreateInfo>,
     pub(crate) images_copy: HashMap<CowString, CowString>,
-    pub(crate) images_write: HashSet<CowString>,
+    pub(crate) images_move: HashMap<CowString, CowString>,
     pub(crate) images_read: HashSet<CowString>,
 
     pub(crate) backbuffer_images: HashSet<CowString>,
@@ -33,8 +33,8 @@ impl GraphBuilder {
         self.images_copy.insert(new, src);
     }
 
-    pub fn image_write(&mut self, name: CowString) {
-        self.images_write.insert(name);
+    pub fn image_move(&mut self, src: CowString, new: CowString) {
+        self.images_move.insert(src, new);
     }
 
     pub fn image_read(&mut self, name: CowString) {

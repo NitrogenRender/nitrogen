@@ -1,10 +1,10 @@
 use nitrogen::graph::PassImpl;
 
+extern crate env_logger;
 extern crate image as img;
+extern crate log;
 extern crate nitrogen;
 extern crate winit;
-extern crate env_logger;
-extern crate log;
 
 use nitrogen::graph;
 use nitrogen::image;
@@ -19,16 +19,22 @@ struct Vertex {
     pub uv: [f32; 2],
 }
 
-
 const TRIANGLE: [Vertex; 3] = [
-    Vertex { pos: [0.0, -0.5], uv: [0.0, 0.0] }, // TOP
-    Vertex { pos: [-0.5, 0.5], uv: [0.0, 0.0] }, // LEFT
-    Vertex { pos: [0.5, 0.5], uv: [0.0, 0.0] }, // RIGHT
+    Vertex {
+        pos: [0.0, -0.5],
+        uv: [0.0, 0.0],
+    }, // TOP
+    Vertex {
+        pos: [-0.5, 0.5],
+        uv: [0.0, 0.0],
+    }, // LEFT
+    Vertex {
+        pos: [0.5, 0.5],
+        uv: [0.0, 0.0],
+    }, // RIGHT
 ];
 
-
 fn main() {
-
     std::env::set_var("RUST_LOG", "debug");
     env_logger::init();
 
@@ -63,9 +69,7 @@ fn main() {
             ..Default::default()
         };
 
-        let img = ntg.image_create(&[create_info])
-            .remove(0)
-            .unwrap();
+        let img = ntg.image_create(&[create_info]).remove(0).unwrap();
 
         debug!("width {}, height {}", width, height);
 
@@ -77,9 +81,7 @@ fn main() {
                 target_offset: (0, 0, 0),
             };
 
-            ntg.image_upload_data(&[(img, data)])
-                .remove(0)
-                .unwrap()
+            ntg.image_upload_data(&[(img, data)]).remove(0).unwrap()
         }
 
         drop(image);
@@ -94,8 +96,7 @@ fn main() {
                 wrap_mode: (WrapMode::Clamp, WrapMode::Clamp, WrapMode::Clamp),
             };
 
-            ntg.sampler_create(&[sampler_create])
-                .remove(0)
+            ntg.sampler_create(&[sampler_create]).remove(0)
         };
 
         (img, sampler)
@@ -110,7 +111,8 @@ fn main() {
             usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC,
             properties: nitrogen::resources::MemoryProperties::DEVICE_LOCAL,
         };
-        let buffer = ntg.buffer_storage
+        let buffer = ntg
+            .buffer_storage
             .create(&ntg.device_ctx, &[create_info])
             .remove(0)
             .unwrap();
@@ -129,26 +131,23 @@ fn main() {
         buffer
     };
 
-
     let vertex_attrib = {
         let info = nitrogen::vertex_attrib::VertexAttribInfo {
-            buffer_infos: &[
-                nitrogen::vertex_attrib::VertexAttribBufferInfo {
-                    index: 0,
-                    elements: &[
-                        nitrogen::vertex_attrib::VertexAttribBufferElementInfo {
-                            location: 0,
-                            format: nitrogen::gfx::format::Format::Rg32Float,
-                            offset: 0,
-                        },
-                        nitrogen::vertex_attrib::VertexAttribBufferElementInfo {
-                            location: 0,
-                            format: nitrogen::gfx::format::Format::Rg32Float,
-                            offset: 8,
-                        }
-                    ]
-                }
-            ]
+            buffer_infos: &[nitrogen::vertex_attrib::VertexAttribBufferInfo {
+                index: 0,
+                elements: &[
+                    nitrogen::vertex_attrib::VertexAttribBufferElementInfo {
+                        location: 0,
+                        format: nitrogen::gfx::format::Format::Rg32Float,
+                        offset: 0,
+                    },
+                    nitrogen::vertex_attrib::VertexAttribBufferElementInfo {
+                        location: 0,
+                        format: nitrogen::gfx::format::Format::Rg32Float,
+                        offset: 8,
+                    },
+                ],
+            }],
         };
 
         ntg.vertex_attribs_create(&[info]).remove(0)
@@ -181,7 +180,12 @@ fn main() {
             resized = false;
         }
 
-        ntg.graph_compile(graph);
+        if let Err(errs) = ntg.graph_compile(graph) {
+            println!("Errors occured while compiling the graph");
+            for err in errs {
+                println!("{:?}", err);
+            }
+        }
 
         let exec_context = nitrogen::graph::ExecutionContext {
             reference_size: (400, 400),
@@ -200,20 +204,28 @@ fn main() {
     ntg.release();
 }
 
-fn setup_graphs(ntg: &mut nitrogen::Context, vertex_attrib: nitrogen::vertex_attrib::VertexAttribHandle) -> graph::GraphHandle {
+fn setup_graphs(
+    ntg: &mut nitrogen::Context,
+    vertex_attrib: nitrogen::vertex_attrib::VertexAttribHandle,
+) -> graph::GraphHandle {
     let graph = ntg.graph_create();
 
     {
-
         let pass_info = nitrogen::graph::PassInfo::Graphics {
             vertex_attrib: None, //Some(vertex_attrib),
             shaders: nitrogen::graph::Shaders {
                 vertex: nitrogen::graph::ShaderInfo {
-                    content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/test.hlsl.vert.spirv"))),
+                    content: Cow::Borrowed(include_bytes!(concat!(
+                        env!("OUT_DIR"),
+                        "/test.hlsl.vert.spirv"
+                    ))),
                     entry: "VertexMain".into(),
-                } ,
+                },
                 fragment: Some(nitrogen::graph::ShaderInfo {
-                    content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/test.hlsl.frag.spirv"))),
+                    content: Cow::Borrowed(include_bytes!(concat!(
+                        env!("OUT_DIR"),
+                        "/test.hlsl.frag.spirv"
+                    ))),
                     entry: "FragmentMain".into(),
                 }),
             },
@@ -230,26 +242,172 @@ fn setup_graphs(ntg: &mut nitrogen::Context, vertex_attrib: nitrogen::vertex_att
                     size_mode: nitrogen::image::ImageSizeMode::ContextRelative {
                         width: 1.0,
                         height: 1.0,
-                    }
+                    },
                 };
 
-                builder.image_create("TestColor".into(), image_create);
-                builder.backbuffer_image("TestColor".into());
+                builder.image_create("TestDep".into(), image_create);
 
                 builder.enable();
             }
 
             fn execute(&self, command_buffer: &mut graph::CommandBuffer) {
+                command_buffer.draw(0..6, 0..1)
+            }
+        }
 
+        ntg.graph_add_pass(graph, "TestDep".into(), pass_info, Box::new(TestPass {}));
+    }
+
+    {
+        let pass_info = nitrogen::graph::PassInfo::Graphics {
+            vertex_attrib: None, //Some(vertex_attrib),
+            shaders: nitrogen::graph::Shaders {
+                vertex: nitrogen::graph::ShaderInfo {
+                    content: Cow::Borrowed(include_bytes!(concat!(
+                        env!("OUT_DIR"),
+                        "/test.hlsl.vert.spirv"
+                    ))),
+                    entry: "VertexMain".into(),
+                },
+                fragment: Some(nitrogen::graph::ShaderInfo {
+                    content: Cow::Borrowed(include_bytes!(concat!(
+                        env!("OUT_DIR"),
+                        "/test.hlsl.frag.spirv"
+                    ))),
+                    entry: "FragmentMain".into(),
+                }),
+            },
+            primitive: nitrogen::pipeline::Primitive::TriangleList,
+            blend_mode: nitrogen::render_pass::BlendMode::Alpha,
+        };
+
+        struct TestPass {};
+
+        impl PassImpl for TestPass {
+            fn setup(&mut self, builder: &mut graph::GraphBuilder) {
+                let image_create = nitrogen::graph::ImageCreateInfo {
+                    format: nitrogen::image::ImageFormat::RgbaUnorm,
+                    size_mode: nitrogen::image::ImageSizeMode::ContextRelative {
+                        width: 1.0,
+                        height: 1.0,
+                    },
+                };
+
+                builder.image_create("TestColor".into(), image_create);
+
+                builder.enable();
+            }
+
+            fn execute(&self, command_buffer: &mut graph::CommandBuffer) {
                 command_buffer.draw(0..6, 0..1)
             }
         }
 
         ntg.graph_add_pass(graph, "TestPass".into(), pass_info, Box::new(TestPass {}));
+    }
 
-    };
+    // TestPass2
+    {
+        let pass_info = nitrogen::graph::PassInfo::Graphics {
+            vertex_attrib: None, //Some(vertex_attrib),
+            shaders: nitrogen::graph::Shaders {
+                vertex: nitrogen::graph::ShaderInfo {
+                    content: Cow::Borrowed(include_bytes!(concat!(
+                        env!("OUT_DIR"),
+                        "/test.hlsl.vert.spirv"
+                    ))),
+                    entry: "VertexMain".into(),
+                },
+                fragment: Some(nitrogen::graph::ShaderInfo {
+                    content: Cow::Borrowed(include_bytes!(concat!(
+                        env!("OUT_DIR"),
+                        "/test.hlsl.frag.spirv"
+                    ))),
+                    entry: "FragmentMain".into(),
+                }),
+            },
+            primitive: nitrogen::pipeline::Primitive::TriangleList,
+            blend_mode: nitrogen::render_pass::BlendMode::Alpha,
+        };
 
-    ntg.graph_set_output_image(graph, "TestColor".into());
+        struct TestPass {};
+
+        impl PassImpl for TestPass {
+            fn setup(&mut self, builder: &mut graph::GraphBuilder) {
+                let image_create = nitrogen::graph::ImageCreateInfo {
+                    format: nitrogen::image::ImageFormat::RgbaUnorm,
+                    size_mode: nitrogen::image::ImageSizeMode::ContextRelative {
+                        width: 1.0,
+                        height: 1.0,
+                    },
+                };
+
+                builder.image_move("TestColor".into(), "TestColor2".into());
+                builder.image_read("TestDep".into());
+
+                builder.enable();
+            }
+
+            fn execute(&self, command_buffer: &mut graph::CommandBuffer) {
+                command_buffer.draw(0..6, 0..1)
+            }
+        }
+
+        ntg.graph_add_pass(graph, "TestPass2".into(), pass_info, Box::new(TestPass {}));
+    }
+
+    // TestPass3
+    {
+        let pass_info = nitrogen::graph::PassInfo::Graphics {
+            vertex_attrib: None, //Some(vertex_attrib),
+            shaders: nitrogen::graph::Shaders {
+                vertex: nitrogen::graph::ShaderInfo {
+                    content: Cow::Borrowed(include_bytes!(concat!(
+                        env!("OUT_DIR"),
+                        "/test.hlsl.vert.spirv"
+                    ))),
+                    entry: "VertexMain".into(),
+                },
+                fragment: Some(nitrogen::graph::ShaderInfo {
+                    content: Cow::Borrowed(include_bytes!(concat!(
+                        env!("OUT_DIR"),
+                        "/test.hlsl.frag.spirv"
+                    ))),
+                    entry: "FragmentMain".into(),
+                }),
+            },
+            primitive: nitrogen::pipeline::Primitive::TriangleList,
+            blend_mode: nitrogen::render_pass::BlendMode::Alpha,
+        };
+
+        struct TestPass {};
+
+        impl PassImpl for TestPass {
+            fn setup(&mut self, builder: &mut graph::GraphBuilder) {
+                let image_create = nitrogen::graph::ImageCreateInfo {
+                    format: nitrogen::image::ImageFormat::RgbaUnorm,
+                    size_mode: nitrogen::image::ImageSizeMode::ContextRelative {
+                        width: 1.0,
+                        height: 1.0,
+                    },
+                };
+
+                builder.image_move("TestColor2".into(), "TestColor3".into());
+                builder.image_read("TestDep".into());
+                builder.backbuffer_image("TestColor3".into());
+
+                builder.enable();
+            }
+
+            fn execute(&self, command_buffer: &mut graph::CommandBuffer) {
+                command_buffer.draw(0..6, 0..1)
+            }
+        }
+
+        ntg.graph_add_pass(graph, "TestPass3".into(), pass_info, Box::new(TestPass {}));
+    }
+
+    ntg.graph_set_output_image(graph, "TestColor3".into());
 
     graph
 }

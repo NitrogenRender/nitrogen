@@ -7,7 +7,7 @@ use image;
 
 use std::ops::Range;
 
-use smallvec::{SmallVec, smallvec};
+use smallvec::{smallvec, SmallVec};
 
 use device::DeviceContext;
 
@@ -53,11 +53,14 @@ impl RenderPassStorage {
         }
     }
 
-    pub fn create(&mut self, device: &DeviceContext, create_infos: &[RenderPassCreateInfo]) -> SmallVec<[Result<RenderPassHandle>; 16]> {
-
-        create_infos.iter()
+    pub fn create(
+        &mut self,
+        device: &DeviceContext,
+        create_infos: &[RenderPassCreateInfo],
+    ) -> SmallVec<[Result<RenderPassHandle>; 16]> {
+        create_infos
+            .iter()
             .map(|create_info| {
-
                 let pass = device.device.create_render_pass(
                     create_info.attachments,
                     create_info.subpasses,
@@ -66,18 +69,13 @@ impl RenderPassStorage {
 
                 match pass {
                     Ok(render_pass) => {
-                        let handle = self.storage.insert(RenderPass {
-                            render_pass,
-                        }).0;
+                        let handle = self.storage.insert(RenderPass { render_pass }).0;
 
                         Ok(handle)
-                    },
-                    Err(e) => {
-                        Err(e.into())
                     }
+                    Err(e) => Err(e.into()),
                 }
-            })
-            .collect()
+            }).collect()
     }
 
     pub fn raw(&self, handle: RenderPassHandle) -> Option<&::types::RenderPass> {

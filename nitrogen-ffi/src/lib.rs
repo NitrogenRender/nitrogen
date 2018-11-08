@@ -1,15 +1,14 @@
-extern crate nitrogen;
 extern crate env_logger;
+extern crate nitrogen;
 extern crate smallvec;
 
 pub mod image;
 pub mod sampler;
 
 use std::ffi::CStr;
-use std::os::raw::*;
 use std::ops::Deref;
 use std::ops::DerefMut;
-
+use std::os::raw::*;
 
 #[repr(C)]
 pub struct DisplayHandle(pub usize, pub u64);
@@ -36,9 +35,8 @@ impl DerefMut for Context {
     }
 }
 
-
 #[no_mangle]
-pub unsafe extern "C" fn context_create(name: *const c_char, version: u32) -> *mut Context{
+pub unsafe extern "C" fn context_create(name: *const c_char, version: u32) -> *mut Context {
     // FIXME HACK TO SEE VALIDATION LAYER OUTPUT IN GODOT.
     // I need to find a better solution for that.
     env_logger::init();
@@ -49,7 +47,11 @@ pub unsafe extern "C" fn context_create(name: *const c_char, version: u32) -> *m
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn context_add_x11_display(context: *mut Context, display: *mut c_void, window: c_ulong) -> DisplayHandle {
+pub unsafe extern "C" fn context_add_x11_display(
+    context: *mut Context,
+    display: *mut c_void,
+    window: c_ulong,
+) -> DisplayHandle {
     let context = &mut (*context);
 
     use std::mem::transmute;
@@ -59,11 +61,13 @@ pub unsafe extern "C" fn context_add_x11_display(context: *mut Context, display:
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn context_remove_display(context: *mut Context, display: DisplayHandle) -> bool {
+pub unsafe extern "C" fn context_remove_display(
+    context: *mut Context,
+    display: DisplayHandle,
+) -> bool {
     let context = &mut (*context);
     context.remove_display(display.into())
 }
-
 
 #[no_mangle]
 pub unsafe extern "C" fn context_release(context: *mut Context) {
@@ -81,15 +85,30 @@ pub unsafe extern "C" fn display_setup_swapchain(context: *mut Context, display:
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn display_set_clear_color(context: *mut Context, display: DisplayHandle, color: [f32; 4]) {
+pub unsafe extern "C" fn display_set_clear_color(
+    context: *mut Context,
+    display: DisplayHandle,
+    color: [f32; 4],
+) {
     let display_ctx = &mut (*context).displays[display.into()];
     display_ctx.clear_color = (color[0], color[1], color[2], color[3]);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn display_present(context: *mut Context, display: DisplayHandle, image: image::ImageHandle, sampler: sampler::SamplerHandle) -> bool {
+pub unsafe extern "C" fn display_present(
+    context: *mut Context,
+    display: DisplayHandle,
+    image: image::ImageHandle,
+    sampler: sampler::SamplerHandle,
+) -> bool {
     let device_ctx = &(*context).device_ctx;
     let display_ctx = &mut (*context).displays[display.into()];
 
-    display_ctx.present(&device_ctx, &(*context).image_storage, image.into(), &(*context).sampler_storage, sampler.into())
+    display_ctx.present(
+        &device_ctx,
+        &(*context).image_storage,
+        image.into(),
+        &(*context).sampler_storage,
+        sampler.into(),
+    )
 }

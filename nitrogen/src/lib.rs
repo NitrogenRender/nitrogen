@@ -47,7 +47,6 @@ pub mod graph;
 #[cfg(feature = "x11")]
 use ash::vk;
 
-
 pub type DisplayHandle = Handle<Display>;
 
 // DON'T CHANGE THE ORDER OF THE MEMBERS HERE!!!!
@@ -195,7 +194,10 @@ impl Context {
 
     // sampler
 
-    pub fn sampler_create(&mut self, create_infos: &[sampler::SamplerCreateInfo]) -> SmallVec<[sampler::SamplerHandle; 16]> {
+    pub fn sampler_create(
+        &mut self,
+        create_infos: &[sampler::SamplerCreateInfo],
+    ) -> SmallVec<[sampler::SamplerHandle; 16]> {
         self.sampler_storage.create(&self.device_ctx, create_infos)
     }
 
@@ -205,7 +207,10 @@ impl Context {
 
     // vertex attribs
 
-    pub fn vertex_attribs_create(&mut self, infos: &[vertex_attrib::VertexAttribInfo]) -> SmallVec<[vertex_attrib::VertexAttribHandle; 16]> {
+    pub fn vertex_attribs_create(
+        &mut self,
+        infos: &[vertex_attrib::VertexAttribInfo],
+    ) -> SmallVec<[vertex_attrib::VertexAttribHandle; 16]> {
         self.vertex_attrib_storage.create(infos)
     }
 
@@ -219,7 +224,13 @@ impl Context {
         self.graph_storage.create()
     }
 
-    pub fn graph_add_pass(&mut self, graph: graph::GraphHandle, name: CowString, info: graph::PassInfo, pass_impl: Box<dyn graph::PassImpl>) -> graph::PassId {
+    pub fn graph_add_pass(
+        &mut self,
+        graph: graph::GraphHandle,
+        name: CowString,
+        info: graph::PassInfo,
+        pass_impl: Box<dyn graph::PassImpl>,
+    ) -> graph::PassId {
         self.graph_storage.add_pass(graph, name, info, pass_impl)
     }
 
@@ -231,12 +242,18 @@ impl Context {
         self.graph_storage.destroy(graph);
     }
 
-    pub fn graph_compile(&mut self, graph: graph::GraphHandle) {
-        self.graph_storage.compile(graph);
+    pub fn graph_compile(
+        &mut self,
+        graph: graph::GraphHandle,
+    ) -> Result<(), Vec<graph::constructed::GraphError>> {
+        self.graph_storage.compile(graph)
     }
 
-
-    pub fn render_graph(&mut self, graph: graph::GraphHandle, exec_context: &graph::ExecutionContext) {
+    pub fn render_graph(
+        &mut self,
+        graph: graph::GraphHandle,
+        exec_context: &graph::ExecutionContext,
+    ) {
         self.graph_storage.execute(
             &self.device_ctx,
             &mut self.render_pass_storage,
@@ -252,14 +269,17 @@ impl Context {
     // display
 
     pub fn display_present(&mut self, display: DisplayHandle, graph_handle: graph::GraphHandle) {
-
         if !self.graph_storage.graphs.is_alive(graph_handle) {
             return;
         }
 
         let graph = &self.graph_storage.graphs[graph_handle];
 
-        if !self.graph_storage.compiled_graphs.contains_key(&graph_handle) {
+        if !self
+            .graph_storage
+            .compiled_graphs
+            .contains_key(&graph_handle)
+        {
             return;
         }
         let cgraph = &self.graph_storage.compiled_graphs[&graph_handle];

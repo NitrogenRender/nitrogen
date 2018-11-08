@@ -4,7 +4,6 @@ use smallvec::SmallVec;
 
 use std::slice;
 
-
 type ImageId = usize;
 type ImageGeneration = u64;
 
@@ -101,15 +100,9 @@ pub enum ImageDimension {
 impl From<ImageDimension> for nitrogen::image::ImageDimension {
     fn from(dim: ImageDimension) -> Self {
         match dim {
-            ImageDimension::D1 { x } => {
-                nitrogen::image::ImageDimension::D1 { x }
-            },
-            ImageDimension::D2 { x, y } => {
-                nitrogen::image::ImageDimension::D2 { x, y }
-            },
-            ImageDimension::D3 { x, y, z } => {
-                nitrogen::image::ImageDimension::D3 { x, y, z }
-            }
+            ImageDimension::D1 { x } => nitrogen::image::ImageDimension::D1 { x },
+            ImageDimension::D2 { x, y } => nitrogen::image::ImageDimension::D2 { x, y },
+            ImageDimension::D3 { x, y, z } => nitrogen::image::ImageDimension::D3 { x, y, z },
         }
     }
 }
@@ -117,15 +110,9 @@ impl From<ImageDimension> for nitrogen::image::ImageDimension {
 impl From<nitrogen::image::ImageDimension> for ImageDimension {
     fn from(dim: nitrogen::image::ImageDimension) -> Self {
         match dim {
-            nitrogen::image::ImageDimension::D1 { x } => {
-                ImageDimension::D1 { x }
-            },
-            nitrogen::image::ImageDimension::D2 { x, y } => {
-                ImageDimension::D2 { x, y }
-            },
-            nitrogen::image::ImageDimension::D3 { x, y, z } => {
-                ImageDimension::D3 { x, y, z }
-            }
+            nitrogen::image::ImageDimension::D1 { x } => ImageDimension::D1 { x },
+            nitrogen::image::ImageDimension::D2 { x, y } => ImageDimension::D2 { x, y },
+            nitrogen::image::ImageDimension::D3 { x, y, z } => ImageDimension::D3 { x, y, z },
         }
     }
 }
@@ -152,29 +139,30 @@ pub unsafe extern "C" fn image_create(
 
     let create_infos = slice::from_raw_parts(create_infos, count);
 
-    let internal_create_infos = (0..count).into_iter().map(|i| {
-        let create_info = &create_infos[i];
+    let internal_create_infos = (0..count)
+        .into_iter()
+        .map(|i| {
+            let create_info = &create_infos[i];
 
-        nitrogen::image::ImageCreateInfo {
-            dimension: create_info.dimension.into(),
-            format: create_info.format.into(),
-            num_mipmaps: create_info.num_mipmaps,
-            num_samples: create_info.num_samples,
-            num_layers: create_info.num_layers,
-            kind: create_info.kind.into(),
+            nitrogen::image::ImageCreateInfo {
+                dimension: create_info.dimension.into(),
+                format: create_info.format.into(),
+                num_mipmaps: create_info.num_mipmaps,
+                num_samples: create_info.num_samples,
+                num_layers: create_info.num_layers,
+                kind: create_info.kind.into(),
 
-            used_as_transfer_src: create_info.used_as_transfer_src,
-            used_as_transfer_dst: create_info.used_as_transfer_dst,
-            used_for_sampling: create_info.used_for_sampling,
-            used_as_color_attachment: create_info.used_as_color_attachment,
-            used_as_depth_stencil_attachment: create_info.used_as_depth_stencil_attachment,
-            used_as_storage_image: create_info.used_as_storage_image,
-            used_as_input_attachment: create_info.used_as_input_attachment,
+                used_as_transfer_src: create_info.used_as_transfer_src,
+                used_as_transfer_dst: create_info.used_as_transfer_dst,
+                used_for_sampling: create_info.used_for_sampling,
+                used_as_color_attachment: create_info.used_as_color_attachment,
+                used_as_depth_stencil_attachment: create_info.used_as_depth_stencil_attachment,
+                used_as_storage_image: create_info.used_as_storage_image,
+                used_as_input_attachment: create_info.used_as_input_attachment,
 
-            is_transient: create_info.is_transient,
-        }
-
-    }).collect::<SmallVec<[_; 16]>>();
+                is_transient: create_info.is_transient,
+            }
+        }).collect::<SmallVec<[_; 16]>>();
 
     let results = context
         .image_storage
@@ -188,7 +176,7 @@ pub unsafe extern "C" fn image_create(
             Ok(t) => {
                 handles[i] = ImageHandle(t.id(), t.generation());
                 successes[i] = true;
-            },
+            }
             Err(_) => {
                 successes[i] = false;
             }
@@ -227,12 +215,13 @@ pub unsafe extern "C" fn image_upload_data(
             };
 
             (handle, upload_info)
-        })
-        .collect::<SmallVec<[_; 16]>>();
+        }).collect::<SmallVec<[_; 16]>>();
 
-    let results = context
-        .image_storage
-        .upload_data(&context.device_ctx, &mut context.transfer, upload_infos.as_slice());
+    let results = context.image_storage.upload_data(
+        &context.device_ctx,
+        &mut context.transfer,
+        upload_infos.as_slice(),
+    );
 
     for (i, result) in results.into_iter().enumerate() {
         successes[i] = result.is_ok();
@@ -251,9 +240,7 @@ pub unsafe extern "C" fn image_destroy(
 
     let images = std::slice::from_raw_parts(images, images_count)
         .iter()
-        .map(|image| {
-            (*image).into()
-        })
+        .map(|image| (*image).into())
         .collect::<Vec<_>>();
 
     context.image_storage.destroy(&context.device_ctx, &images);

@@ -6,7 +6,6 @@ use smallvec::SmallVec;
 
 use std::slice;
 
-
 type SamplerId = usize;
 type SamplerGeneration = u64;
 
@@ -80,7 +79,6 @@ impl From<SamplerCreateInfo> for sampler::SamplerCreateInfo {
     }
 }
 
-
 #[no_mangle]
 pub unsafe extern "C" fn sampler_create(
     context: *mut nitrogen::Context,
@@ -88,7 +86,6 @@ pub unsafe extern "C" fn sampler_create(
     handles: *mut SamplerHandle,
     count: usize,
 ) {
-
     let context = &mut *context;
 
     let internal_create_infos = slice::from_raw_parts(create_infos, count);
@@ -99,10 +96,11 @@ pub unsafe extern "C" fn sampler_create(
         .map(|c| {
             let create_info = Into::<sampler::SamplerCreateInfo>::into(*c);
             create_info
-        })
-        .collect::<SmallVec<[_; 16]>>();
+        }).collect::<SmallVec<[_; 16]>>();
 
-    let sampler_handles = context.sampler_storage.create(&context.device_ctx, internal_create.as_slice());
+    let sampler_handles = context
+        .sampler_storage
+        .create(&context.device_ctx, internal_create.as_slice());
 
     for (i, sampler) in sampler_handles.into_iter().enumerate() {
         handles[i] = SamplerHandle(sampler.id(), sampler.generation());
@@ -122,5 +120,7 @@ pub unsafe extern "C" fn sampler_destroy(
         .map(|s| SamplerHandle::into(s.clone()))
         .collect::<SmallVec<[_; 16]>>();
 
-    context.sampler_storage.destroy(&context.device_ctx, samplers.as_slice());
+    context
+        .sampler_storage
+        .destroy(&context.device_ctx, samplers.as_slice());
 }

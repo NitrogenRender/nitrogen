@@ -1,6 +1,6 @@
 use smallvec::SmallVec;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use gfx;
 
@@ -8,12 +8,12 @@ use storage::{Handle, Storage};
 
 use device::DeviceContext;
 
-use vertex_attrib::{VertexAttribStorage, VertexAttribHandle};
+use vertex_attrib::{VertexAttribHandle, VertexAttribStorage};
 
+use image::{ImageHandle, ImageStorage}; // can't import ImageCreateInfo because it's shadowed here.
 use pipeline::{GraphicsPipelineCreateInfo, PipelineHandle, PipelineStorage};
 use render_pass::{RenderPassCreateInfo, RenderPassHandle, RenderPassStorage};
-use image::{ImageStorage, ImageHandle}; // can't import ImageCreateInfo because it's shadowed here.
-use sampler::{SamplerStorage, SamplerCreateInfo, SamplerHandle};
+use sampler::{SamplerCreateInfo, SamplerHandle, SamplerStorage};
 
 pub mod builder;
 pub use self::builder::*;
@@ -32,9 +32,9 @@ use util::CowString;
 use types::Framebuffer;
 
 use image;
-use sampler;
 use pipeline;
 use render_pass;
+use sampler;
 
 macro_rules! impl_id {
     ($name:ident) => {
@@ -104,10 +104,15 @@ impl GraphStorge {
     }
 
     // TODO This needs to be revisited. The profiler says this function takes quite some resources..
-    fn construct(&mut self, graph_handle: GraphHandle) -> ConstructedGraph {
+    fn construct(
+        &mut self,
+        graph_handle: GraphHandle,
+    ) -> Result<ConstructedGraph, Vec<constructed::GraphError>> {
         let graph = &mut self.graphs[graph_handle];
 
         let mut constructed_graph = ConstructedGraph::new();
+
+        let mut errors = vec![];
 
         for i in 0..graph.passes.len() {
             let mut builder = builder::GraphBuilder::new();
@@ -116,19 +121,34 @@ impl GraphStorge {
             graph.pass_impls[i].setup(&mut builder);
 
             if builder.enabled {
-                constructed_graph.add_pass(pass_id, builder);
+                constructed_graph.add_pass(pass_id, builder, &mut errors);
             }
         }
 
-        constructed_graph
+        if errors.len() > 0 {
+            Err(errors)
+        } else {
+            println!("{:?}", constructed_graph);
+
+            if let Some(img) = &graph.output_image {
+                println!("{:?}", constructed_graph.execution_list(img));
+            }
+
+            Ok(constructed_graph)
+        }
     }
 
-    pub fn compile(&mut self, graph_handle: GraphHandle) {
-        let constructed_graph = self.construct(graph_handle);
+    pub fn compile(
+        &mut self,
+        graph_handle: GraphHandle,
+    ) -> Result<(), Vec<constructed::GraphError>> {
+        let constructed_graph = self.construct(graph_handle)?;
 
         let mut compiled_graph = CompiledGraph::new(&self.graphs[graph_handle], constructed_graph);
 
         self.compiled_graphs.insert(graph_handle, compiled_graph);
+
+        Ok(())
     }
 
     pub fn execute(
@@ -142,10 +162,7 @@ impl GraphStorge {
         graph_handle: GraphHandle,
         context: &ExecutionContext,
     ) {
-
         use gfx::Device;
-
-
 
         let graph = &self.graphs[graph_handle];
         let compiled_graph = &self.compiled_graphs[&graph_handle];
@@ -153,32 +170,32 @@ impl GraphStorge {
         let mut command_pool = {
             let queue_group = device.queue_group();
 
-            device.device.create_command_pool_typed(
-                &queue_group,
-                gfx::pool::CommandPoolCreateFlags::empty(),
-                graph.passes.len(),
-            ).unwrap()
+            device
+                .device
+                .create_command_pool_typed(
+                    &queue_group,
+                    gfx::pool::CommandPoolCreateFlags::empty(),
+                    graph.passes.len(),
+                ).unwrap()
         };
 
-        let resources = self.resources
-            .entry(graph_handle)
-            .or_insert_with(|| {
-                let images_len = compiled_graph.images.len();
-                let passes_len = graph.passes.len();
+        let resources = self.resources.entry(graph_handle).or_insert_with(|| {
+            let images_len = compiled_graph.images.len();
+            let passes_len = graph.passes.len();
 
-                let mut framebuffers = Vec::with_capacity(passes_len);
-                for i in 0..passes_len {
-                    framebuffers.push(None);
-                }
+            let mut framebuffers = Vec::with_capacity(passes_len);
+            for i in 0..passes_len {
+                framebuffers.push(None);
+            }
 
-                GraphResources {
-                    backbuffer_images: HashSet::with_capacity(compiled_graph.image_backbuffers.len()),
-                    pipelines: vec![None; passes_len],
-                    passes: vec![None; passes_len],
-                    images: vec![None; images_len],
-                    framebuffers,
-                }
-            });
+            GraphResources {
+                backbuffer_images: HashSet::with_capacity(compiled_graph.image_backbuffers.len()),
+                pipelines: vec![None; passes_len],
+                passes: vec![None; passes_len],
+                images: vec![None; images_len],
+                framebuffers,
+            }
+        });
 
         for group in &compiled_graph.execution_list {
             for pass in group {
@@ -203,7 +220,9 @@ impl GraphStorge {
                                 resources.passes[pass.0] = render_pass;
                             }
 
-                            if resources.pipelines[pass.0].is_none() && resources.passes[pass.0].is_some() {
+                            if resources.pipelines[pass.0].is_none()
+                                && resources.passes[pass.0].is_some()
+                            {
                                 let graphics_pipeline = create_graphics_pipeline(
                                     device,
                                     render_pass_storage,
@@ -225,7 +244,6 @@ impl GraphStorge {
                 // create image resources
                 {
                     for img in &compiled_graph.image_creates[pass] {
-
                         if compiled_graph.image_backbuffers.contains(img) {
                             // this will be a backbuffer image, so not a transient resource.
                             if resources.backbuffer_images.contains(img) {
@@ -247,7 +265,6 @@ impl GraphStorge {
                             }
 
                             resources.images[img.0] = image;
-
                         } else {
                             // transient image.
                             let image = create_image(
@@ -261,14 +278,12 @@ impl GraphStorge {
 
                             resources.images[img.0] = image;
                         }
-
                     }
                 }
 
                 // create framebuffers
                 {
                     if resources.framebuffers[pass.0].is_none() {
-
                         use gfx::Device;
 
                         // to create a framebuffer we need a render pass which the framebuffer
@@ -277,7 +292,9 @@ impl GraphStorge {
                         // The framebuffer itself has an extent. Here we just take the extent from
                         // the first attachment we find.
 
-                        let render_pass = render_pass_storage.raw(resources.passes[pass.0].unwrap()).unwrap();
+                        let render_pass = render_pass_storage
+                            .raw(resources.passes[pass.0].unwrap())
+                            .unwrap();
 
                         let (views, dimensions) = {
                             compiled_graph.image_writes[pass]
@@ -286,40 +303,27 @@ impl GraphStorge {
                                     let handle = resources.images[x.0].unwrap();
                                     let image = image_storage.raw(handle.0).unwrap();
                                     (&image.view, image.dimension)
-                                })
-                                .unzip::<_, _, SmallVec<[_; 16]>, SmallVec<[_; 16]>>()
+                                }).unzip::<_, _, SmallVec<[_; 16]>, SmallVec<[_; 16]>>()
                         };
 
                         let extent = {
-                            dimensions.as_slice()
+                            dimensions
+                                .as_slice()
                                 .iter()
-                                .map(|img_dim| {
-                                    match img_dim {
-                                        image::ImageDimension::D1 { x, } => {
-                                            (*x, 1, 1)
-                                        }
-                                        image::ImageDimension::D2 { x, y, } => {
-                                            (*x, *y, 1)
-                                        },
-                                        image::ImageDimension::D3 { x, y, z, } => {
-                                            (*x, *y, *z)
-                                        }
-                                    }
-                                })
-                                .map(|(x, y, z)| {
-                                    gfx::image::Extent {
-                                        width: x,
-                                        height: y,
-                                        depth: z,
-                                    }
-                                }).next().unwrap()
+                                .map(|img_dim| match img_dim {
+                                    image::ImageDimension::D1 { x } => (*x, 1, 1),
+                                    image::ImageDimension::D2 { x, y } => (*x, *y, 1),
+                                    image::ImageDimension::D3 { x, y, z } => (*x, *y, *z),
+                                }).map(|(x, y, z)| gfx::image::Extent {
+                                    width: x,
+                                    height: y,
+                                    depth: z,
+                                }).next()
+                                .unwrap()
                         };
 
-                        let framebuffer = device.device.create_framebuffer(
-                            render_pass,
-                            views,
-                            extent,
-                        );
+                        let framebuffer =
+                            device.device.create_framebuffer(render_pass, views, extent);
 
                         resources.framebuffers[pass.0] = framebuffer.ok();
                     }
@@ -329,9 +333,7 @@ impl GraphStorge {
                 {
                     let pass_impl = &graph.pass_impls[pass.0];
 
-                    let mut raw_cmd_buf = command_pool.acquire_command_buffer(
-                        false,
-                    );
+                    let mut raw_cmd_buf = command_pool.acquire_command_buffer(false);
 
                     let pipeline = {
                         let handle = resources.pipelines[pass.0].unwrap();
@@ -343,9 +345,7 @@ impl GraphStorge {
 
                         render_pass_storage.raw(handle).unwrap()
                     };
-                    let framebuffer = {
-                        resources.framebuffers[pass.0].as_ref().unwrap()
-                    };
+                    let framebuffer = { resources.framebuffers[pass.0].as_ref().unwrap() };
 
                     let viewport = gfx::pso::Viewport {
                         depth: 0.0..1.0,
@@ -367,13 +367,9 @@ impl GraphStorge {
                             render_pass,
                             framebuffer,
                             viewport.rect,
-                            &[
-                                gfx::command::ClearValue::Color(
-                                    gfx::command::ClearColor::Float(
-                                        [0.0, 0.0, 0.0, 0.0]
-                                    )
-                                ),
-                            ]
+                            &[gfx::command::ClearValue::Color(
+                                gfx::command::ClearColor::Float([0.0, 0.0, 0.0, 0.0]),
+                            )],
                         );
 
                         let mut command_buffer = command::CommandBuffer::new(encoder);
@@ -385,17 +381,14 @@ impl GraphStorge {
                     let mut submit_fence = device.device.create_fence(false).unwrap();
 
                     {
-                        let submission = gfx::Submission::new()
-                            .submit(Some(submit_buffer));
+                        let submission = gfx::Submission::new().submit(Some(submit_buffer));
                         device.queue_group().queues[0].submit(submission, Some(&mut submit_fence));
                     }
 
                     device.device.wait_for_fence(&submit_fence, !0);
                     device.device.destroy_fence(submit_fence);
                 }
-
             }
-
         }
 
         command_pool.reset();
@@ -412,7 +405,6 @@ fn create_render_pass_graphics(
     pass_info: &PassInfo,
 ) -> Option<RenderPassHandle> {
     let attachments = {
-
         let empty_hash_set = HashSet::new();
         let writes = {
             if let Some(set) = graph.image_writes.get(&pass_id) {
@@ -463,9 +455,7 @@ fn create_render_pass_graphics(
         .as_slice()
         .iter()
         .enumerate()
-        .map(|(i, attachment)| {
-            (i, gfx::image::Layout::General)
-        })
+        .map(|(i, attachment)| (i, gfx::image::Layout::General))
         .collect::<SmallVec<[_; 16]>>();
 
     let subpass = {
@@ -474,18 +464,18 @@ fn create_render_pass_graphics(
             depth_stencil: None,
             inputs: &[],
             resolves: &[],
-            preserves: &[]
+            preserves: &[],
         }
     };
 
     let dependencies = {
         gfx::pass::SubpassDependency {
-            passes: gfx::pass::SubpassRef::External .. gfx::pass::SubpassRef::Pass(0),
+            passes: gfx::pass::SubpassRef::External..gfx::pass::SubpassRef::Pass(0),
             stages: gfx::pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT
                 ..gfx::pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT,
             accesses: gfx::image::Access::empty()
                 ..(gfx::image::Access::COLOR_ATTACHMENT_READ
-                | gfx::image::Access::COLOR_ATTACHMENT_WRITE),
+                    | gfx::image::Access::COLOR_ATTACHMENT_WRITE),
         }
     };
 
@@ -511,11 +501,13 @@ fn create_graphics_pipeline(
     pass_id: PassId,
     pass_info: &PassInfo,
 ) -> Option<PipelineHandle> {
-
-    let (primitive, shaders, vertex_attribs,) = match pass_info {
-        PassInfo::Graphics { primitive, shaders, vertex_attrib, .. } => {
-            (*primitive, shaders, vertex_attrib,)
-        },
+    let (primitive, shaders, vertex_attribs) = match pass_info {
+        PassInfo::Graphics {
+            primitive,
+            shaders,
+            vertex_attrib,
+            ..
+        } => (*primitive, shaders, vertex_attrib),
         _ => {
             return None;
         }
@@ -537,16 +529,18 @@ fn create_graphics_pipeline(
             None
         },
         // TODO also add support for geometry shaders in graph
-        shader_geometry: None
+        shader_geometry: None,
     };
 
-    let handle = pipeline_storage.create_graphics_pipelines(
-        device,
-        render_pass_storage,
-        vertex_attrib_storage,
-        render_pass,
-        &[create_info]
-    ).remove(0).ok();
+    let handle = pipeline_storage
+        .create_graphics_pipelines(
+            device,
+            render_pass_storage,
+            vertex_attrib_storage,
+            render_pass,
+            &[create_info],
+        ).remove(0)
+        .ok();
 
     handle
 }
@@ -559,22 +553,19 @@ fn create_image(
     create_info: &ImageCreateInfo,
     is_transient: bool,
 ) -> Option<(ImageHandle, SamplerHandle)> {
-
     let dims = {
-
         let (width, height) = match create_info.size_mode {
-            image::ImageSizeMode::Absolute { width, height } => {
-                (width, height)
-            },
-            image::ImageSizeMode::ContextRelative { width, height } => {
-                (
-                    (width * exec_context.reference_size.0 as f32) as u32,
-                    (height * exec_context.reference_size.1 as f32) as u32,
-                )
-            }
+            image::ImageSizeMode::Absolute { width, height } => (width, height),
+            image::ImageSizeMode::ContextRelative { width, height } => (
+                (width * exec_context.reference_size.0 as f32) as u32,
+                (height * exec_context.reference_size.1 as f32) as u32,
+            ),
         };
 
-        image::ImageDimension::D2 { x: width, y: height }
+        image::ImageDimension::D2 {
+            x: width,
+            y: height,
+        }
     };
 
     let internal_create_info = image::ImageCreateInfo {
@@ -595,26 +586,25 @@ fn create_image(
         is_transient,
     };
 
-    let img = image_storage.create(
-        device,
-        &[internal_create_info]
-    ).remove(0).ok()?;
+    let img = image_storage
+        .create(device, &[internal_create_info])
+        .remove(0)
+        .ok()?;
 
     let sampler_create_info = SamplerCreateInfo {
         wrap_mode: (
             sampler::WrapMode::Clamp,
             sampler::WrapMode::Clamp,
             sampler::WrapMode::Clamp,
-            ),
+        ),
         mag_filter: sampler::Filter::Linear,
         min_filter: sampler::Filter::Linear,
         mip_filter: sampler::Filter::Linear,
     };
 
-    let sampler = sampler_storage.create(
-        device,
-        &[sampler_create_info]
-    ).remove(0);
+    let sampler = sampler_storage
+        .create(device, &[sampler_create_info])
+        .remove(0);
 
     Some((img, sampler))
 }

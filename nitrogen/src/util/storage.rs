@@ -1,7 +1,7 @@
 use slab::Slab;
+use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
-use std::hash::{Hash, Hasher};
 
 pub type Generation = u64;
 pub type Id = usize;
@@ -29,7 +29,6 @@ impl<T> PartialEq for Handle<T> {
     }
 }
 impl<T> Eq for Handle<T> {}
-
 
 impl<T> Handle<T> {
     pub fn new(id: Id, gen: Generation) -> Self {

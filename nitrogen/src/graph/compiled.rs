@@ -11,6 +11,7 @@ use util::CowString;
 pub(crate) enum ImageCreateType {
     Copy(ImageId),
     Create(ImageCreateInfo),
+    Moved(ImageId),
 }
 
 #[derive(Clone, Debug)]
@@ -31,6 +32,8 @@ pub struct CompiledGraph {
 
 impl CompiledGraph {
     pub fn new(graph: &Graph, cgraph: ConstructedGraph) -> Self {
+        /*
+
         let exec_list = cgraph.execution_list();
 
         let mut image_creates = HashMap::new();
@@ -147,6 +150,8 @@ impl CompiledGraph {
 
             image_writes,
         }
+        */
+        unimplemented!()
     }
 
     pub fn image_info(&self, image_id: ImageId) -> Option<&ImageCreateInfo> {
@@ -161,6 +166,9 @@ impl CompiledGraph {
                 }
                 ImageCreateType::Copy(next_id) => {
                     id = next_id.0;
+                }
+                ImageCreateType::Moved(prev_id) => {
+                    id = prev_id.0;
                 }
             }
         }

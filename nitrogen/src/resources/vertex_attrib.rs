@@ -39,12 +39,12 @@ impl VertexAttribStorage {
         &mut self,
         create_infos: &[VertexAttribInfo],
     ) -> SmallVec<[VertexAttribHandle; 16]> {
-
         create_infos
             .iter()
             .map(|create_info| {
                 let num_attribs = {
-                    create_info.buffer_infos
+                    create_info
+                        .buffer_infos
                         .iter()
                         .map(|buffer| buffer.elements.len())
                         .sum()
@@ -52,32 +52,26 @@ impl VertexAttribStorage {
 
                 let mut attribs = Vec::with_capacity(num_attribs);
 
-                let attrib_iter = create_info.buffer_infos
-                    .iter()
-                    .flat_map(|buffer| {
+                let attrib_iter = create_info.buffer_infos.iter().flat_map(|buffer| {
+                    let index = buffer.index;
 
-                        let index = buffer.index;
-
-                        buffer.elements
-                            .iter()
-                            .map(move |elem| {
-                                gfx::pso::AttributeDesc {
-                                    location: elem.location,
-                                    binding: index,
-                                    element: gfx::pso::Element { format: elem.format, offset: elem.offset }
-                                }
-                            })
-                    });
+                    buffer
+                        .elements
+                        .iter()
+                        .map(move |elem| gfx::pso::AttributeDesc {
+                            location: elem.location,
+                            binding: index,
+                            element: gfx::pso::Element {
+                                format: elem.format,
+                                offset: elem.offset,
+                            },
+                        })
+                });
 
                 attribs.extend(attrib_iter);
 
-                VertexAttrib {
-                    attribs,
-                }
-            })
-            .map(|attrib| {
-                self.storage.insert(attrib).0
-            })
+                VertexAttrib { attribs }
+            }).map(|attrib| self.storage.insert(attrib).0)
             .collect()
     }
 
@@ -94,5 +88,4 @@ impl VertexAttribStorage {
             self.storage.remove(*handle);
         }
     }
-
 }

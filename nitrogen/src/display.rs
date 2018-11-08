@@ -345,7 +345,6 @@ impl Display {
             }
         };
 
-
         if let Some(ref mut swapchain) = self.swapchain {
             let mut swapchain_sem = device
                 .device

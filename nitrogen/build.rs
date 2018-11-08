@@ -5,11 +5,10 @@ use shaderc::*;
 use std::env;
 use std::path::PathBuf;
 
-use std::fs;
 use std::collections::HashSet;
+use std::fs;
 
 fn main() {
-
     let project_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
     let shaders_dir = project_dir.join("src").join("core_shaders");
@@ -18,7 +17,6 @@ fn main() {
     let mut fragment_shaders = HashSet::new();
     let mut geometry_shaders = HashSet::new();
     let mut compute_shaders = HashSet::new();
-
 
     for entry in fs::read_dir(shaders_dir).unwrap() {
         if entry.is_err() {
@@ -64,11 +62,9 @@ fn main() {
     for shader in compute_shaders {
         compile(&mut compiler, shader, ShaderKind::Compute);
     }
-
 }
 
 pub fn compile(compiler: &mut Compiler, path: PathBuf, kind: ShaderKind) {
-
     let contents = match fs::read_to_string(path.clone()) {
         Ok(c) => c,
         Err(_) => return,
@@ -97,10 +93,16 @@ pub fn compile(compiler: &mut Compiler, path: PathBuf, kind: ShaderKind) {
         }
     }
 
-    let artifact = compile_to_spirv(compiler, path.to_str().unwrap(), &contents, kind, entry, lang);
+    let artifact = compile_to_spirv(
+        compiler,
+        path.to_str().unwrap(),
+        &contents,
+        kind,
+        entry,
+        lang,
+    );
 
     let out_name = {
-
         let mut new_name = path.file_name().unwrap().to_string_lossy().to_string();
 
         if lang == SourceLanguage::HLSL {
@@ -123,8 +125,14 @@ pub fn compile(compiler: &mut Compiler, path: PathBuf, kind: ShaderKind) {
     };
 }
 
-pub fn compile_to_spirv(compiler: &mut Compiler, file_name: &str, source: &str, kind: ShaderKind, entry: &str, lang: SourceLanguage) -> Option<Vec<u8>> {
-
+pub fn compile_to_spirv(
+    compiler: &mut Compiler,
+    file_name: &str,
+    source: &str,
+    kind: ShaderKind,
+    entry: &str,
+    lang: SourceLanguage,
+) -> Option<Vec<u8>> {
     let mut options = CompileOptions::new().unwrap();
 
     options.set_source_language(lang);
@@ -133,13 +141,7 @@ pub fn compile_to_spirv(compiler: &mut Compiler, file_name: &str, source: &str, 
 
     options.set_warnings_as_errors();
 
-    let artifact = compiler.compile_into_spirv(
-        source,
-        kind,
-        file_name,
-        entry,
-        Some(&options),
-    );
+    let artifact = compiler.compile_into_spirv(source, kind, file_name, entry, Some(&options));
 
     match artifact {
         Ok(data) => {
@@ -157,7 +159,7 @@ pub fn compile_to_spirv(compiler: &mut Compiler, file_name: &str, source: &str, 
             */
 
             Some(data.as_binary_u8().to_owned())
-        },
+        }
         Err(e) => {
             eprintln!("{:?}", e);
             None

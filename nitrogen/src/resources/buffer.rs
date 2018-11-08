@@ -303,7 +303,12 @@ impl BufferStorage {
 
             let result = if upload_fits {
                 unsafe {
-                    write_data_to_buffer(device, &buffer.buffer, data.offset, to_u8_slice(data.data)).into()
+                    write_data_to_buffer(
+                        device,
+                        &buffer.buffer,
+                        data.offset,
+                        to_u8_slice(data.data),
+                    ).into()
                 }
             } else {
                 Err(BufferError::UploadOutOfBounds)
@@ -369,7 +374,6 @@ impl BufferStorage {
                 .as_slice()
                 .iter()
                 .filter_map(|(idx, data, buffer, staging)| {
-
                     let upload_sice = unsafe { to_u8_slice(data.data) };
 
                     match write_data_to_buffer(device, staging, 0, upload_sice) {
