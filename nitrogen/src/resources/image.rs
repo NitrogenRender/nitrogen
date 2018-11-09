@@ -11,6 +11,7 @@ use gfxm::SmartAllocator;
 
 use std;
 use std::collections::BTreeSet;
+use std::hash::{Hash, Hasher};
 
 use smallvec::smallvec;
 use smallvec::SmallVec;
@@ -40,9 +41,24 @@ pub enum ImageSizeMode {
     Absolute { width: u32, height: u32 },
 }
 
+impl Hash for ImageSizeMode {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            ImageSizeMode::ContextRelative { .. } => {
+                state.write_i8(0);
+            },
+            ImageSizeMode::Absolute { width, height } => {
+                state.write_i8(1);
+                state.write_u32(*width);
+                state.write_u32(*height);
+            }
+        }
+    }
+}
+
 pub type ImageHandle = Handle<Image>;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct ImageCreateInfo {
     pub dimension: ImageDimension,
     pub num_layers: u16,
@@ -51,15 +67,53 @@ pub struct ImageCreateInfo {
     pub format: ImageFormat,
     pub kind: ViewKind,
 
-    pub used_as_transfer_src: bool,
-    pub used_as_transfer_dst: bool,
-    pub used_for_sampling: bool,
-    pub used_as_color_attachment: bool,
-    pub used_as_depth_stencil_attachment: bool,
-    pub used_as_storage_image: bool,
-    pub used_as_input_attachment: bool,
+    pub usage: ImageUsage,
 
     pub is_transient: bool,
+}
+
+#[derive(Default, Clone, Copy)]
+pub struct ImageUsage {
+    pub transfer_src: bool,
+    pub transfer_dst: bool,
+    pub sampling: bool,
+    pub color_attachment: bool,
+    pub depth_stencil_attachment: bool,
+    pub storage_image: bool,
+    pub input_attachment: bool,
+}
+
+impl From<ImageUsage> for gfx::image::Usage {
+    fn from(val: ImageUsage) -> Self {
+        use gfx::image::Usage;
+
+        let mut flags = Usage::empty();
+
+        if val.transfer_src {
+            flags |= Usage::TRANSFER_SRC;
+        }
+        if val.transfer_dst {
+            flags |= Usage::TRANSFER_DST;
+        }
+
+        if val.sampling {
+            flags |= Usage::SAMPLED;
+        }
+        if val.color_attachment {
+            flags |= Usage::COLOR_ATTACHMENT;
+        }
+        if val.depth_stencil_attachment {
+            flags |= Usage::DEPTH_STENCIL_ATTACHMENT;
+        }
+        if val.storage_image {
+            flags |= Usage::STORAGE;
+        }
+        if val.input_attachment {
+            flags |= Usage::INPUT_ATTACHMENT;
+        }
+
+        flags
+    }
 }
 
 pub struct ImageUploadInfo<'a> {
@@ -69,7 +123,7 @@ pub struct ImageUploadInfo<'a> {
     pub target_offset: (u32, u32, u32),
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Hash)]
 pub enum ImageFormat {
     RUnorm,
     RgUnorm,
@@ -237,36 +291,7 @@ impl ImageStorage {
 
                 use gfx::memory::Properties;
 
-                let usage_flags = {
-                    use gfx::image::Usage;
-
-                    let mut flags = Usage::empty();
-
-                    if create_info.used_as_transfer_src {
-                        flags |= Usage::TRANSFER_SRC;
-                    }
-                    if create_info.used_as_transfer_dst {
-                        flags |= Usage::TRANSFER_DST;
-                    }
-
-                    if create_info.used_for_sampling {
-                        flags |= Usage::SAMPLED;
-                    }
-                    if create_info.used_as_color_attachment {
-                        flags |= Usage::COLOR_ATTACHMENT;
-                    }
-                    if create_info.used_as_depth_stencil_attachment {
-                        flags |= Usage::DEPTH_STENCIL_ATTACHMENT;
-                    }
-                    if create_info.used_as_storage_image {
-                        flags |= Usage::STORAGE;
-                    }
-                    if create_info.used_as_input_attachment {
-                        flags |= Usage::INPUT_ATTACHMENT;
-                    }
-
-                    flags
-                };
+                let usage_flags = create_info.usage.into();
 
                 let alloc_type = if create_info.is_transient {
                     gfxm::Type::ShortLived

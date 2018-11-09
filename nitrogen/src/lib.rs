@@ -58,7 +58,7 @@ pub type DisplayHandle = Handle<Display>;
 // MOUNTAINS OF CRASHES WILL POUR ONTO YOU.
 // So please, just don't.
 pub struct Context {
-    pub graph_storage: graph::GraphStorge,
+    pub graph_storage: graph::GraphStorage,
 
     pub render_pass_storage: render_pass::RenderPassStorage,
     pub pipeline_storage: pipeline::PipelineStorage,
@@ -87,7 +87,7 @@ impl Context {
         let pipeline_storage = pipeline::PipelineStorage::new();
         let render_pass_storage = render_pass::RenderPassStorage::new();
 
-        let graph_storage = graph::GraphStorge::new();
+        let graph_storage = graph::GraphStorage::new();
 
         Context {
             instance,
@@ -218,24 +218,28 @@ impl Context {
         self.vertex_attrib_storage.destroy(handles);
     }
 
-    // graph
+    // old_graph
 
     pub fn graph_create(&mut self) -> graph::GraphHandle {
         self.graph_storage.create()
     }
 
-    pub fn graph_add_pass(
+    pub fn graph_add_pass<T: Into<graph::PassName>>(
         &mut self,
         graph: graph::GraphHandle,
-        name: CowString,
+        name: T,
         info: graph::PassInfo,
         pass_impl: Box<dyn graph::PassImpl>,
-    ) -> graph::PassId {
-        self.graph_storage.add_pass(graph, name, info, pass_impl)
+    ) {
+        self.graph_storage.add_pass(graph, name, info, pass_impl);
     }
 
-    pub fn graph_set_output_image(&mut self, graph: graph::GraphHandle, image_name: CowString) {
-        self.graph_storage.set_output_image(graph, image_name);
+    pub fn graph_add_output_image<T: Into<graph::ResourceName>>(&mut self, graph: graph::GraphHandle, image_name: T) {
+        self.graph_storage.add_output_image(graph, image_name);
+    }
+
+    pub fn graph_add_output_buffer<T: Into<graph::ResourceName>>(&mut self, graph: graph::GraphHandle, buffer_name: T) {
+        self.graph_storage.add_output_buffer(graph, buffer_name)
     }
 
     pub fn graph_destroy(&mut self, graph: graph::GraphHandle) {
@@ -245,8 +249,10 @@ impl Context {
     pub fn graph_compile(
         &mut self,
         graph: graph::GraphHandle,
-    ) -> Result<(), Vec<graph::constructed::GraphError>> {
-        self.graph_storage.compile(graph)
+    // ) -> Result<(), Vec<graph::constructed::GraphError>> {
+    ) -> Result<(), ()> {
+        self.graph_storage.compile(graph);
+        Ok(())
     }
 
     pub fn render_graph(
@@ -254,6 +260,7 @@ impl Context {
         graph: graph::GraphHandle,
         exec_context: &graph::ExecutionContext,
     ) {
+        /*
         self.graph_storage.execute(
             &self.device_ctx,
             &mut self.render_pass_storage,
@@ -264,11 +271,13 @@ impl Context {
             graph,
             exec_context,
         );
+        */
     }
 
     // display
 
     pub fn display_present(&mut self, display: DisplayHandle, graph_handle: graph::GraphHandle) {
+        /*
         if !self.graph_storage.graphs.is_alive(graph_handle) {
             return;
         }
@@ -292,6 +301,7 @@ impl Context {
 
         let (image_handle, sampler_handle) = if let Some(name) = &graph.output_image {
             let id = cgraph.image_name_lookup[name];
+            let id = cgraph.resolve_image_id(id).unwrap();
             resources.images[id.0].unwrap()
         } else {
             return;
@@ -304,5 +314,6 @@ impl Context {
             &self.sampler_storage,
             sampler_handle,
         );
+        */
     }
 }

@@ -64,9 +64,13 @@ fn main() {
             num_samples: 1,
             num_mipmaps: 1,
 
-            used_as_transfer_dst: true,
-            used_for_sampling: true,
-            ..Default::default()
+            usage: image::ImageUsage {
+                transfer_dst: true,
+                sampling: true,
+                ..Default::default()
+            },
+
+            .. Default::default()
         };
 
         let img = ntg.image_create(&[create_info]).remove(0).unwrap();
@@ -180,12 +184,15 @@ fn main() {
             resized = false;
         }
 
+        ntg.graph_compile(graph);
+        /*
         if let Err(errs) = ntg.graph_compile(graph) {
-            println!("Errors occured while compiling the graph");
+            println!("Errors occured while compiling the old_graph");
             for err in errs {
                 println!("{:?}", err);
             }
         }
+        */
 
         let exec_context = nitrogen::graph::ExecutionContext {
             reference_size: (400, 400),
@@ -194,6 +201,8 @@ fn main() {
         ntg.render_graph(graph, &exec_context);
 
         ntg.display_present(display, graph);
+
+        // running = false;
     }
 
     ntg.buffer_storage.destroy(&ntg.device_ctx, &[buffer]);
@@ -228,6 +237,7 @@ fn setup_graphs(
                     ))),
                     entry: "FragmentMain".into(),
                 }),
+                geometry: None,
             },
             primitive: nitrogen::pipeline::Primitive::TriangleList,
             blend_mode: nitrogen::render_pass::BlendMode::Alpha,
@@ -237,6 +247,30 @@ fn setup_graphs(
 
         impl PassImpl for TestPass {
             fn setup(&mut self, builder: &mut graph::GraphBuilder) {
+                let create_info = graph::ImageCreateInfo {
+                    format: image::ImageFormat::RgbaUnorm,
+                    size_mode: image::ImageSizeMode::ContextRelative {
+                        width: 1.0,
+                        height: 1.0,
+                    },
+                };
+                builder.image_create("ImageTest", create_info);
+
+                let create_info = graph::ImageCreateInfo {
+                    format: image::ImageFormat::RgbaUnorm,
+                    size_mode: image::ImageSizeMode::ContextRelative {
+                        width: 1.0,
+                        height: 1.0,
+                    },
+                };
+                builder.image_create("ImageMask", create_info);
+
+                builder.image_write_color("ImageTest", 0);
+                builder.image_write_color("ImageMask", 1);
+
+                builder.enable();
+
+                /*
                 let image_create = nitrogen::graph::ImageCreateInfo {
                     format: nitrogen::image::ImageFormat::RgbaUnorm,
                     size_mode: nitrogen::image::ImageSizeMode::ContextRelative {
@@ -245,17 +279,21 @@ fn setup_graphs(
                     },
                 };
 
-                builder.image_create("TestDep".into(), image_create);
+                builder.image_create("TestColor0".into(), image_create);
+                builder.backbuffer_image("TestColor0".into());
+
+                builder.image_write("TestColor0".into(), 0);
 
                 builder.enable();
+                */
             }
 
             fn execute(&self, command_buffer: &mut graph::CommandBuffer) {
-                command_buffer.draw(0..6, 0..1)
+                command_buffer.draw(0..3, 0..1)
             }
         }
 
-        ntg.graph_add_pass(graph, "TestDep".into(), pass_info, Box::new(TestPass {}));
+        ntg.graph_add_pass(graph, "TestPass", pass_info, Box::new(TestPass {}));
     }
 
     {
@@ -276,6 +314,7 @@ fn setup_graphs(
                     ))),
                     entry: "FragmentMain".into(),
                 }),
+                geometry: None,
             },
             primitive: nitrogen::pipeline::Primitive::TriangleList,
             blend_mode: nitrogen::render_pass::BlendMode::Alpha,
@@ -285,129 +324,35 @@ fn setup_graphs(
 
         impl PassImpl for TestPass {
             fn setup(&mut self, builder: &mut graph::GraphBuilder) {
-                let image_create = nitrogen::graph::ImageCreateInfo {
-                    format: nitrogen::image::ImageFormat::RgbaUnorm,
-                    size_mode: nitrogen::image::ImageSizeMode::ContextRelative {
+
+                let create_info = graph::ImageCreateInfo {
+                    format: image::ImageFormat::RgbaUnorm,
+                    size_mode: image::ImageSizeMode::ContextRelative {
                         width: 1.0,
                         height: 1.0,
                     },
                 };
+                builder.image_create("ImageTestTinted", create_info);
 
-                builder.image_create("TestColor".into(), image_create);
+                builder.image_move("ImageMask", "ImageMaskTinted");
+
+                builder.image_write_color("ImageTestTinted", 0);
+                builder.image_write_color("ImageMaskTinted", 1);
+
+                builder.image_read_color("ImageTest", 0);
 
                 builder.enable();
             }
 
             fn execute(&self, command_buffer: &mut graph::CommandBuffer) {
-                command_buffer.draw(0..6, 0..1)
+                command_buffer.draw(3..6, 0..1)
             }
         }
 
-        ntg.graph_add_pass(graph, "TestPass".into(), pass_info, Box::new(TestPass {}));
+        ntg.graph_add_pass(graph, "TestPass2", pass_info, Box::new(TestPass {}));
     }
 
-    // TestPass2
-    {
-        let pass_info = nitrogen::graph::PassInfo::Graphics {
-            vertex_attrib: None, //Some(vertex_attrib),
-            shaders: nitrogen::graph::Shaders {
-                vertex: nitrogen::graph::ShaderInfo {
-                    content: Cow::Borrowed(include_bytes!(concat!(
-                        env!("OUT_DIR"),
-                        "/test.hlsl.vert.spirv"
-                    ))),
-                    entry: "VertexMain".into(),
-                },
-                fragment: Some(nitrogen::graph::ShaderInfo {
-                    content: Cow::Borrowed(include_bytes!(concat!(
-                        env!("OUT_DIR"),
-                        "/test.hlsl.frag.spirv"
-                    ))),
-                    entry: "FragmentMain".into(),
-                }),
-            },
-            primitive: nitrogen::pipeline::Primitive::TriangleList,
-            blend_mode: nitrogen::render_pass::BlendMode::Alpha,
-        };
-
-        struct TestPass {};
-
-        impl PassImpl for TestPass {
-            fn setup(&mut self, builder: &mut graph::GraphBuilder) {
-                let image_create = nitrogen::graph::ImageCreateInfo {
-                    format: nitrogen::image::ImageFormat::RgbaUnorm,
-                    size_mode: nitrogen::image::ImageSizeMode::ContextRelative {
-                        width: 1.0,
-                        height: 1.0,
-                    },
-                };
-
-                builder.image_move("TestColor".into(), "TestColor2".into());
-                builder.image_read("TestDep".into());
-
-                builder.enable();
-            }
-
-            fn execute(&self, command_buffer: &mut graph::CommandBuffer) {
-                command_buffer.draw(0..6, 0..1)
-            }
-        }
-
-        ntg.graph_add_pass(graph, "TestPass2".into(), pass_info, Box::new(TestPass {}));
-    }
-
-    // TestPass3
-    {
-        let pass_info = nitrogen::graph::PassInfo::Graphics {
-            vertex_attrib: None, //Some(vertex_attrib),
-            shaders: nitrogen::graph::Shaders {
-                vertex: nitrogen::graph::ShaderInfo {
-                    content: Cow::Borrowed(include_bytes!(concat!(
-                        env!("OUT_DIR"),
-                        "/test.hlsl.vert.spirv"
-                    ))),
-                    entry: "VertexMain".into(),
-                },
-                fragment: Some(nitrogen::graph::ShaderInfo {
-                    content: Cow::Borrowed(include_bytes!(concat!(
-                        env!("OUT_DIR"),
-                        "/test.hlsl.frag.spirv"
-                    ))),
-                    entry: "FragmentMain".into(),
-                }),
-            },
-            primitive: nitrogen::pipeline::Primitive::TriangleList,
-            blend_mode: nitrogen::render_pass::BlendMode::Alpha,
-        };
-
-        struct TestPass {};
-
-        impl PassImpl for TestPass {
-            fn setup(&mut self, builder: &mut graph::GraphBuilder) {
-                let image_create = nitrogen::graph::ImageCreateInfo {
-                    format: nitrogen::image::ImageFormat::RgbaUnorm,
-                    size_mode: nitrogen::image::ImageSizeMode::ContextRelative {
-                        width: 1.0,
-                        height: 1.0,
-                    },
-                };
-
-                builder.image_move("TestColor2".into(), "TestColor3".into());
-                builder.image_read("TestDep".into());
-                builder.backbuffer_image("TestColor3".into());
-
-                builder.enable();
-            }
-
-            fn execute(&self, command_buffer: &mut graph::CommandBuffer) {
-                command_buffer.draw(0..6, 0..1)
-            }
-        }
-
-        ntg.graph_add_pass(graph, "TestPass3".into(), pass_info, Box::new(TestPass {}));
-    }
-
-    ntg.graph_set_output_image(graph, "TestColor3".into());
+    ntg.graph_add_output_image(graph, "ImageTestTinted");
 
     graph
 }

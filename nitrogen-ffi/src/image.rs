@@ -152,13 +152,15 @@ pub unsafe extern "C" fn image_create(
                 num_layers: create_info.num_layers,
                 kind: create_info.kind.into(),
 
-                used_as_transfer_src: create_info.used_as_transfer_src,
-                used_as_transfer_dst: create_info.used_as_transfer_dst,
-                used_for_sampling: create_info.used_for_sampling,
-                used_as_color_attachment: create_info.used_as_color_attachment,
-                used_as_depth_stencil_attachment: create_info.used_as_depth_stencil_attachment,
-                used_as_storage_image: create_info.used_as_storage_image,
-                used_as_input_attachment: create_info.used_as_input_attachment,
+                usage: nitrogen::image::ImageUsage {
+                    transfer_src: create_info.used_as_transfer_src,
+                    transfer_dst: create_info.used_as_transfer_dst,
+                    sampling: create_info.used_for_sampling,
+                    color_attachment: create_info.used_as_color_attachment,
+                    depth_stencil_attachment: create_info.used_as_depth_stencil_attachment,
+                    storage_image: create_info.used_as_storage_image,
+                    input_attachment: create_info.used_as_input_attachment,
+                },
 
                 is_transient: create_info.is_transient,
             }

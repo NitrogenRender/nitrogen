@@ -43,7 +43,7 @@ pub enum ExecutionListBuildError {
 
 #[derive(Debug)]
 pub struct ConstructedGraph {
-    /// Number of nodes in the graph
+    /// Number of nodes in the old_graph
     pub(crate) num_nodes: usize,
 
     /// Number of images created (does **NOT** include moved images)
@@ -56,6 +56,9 @@ pub struct ConstructedGraph {
     /// Images created by pass - includes moves and copies
     pub(crate) nodes_image_creates: HashMap<PassId, HashSet<CowString>>,
 
+    /// Images newly created by pass - no copies or moves.
+    pub(crate) nodes_image_direct_create: HashMap<PassId, HashSet<CowString>>,
+
     /// Images copied by pass. The newly created image name is part of `nodes_image_creates`
     pub(crate) nodes_image_copies: HashMap<PassId, HashSet<CowString>>,
 
@@ -63,7 +66,10 @@ pub struct ConstructedGraph {
     pub(crate) nodes_image_move: HashMap<PassId, HashSet<CowString>>,
 
     /// Images read by pass
-    pub(crate) nodes_image_read: HashMap<PassId, HashSet<CowString>>,
+    pub(crate) nodes_image_read: HashMap<PassId, HashMap<CowString, HashSet<u8>>>,
+
+    /// Images written to by pass
+    pub(crate) nodes_image_write: HashMap<PassId, HashMap<CowString, u8>>,
 
     // image -> pass
     /// Pass which creates the image
@@ -76,10 +82,21 @@ pub struct ConstructedGraph {
     pub(crate) image_moves: HashMap<CowString, (PassId, CowString)>,
 
     /// Passes which read the image
-    pub(crate) image_reads: HashMap<CowString, HashSet<PassId>>,
+    pub(crate) image_reads: HashMap<CowString, HashMap<PassId, HashSet<u8>>>,
+
+    /// Pass which writes to the image.
+    ///
+    /// Since an image can only be written to once (at time of "creation") it is
+    /// enough to just store the pass and the binding.
+    pub(crate) image_writes: HashMap<CowString, (PassId, u8)>,
 
     /// Pass in which the image has been defined (either created, copied or moved)
     pub(crate) image_defines: HashMap<CowString, PassId>,
+
+    // image name resolution
+    pub(crate) resolve_image_copy: HashMap<CowString, CowString>,
+
+    pub(crate) resolve_image_move: HashMap<CowString, CowString>,
 
     // backbuffer
     /// Images in backbuffer
@@ -94,16 +111,22 @@ impl ConstructedGraph {
             num_image_names: 0,
 
             nodes_image_creates: HashMap::new(),
+            nodes_image_direct_create: HashMap::new(),
             nodes_image_copies: HashMap::new(),
             nodes_image_move: HashMap::new(),
             nodes_image_read: HashMap::new(),
+            nodes_image_write: HashMap::new(),
 
             image_creates: HashMap::new(),
             image_copies: HashMap::new(),
             image_moves: HashMap::new(),
             image_reads: HashMap::new(),
+            image_writes: HashMap::new(),
 
             image_defines: HashMap::new(),
+
+            resolve_image_copy: HashMap::new(),
+            resolve_image_move: HashMap::new(),
 
             image_backbuffer: HashSet::new(),
         }
@@ -135,6 +158,11 @@ impl ConstructedGraph {
             self.image_creates.insert(name.clone(), (pass_id, info));
 
             self.image_defines.insert(name.clone(), pass_id);
+
+            self.nodes_image_direct_create
+                .entry(pass_id)
+                .or_insert(HashSet::new())
+                .insert(name.clone());
 
             // We don't need to check for redefined images here since that would've been
             // already catched in the branch above.
@@ -170,6 +198,8 @@ impl ConstructedGraph {
                 continue;
             }
 
+            self.resolve_image_move.insert(new.clone(), src.clone());
+
             self.image_moves.insert(src.clone(), (pass_id, new.clone()));
 
             self.image_defines.insert(new.clone(), pass_id);
@@ -199,6 +229,8 @@ impl ConstructedGraph {
                 continue;
             }
 
+            self.resolve_image_copy.insert(new.clone(), src.clone());
+
             self.image_copies
                 .entry(src.clone())
                 .or_insert(HashSet::new())
@@ -218,16 +250,20 @@ impl ConstructedGraph {
             self.num_image_names += 1;
         }
 
-        for img in builder.images_read {
+        for (img, binding) in builder.images_read {
             self.image_reads
                 .entry(img.clone())
+                .or_insert(HashMap::new())
+                .entry(pass_id)
                 .or_insert(HashSet::new())
-                .insert(pass_id);
+                .insert(binding);
 
             self.nodes_image_read
                 .entry(pass_id)
+                .or_insert(HashMap::new())
+                .entry(img.clone())
                 .or_insert(HashSet::new())
-                .insert(img.clone());
+                .insert(binding);
         }
     }
 
@@ -268,7 +304,10 @@ impl ConstructedGraph {
                     let mut deps = HashSet::new();
 
                     if let Some(set) = self.nodes_image_read.get(&node) {
-                        deps.extend(set);
+                        deps.extend(set.keys());
+                    }
+                    if let Some(set) = self.nodes_image_write.get(&node) {
+                        deps.extend(set.keys());
                     }
                     if let Some(set) = self.nodes_image_move.get(&node) {
                         deps.extend(set);

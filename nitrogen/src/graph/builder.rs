@@ -1,47 +1,163 @@
-use std::collections::{HashMap, HashSet};
+use super::{ResourceName};
 
-use graph;
+use image;
 
-use util::CowString;
+use self::ResourceReadType as R;
+use self::ResourceWriteType as W;
 
-#[derive(Default)]
+#[derive(Hash)]
+pub(crate) enum ResourceCreateInfo {
+    Image(ImageCreateInfo),
+    Buffer(BufferCreateInfo),
+}
+
+#[derive(Hash, Default)]
 pub struct GraphBuilder {
     pub(crate) enabled: bool,
 
-    pub(crate) images_create: HashMap<CowString, graph::ImageCreateInfo>,
-    pub(crate) images_copy: HashMap<CowString, CowString>,
-    pub(crate) images_move: HashMap<CowString, CowString>,
-    pub(crate) images_read: HashSet<CowString>,
+    // image data
+    /// Mapping from names to image create information
+    pub(crate) resource_creates: Vec<(ResourceName, ResourceCreateInfo)>,
+    /// Mapping from new name to src name
+    pub(crate) resource_copies: Vec<(ResourceName, ResourceName)>,
+    /// Mapping from new name to src name
+    pub(crate) resource_moves: Vec<(ResourceName, ResourceName)>,
 
-    pub(crate) backbuffer_images: HashSet<CowString>,
+    /// List of images that will be read from. Also contains read type and binding
+    pub(crate) resource_reads: Vec<(ResourceName, ResourceReadType, u8)>,
+    /// List of images that will be written to. Also contains write type and binding
+    pub(crate) resource_writes: Vec<(ResourceName, ResourceWriteType, u8)>,
 }
 
 impl GraphBuilder {
     pub(crate) fn new() -> Self {
-        GraphBuilder::default()
+        Default::default()
     }
+
+    // image
+
+    pub fn image_create<T: Into<ResourceName>>(&mut self, name: T, create_info: ImageCreateInfo) {
+        self.resource_creates.push((name.into(), ResourceCreateInfo::Image(create_info)));
+    }
+    pub fn image_copy<T0: Into<ResourceName>, T1: Into<ResourceName>>(&mut self, src: T0, new: T1) {
+        self.resource_copies.push((new.into(), src.into()));
+    }
+    pub fn image_move<T0: Into<ResourceName>, T1: Into<ResourceName>>(&mut self, from: T0, to: T1) {
+        self.resource_moves.push((to.into(), from.into()));
+    }
+
+    pub fn image_write_color<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
+        self.resource_writes
+            .push((name.into(), W::Image(ImageWriteType::Color), binding));
+    }
+    pub fn image_write_depth_stencil<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
+        self.resource_writes
+            .push((name.into(), W::Image(ImageWriteType::DepthStencil), binding));
+    }
+    pub fn image_write_storage<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
+        self.resource_writes
+            .push((name.into(), W::Image(ImageWriteType::Storage), binding));
+    }
+
+    pub fn image_read_color<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
+        self.resource_reads
+            .push((name.into(), R::Image(ImageReadType::Color), binding));
+    }
+    pub fn image_read_storage<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
+        self.resource_reads
+            .push((name.into(), R::Image(ImageReadType::Storage), binding));
+    }
+
+    // buffer
+
+    pub fn buffer_create<T: Into<ResourceName>>(&mut self, name: T, create_info: BufferCreateInfo) {
+        self.resource_creates.push((name.into(), ResourceCreateInfo::Buffer(create_info)));
+    }
+    pub fn buffer_copy<T0: Into<ResourceName>, T1: Into<ResourceName>>(&mut self, src: T0, new: T1) {
+        self.resource_copies.push((new.into(), src.into()));
+    }
+    pub fn buffer_move<T0: Into<ResourceName>, T1: Into<ResourceName>>(&mut self, from: T0, to: T1) {
+        self.resource_moves.push((to.into(), from.into()));
+    }
+
+    pub fn buffer_write_storage<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
+        self.resource_writes
+            .push((name.into(), W::Buffer(BufferWriteType::Storage), binding));
+    }
+    pub fn buffer_write_storage_texel<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
+        self.resource_writes
+            .push((name.into(), W::Buffer(BufferWriteType::StorageTexel), binding));
+    }
+
+    pub fn buffer_read_storage<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
+        self.resource_reads
+            .push((name.into(), R::Buffer(BufferReadType::Storage), binding));
+    }
+    pub fn buffer_read_storage_texel<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
+        self.resource_reads
+            .push((name.into(), R::Buffer(BufferReadType::StorageTexel), binding));
+    }
+
+    // control flow control
 
     pub fn enable(&mut self) {
         self.enabled = true;
     }
+}
 
-    pub fn image_create(&mut self, name: CowString, create_info: graph::ImageCreateInfo) {
-        self.images_create.insert(name, create_info);
-    }
+#[derive(Debug, Clone, Hash)]
+pub struct ImageCreateInfo {
+    pub format: image::ImageFormat,
+    pub size_mode: image::ImageSizeMode,
+}
 
-    pub fn image_copy(&mut self, src: CowString, new: CowString) {
-        self.images_copy.insert(new, src);
-    }
+#[derive(Debug, Clone, Hash)]
+pub struct BufferCreateInfo {
+    pub size: u64,
+    pub storage: BufferStorageType,
+}
 
-    pub fn image_move(&mut self, src: CowString, new: CowString) {
-        self.images_move.insert(src, new);
-    }
+#[derive(Debug, Clone, Hash)]
+pub enum BufferStorageType {
+    HostVisible,
+    DeviceLocal,
+}
 
-    pub fn image_read(&mut self, name: CowString) {
-        self.images_read.insert(name);
-    }
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub enum ResourceReadType {
+    Image(ImageReadType),
+    Buffer(BufferReadType),
+}
 
-    pub fn backbuffer_image(&mut self, name: CowString) {
-        self.backbuffer_images.insert(name);
-    }
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub enum ImageReadType {
+    Color,
+    Storage,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub enum BufferReadType {
+    Storage,
+    StorageTexel,
+}
+
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub enum ResourceWriteType {
+    Image(ImageWriteType),
+    Buffer(BufferWriteType),
+}
+
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub enum ImageWriteType {
+    Color,
+    DepthStencil,
+    Storage,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub enum BufferWriteType {
+    Storage,
+    StorageTexel,
 }

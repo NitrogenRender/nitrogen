@@ -3,11 +3,7 @@ use storage::{Handle, Storage};
 use gfx;
 use gfx::Device;
 
-use image;
-
-use std::ops::Range;
-
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec};
 
 use device::DeviceContext;
 

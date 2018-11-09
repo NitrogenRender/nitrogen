@@ -59,7 +59,7 @@ impl<T> Index<Handle<T>> for Storage<T> {
 
     fn index(&self, index: Handle<T>) -> &Self::Output {
         if !self.is_alive(index) {
-            panic!("Invalid index on storage: entry is no longer alive");
+            panic!("Invalid index on storage: entry is not alive");
         } else {
             &self.entries[index.id()]
         }
@@ -69,7 +69,7 @@ impl<T> Index<Handle<T>> for Storage<T> {
 impl<T> IndexMut<Handle<T>> for Storage<T> {
     fn index_mut(&mut self, index: Handle<T>) -> &mut <Self as Index<Handle<T>>>::Output {
         if !self.is_alive(index) {
-            panic!("Invalid index on storage: entry is no longer alive");
+            panic!("Invalid index on storage: entry is not alive");
         } else {
             &mut self.entries[index.id()]
         }
@@ -128,6 +128,22 @@ impl<T> Storage<T> {
         if self.is_alive(handle) {
             let data = self.entries.remove(handle.id());
             Some(data)
+        } else {
+            None
+        }
+    }
+
+    pub fn get(&self, handle: Handle<T>) -> Option<&T> {
+        if self.is_alive(handle) {
+            self.entries.get(handle.id())
+        } else {
+            None
+        }
+    }
+
+    pub fn get_mut(&mut self, handle: Handle<T>) -> Option<&mut T> {
+        if self.is_alive(handle) {
+            self.entries.get_mut(handle.id())
         } else {
             None
         }
