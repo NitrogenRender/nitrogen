@@ -202,6 +202,9 @@ fn main() {
 
         ntg.display_present(display, graph);
 
+
+        // ntg.displays[display].present(&ntg.device_ctx, &ntg.image_storage, image, &ntg.sampler_storage, sampler);
+
         // running = false;
     }
 

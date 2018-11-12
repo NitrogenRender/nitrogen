@@ -5,7 +5,7 @@ use image;
 use self::ResourceReadType as R;
 use self::ResourceWriteType as W;
 
-#[derive(Hash)]
+#[derive(Hash, Debug, Clone)]
 pub(crate) enum ResourceCreateInfo {
     Image(ImageCreateInfo),
     Buffer(BufferCreateInfo),
@@ -16,17 +16,20 @@ pub struct GraphBuilder {
     pub(crate) enabled: bool,
 
     // image data
-    /// Mapping from names to image create information
+    /// Mapping from names to resource create information
     pub(crate) resource_creates: Vec<(ResourceName, ResourceCreateInfo)>,
     /// Mapping from new name to src name
     pub(crate) resource_copies: Vec<(ResourceName, ResourceName)>,
     /// Mapping from new name to src name
     pub(crate) resource_moves: Vec<(ResourceName, ResourceName)>,
 
-    /// List of images that will be read from. Also contains read type and binding
+    /// List of resources that will be read from. Also contains read type and binding
     pub(crate) resource_reads: Vec<(ResourceName, ResourceReadType, u8)>,
-    /// List of images that will be written to. Also contains write type and binding
+    /// List of resources that will be written to. Also contains write type and binding
     pub(crate) resource_writes: Vec<(ResourceName, ResourceWriteType, u8)>,
+
+    /// List of resources that persist executions
+    pub(crate) resource_backbuffer: Vec<ResourceName>,
 }
 
 impl GraphBuilder {
@@ -68,6 +71,10 @@ impl GraphBuilder {
             .push((name.into(), R::Image(ImageReadType::Storage), binding));
     }
 
+    pub fn image_backbuffer<T: Into<ResourceName>>(&mut self, name: T) {
+        self.resource_backbuffer.push(name.into());
+    }
+
     // buffer
 
     pub fn buffer_create<T: Into<ResourceName>>(&mut self, name: T, create_info: BufferCreateInfo) {
@@ -96,6 +103,10 @@ impl GraphBuilder {
     pub fn buffer_read_storage_texel<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
         self.resource_reads
             .push((name.into(), R::Buffer(BufferReadType::StorageTexel), binding));
+    }
+
+    pub fn buffer_backbuffer<T: Into<ResourceName>>(&mut self, name: T) {
+        self.resource_backbuffer.push(name.into());
     }
 
     // control flow control
