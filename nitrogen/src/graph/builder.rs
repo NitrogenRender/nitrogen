@@ -1,9 +1,15 @@
-use super::{ResourceName};
+use super::ResourceName;
 
 use image;
 
 use self::ResourceReadType as R;
 use self::ResourceWriteType as W;
+
+#[derive(Hash, Debug, Clone, Copy)]
+pub enum ResourceType {
+    Image,
+    Buffer,
+}
 
 #[derive(Hash, Debug, Clone)]
 pub(crate) enum ResourceCreateInfo {
@@ -40,7 +46,8 @@ impl GraphBuilder {
     // image
 
     pub fn image_create<T: Into<ResourceName>>(&mut self, name: T, create_info: ImageCreateInfo) {
-        self.resource_creates.push((name.into(), ResourceCreateInfo::Image(create_info)));
+        self.resource_creates
+            .push((name.into(), ResourceCreateInfo::Image(create_info)));
     }
     pub fn image_copy<T0: Into<ResourceName>, T1: Into<ResourceName>>(&mut self, src: T0, new: T1) {
         self.resource_copies.push((new.into(), src.into()));
@@ -78,12 +85,21 @@ impl GraphBuilder {
     // buffer
 
     pub fn buffer_create<T: Into<ResourceName>>(&mut self, name: T, create_info: BufferCreateInfo) {
-        self.resource_creates.push((name.into(), ResourceCreateInfo::Buffer(create_info)));
+        self.resource_creates
+            .push((name.into(), ResourceCreateInfo::Buffer(create_info)));
     }
-    pub fn buffer_copy<T0: Into<ResourceName>, T1: Into<ResourceName>>(&mut self, src: T0, new: T1) {
+    pub fn buffer_copy<T0: Into<ResourceName>, T1: Into<ResourceName>>(
+        &mut self,
+        src: T0,
+        new: T1,
+    ) {
         self.resource_copies.push((new.into(), src.into()));
     }
-    pub fn buffer_move<T0: Into<ResourceName>, T1: Into<ResourceName>>(&mut self, from: T0, to: T1) {
+    pub fn buffer_move<T0: Into<ResourceName>, T1: Into<ResourceName>>(
+        &mut self,
+        from: T0,
+        to: T1,
+    ) {
         self.resource_moves.push((to.into(), from.into()));
     }
 
@@ -92,8 +108,11 @@ impl GraphBuilder {
             .push((name.into(), W::Buffer(BufferWriteType::Storage), binding));
     }
     pub fn buffer_write_storage_texel<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
-        self.resource_writes
-            .push((name.into(), W::Buffer(BufferWriteType::StorageTexel), binding));
+        self.resource_writes.push((
+            name.into(),
+            W::Buffer(BufferWriteType::StorageTexel),
+            binding,
+        ));
     }
 
     pub fn buffer_read_storage<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
@@ -101,8 +120,11 @@ impl GraphBuilder {
             .push((name.into(), R::Buffer(BufferReadType::Storage), binding));
     }
     pub fn buffer_read_storage_texel<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
-        self.resource_reads
-            .push((name.into(), R::Buffer(BufferReadType::StorageTexel), binding));
+        self.resource_reads.push((
+            name.into(),
+            R::Buffer(BufferReadType::StorageTexel),
+            binding,
+        ));
     }
 
     pub fn buffer_backbuffer<T: Into<ResourceName>>(&mut self, name: T) {
@@ -134,41 +156,66 @@ pub enum BufferStorageType {
     DeviceLocal,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum ResourceReadType {
     Image(ImageReadType),
     Buffer(BufferReadType),
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum ImageReadType {
     Color,
     Storage,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum BufferReadType {
     Storage,
     StorageTexel,
 }
 
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum ResourceWriteType {
     Image(ImageWriteType),
     Buffer(BufferWriteType),
 }
 
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum ImageWriteType {
     Color,
     DepthStencil,
     Storage,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum BufferWriteType {
     Storage,
     StorageTexel,
+}
+
+impl From<ResourceWriteType> for ResourceType {
+    fn from(ty: ResourceWriteType) -> Self {
+        match ty {
+            ResourceWriteType::Image(..) => ResourceType::Image,
+            ResourceWriteType::Buffer(..) => ResourceType::Buffer,
+        }
+    }
+}
+
+impl From<ResourceReadType> for ResourceType {
+    fn from(ty: ResourceReadType) -> Self {
+        match ty {
+            ResourceReadType::Image(..) => ResourceType::Image,
+            ResourceReadType::Buffer(..) => ResourceType::Buffer,
+        }
+    }
+}
+
+impl From<ResourceCreateInfo> for ResourceType {
+    fn from(inf: ResourceCreateInfo) -> Self {
+        match inf {
+            ResourceCreateInfo::Image(..) => ResourceType::Image,
+            ResourceCreateInfo::Buffer(..) => ResourceType::Buffer,
+        }
+    }
 }

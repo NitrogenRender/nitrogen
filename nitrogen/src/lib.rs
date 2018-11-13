@@ -234,12 +234,8 @@ impl Context {
         self.graph_storage.add_pass(graph, name, info, pass_impl);
     }
 
-    pub fn graph_add_output_image<T: Into<graph::ResourceName>>(&mut self, graph: graph::GraphHandle, image_name: T) {
-        self.graph_storage.add_output_image(graph, image_name);
-    }
-
-    pub fn graph_add_output_buffer<T: Into<graph::ResourceName>>(&mut self, graph: graph::GraphHandle, buffer_name: T) {
-        self.graph_storage.add_output_buffer(graph, buffer_name)
+    pub fn graph_add_output<T: Into<graph::ResourceName>>(&mut self, graph: graph::GraphHandle, name: T) {
+        self.graph_storage.add_output(graph, name);
     }
 
     pub fn graph_destroy(&mut self, graph: graph::GraphHandle) {
@@ -249,10 +245,8 @@ impl Context {
     pub fn graph_compile(
         &mut self,
         graph: graph::GraphHandle,
-    // ) -> Result<(), Vec<graph::constructed::GraphError>> {
-    ) -> Result<(), ()> {
-        self.graph_storage.compile(graph);
-        Ok(())
+    ) -> Result<(), Vec<graph::GraphCompileError>> {
+        self.graph_storage.compile(graph)
     }
 
     pub fn render_graph(

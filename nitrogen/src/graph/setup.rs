@@ -6,6 +6,7 @@ use super::PassId;
 use super::ResourceId;
 use super::ResourceName;
 
+#[derive(Debug)]
 pub enum GraphSetUpErrorContent {
     ResourceRedefined {
         resource: ResourceName,
@@ -15,6 +16,7 @@ pub enum GraphSetUpErrorContent {
 
 use self::GraphSetUpErrorContent::*;
 
+#[derive(Debug)]
 pub struct GraphSetUpError {
     pub id: PassId,
     pub content: GraphSetUpErrorContent,
@@ -29,6 +31,7 @@ impl GraphSetUpError {
     }
 }
 
+/// Structure that contains the textual representation of the passes and their dependencies
 #[derive(Debug, Hash)]
 pub(crate) struct SetUpGraph {
     pub resource_definitions: BTreeMap<ResourceName, PassId>,
@@ -45,7 +48,10 @@ pub(crate) struct SetUpGraph {
     pub node_resource_writes: BTreeMap<PassId, BTreeMap<ResourceName, (ResourceWriteType, u8)>>,
     pub node_resource_reads: BTreeMap<PassId, BTreeMap<ResourceName, (ResourceReadType, u8)>>,
 
+    // Resources used: contains copies, moves, reads and writes
     pub node_resource_use: BTreeMap<PassId, BTreeSet<ResourceName>>,
+
+    pub node_resource_depends: BTreeMap<PassId, BTreeSet<ResourceName>>,
 }
 
 impl SetUpGraph {
@@ -60,6 +66,7 @@ impl SetUpGraph {
         let mut node_resource_writes = BTreeMap::new();
         let mut node_resource_reads = BTreeMap::new();
         let mut node_resource_use = BTreeMap::new();
+        let mut node_resource_depends = BTreeMap::new();
 
         // let mut created_resources = HashMap::new();
 
@@ -73,7 +80,9 @@ impl SetUpGraph {
                 continue;
             }
 
-            let uses = node_resource_use
+            let uses = node_resource_use.entry(pass_id).or_insert(BTreeSet::new());
+
+            let depends = node_resource_depends
                 .entry(pass_id)
                 .or_insert(BTreeSet::new());
 
@@ -117,6 +126,7 @@ impl SetUpGraph {
                     }
 
                     uses.insert(old_name.clone());
+                    depends.insert(old_name.clone());
                     copies.insert(new_name.clone(), old_name);
                     resource_definitions.insert(new_name, pass_id);
                 }
@@ -140,6 +150,7 @@ impl SetUpGraph {
                     }
 
                     uses.insert(old_name.clone());
+                    depends.insert(old_name.clone());
                     moves.insert(new_name.clone(), old_name);
                     resource_definitions.insert(new_name, pass_id);
                 }
@@ -151,6 +162,14 @@ impl SetUpGraph {
                     .or_insert(BTreeMap::new());
 
                 for (name, ty, binding) in builder.resource_writes {
+                    if !resource_definitions
+                        .get(&name)
+                        .map(|pass| *pass == pass_id)
+                        .unwrap_or(false)
+                    {
+                        depends.insert(name.clone());
+                    }
+
                     uses.insert(name.clone());
                     write.insert(name, (ty, binding));
                 }
@@ -162,6 +181,14 @@ impl SetUpGraph {
                     .or_insert(BTreeMap::new());
 
                 for (name, ty, binding) in builder.resource_reads {
+                    if !resource_definitions
+                        .get(&name)
+                        .map(|pass| *pass == pass_id)
+                        .unwrap_or(false)
+                    {
+                        depends.insert(name.clone());
+                    }
+
                     uses.insert(name.clone());
                     read.insert(name, (ty, binding));
                 }
@@ -188,6 +215,7 @@ impl SetUpGraph {
             node_resource_writes,
             node_resource_reads,
             node_resource_use,
+            node_resource_depends,
         })
     }
 }

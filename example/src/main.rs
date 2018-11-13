@@ -184,15 +184,11 @@ fn main() {
             resized = false;
         }
 
-        ntg.graph_compile(graph);
-        /*
+        // ntg.graph_compile(graph);
         if let Err(errs) = ntg.graph_compile(graph) {
             println!("Errors occured while compiling the old_graph");
-            for err in errs {
-                println!("{:?}", err);
-            }
+            println!("{:?}", errs);
         }
-        */
 
         let exec_context = nitrogen::graph::ExecutionContext {
             reference_size: (400, 400),
@@ -272,23 +268,6 @@ fn setup_graphs(
                 builder.image_write_color("ImageMask", 1);
 
                 builder.enable();
-
-                /*
-                let image_create = nitrogen::graph::ImageCreateInfo {
-                    format: nitrogen::image::ImageFormat::RgbaUnorm,
-                    size_mode: nitrogen::image::ImageSizeMode::ContextRelative {
-                        width: 1.0,
-                        height: 1.0,
-                    },
-                };
-
-                builder.image_create("TestColor0".into(), image_create);
-                builder.backbuffer_image("TestColor0".into());
-
-                builder.image_write("TestColor0".into(), 0);
-
-                builder.enable();
-                */
             }
 
             fn execute(&self, command_buffer: &mut graph::CommandBuffer) {
@@ -323,7 +302,9 @@ fn setup_graphs(
             blend_mode: nitrogen::render_pass::BlendMode::Alpha,
         };
 
-        struct TestPass {};
+        struct TestPass {
+            enabled: bool,
+        };
 
         impl PassImpl for TestPass {
             fn setup(&mut self, builder: &mut graph::GraphBuilder) {
@@ -344,7 +325,11 @@ fn setup_graphs(
 
                 builder.image_read_color("ImageTest", 0);
 
-                builder.enable();
+                if self.enabled {
+                    builder.enable();
+                }
+
+                self.enabled = !self.enabled;
             }
 
             fn execute(&self, command_buffer: &mut graph::CommandBuffer) {
@@ -352,10 +337,10 @@ fn setup_graphs(
             }
         }
 
-        ntg.graph_add_pass(graph, "TestPass2", pass_info, Box::new(TestPass {}));
+        ntg.graph_add_pass(graph, "TestPass2", pass_info, Box::new(TestPass { enabled: true, }));
     }
 
-    ntg.graph_add_output_image(graph, "ImageTestTinted");
+    ntg.graph_add_output(graph, "ImageTestTinted");
 
     graph
 }
