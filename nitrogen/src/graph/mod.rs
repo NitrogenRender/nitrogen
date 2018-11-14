@@ -20,8 +20,8 @@ use self::setup::*;
 mod baked;
 use self::baked::*;
 
-mod execution_path;
-use self::execution_path::*;
+mod execution;
+use self::execution::*;
 
 pub type GraphHandle = Handle<Graph>;
 
@@ -32,16 +32,49 @@ pub type ResourceName = CowString;
 pub struct ResourceId(pub(crate) usize);
 
 #[derive(Debug)]
-struct GraphResourcesResolved {
-    name_lookup: BTreeMap<ResourceName, ResourceId>,
-    defines: BTreeMap<ResourceId, PassId>,
-    infos: BTreeMap<ResourceId, ResourceCreateInfo>,
-    copies_from: BTreeMap<ResourceId, ResourceId>,
-    moves_from: BTreeMap<ResourceId, ResourceId>,
-    moves_to: BTreeMap<ResourceId, ResourceId>,
+pub(crate) struct GraphResourcesResolved {
+    pub(crate) name_lookup: BTreeMap<ResourceName, ResourceId>,
+    pub(crate) defines: BTreeMap<ResourceId, PassId>,
+    pub(crate) infos: BTreeMap<ResourceId, ResourceCreateInfo>,
+    pub(crate) copies_from: BTreeMap<ResourceId, ResourceId>,
+    pub(crate) moves_from: BTreeMap<ResourceId, ResourceId>,
+    pub(crate) moves_to: BTreeMap<ResourceId, ResourceId>,
 
-    reads: BTreeMap<ResourceId, BTreeSet<(PassId, ResourceReadType, u8)>>,
-    writes: BTreeMap<ResourceId, BTreeSet<(PassId, ResourceWriteType, u8)>>,
+    pub(crate) reads: BTreeMap<ResourceId, BTreeSet<(PassId, ResourceReadType, u8)>>,
+    pub(crate) writes: BTreeMap<ResourceId, BTreeSet<(PassId, ResourceWriteType, u8)>>,
+
+    /// Resources created by pass - includes copies and moves
+    pub(crate) pass_creates: BTreeMap<PassId, BTreeSet<ResourceId>>,
+    /// Resources a pass depends on (that are not created by itself)
+    pub(crate) pass_ext_depends: BTreeMap<PassId, BTreeSet<ResourceId>>,
+    /// Resources that a pass writes to
+    pub(crate) pass_writes: BTreeMap<PassId, BTreeSet<(ResourceId, ResourceWriteType, u8)>>,
+    /// Resources that a pass reads from
+    pub(crate) pass_reads: BTreeMap<PassId, BTreeSet<(ResourceId, ResourceReadType, u8)>>,
+
+    pub(crate) backbuffer: BTreeSet<ResourceId>,
+}
+
+impl GraphResourcesResolved {
+    pub(crate) fn moved_from(&self, id: ResourceId) -> Option<ResourceId> {
+
+        let mut prev_id = id;
+
+        // Go up the move chain until we reach the end
+        while let Some(id) = self.moves_from.get(&prev_id) {
+            prev_id = *id;
+        }
+
+        // Check if there's a resource
+        if self.infos.contains_key(&prev_id) {
+            Some(prev_id)
+        } else if self.copies_from.contains_key(&prev_id) {
+            Some(prev_id)
+        } else {
+            None
+        }
+
+    }
 }
 
 #[derive(Debug)]
@@ -56,11 +89,19 @@ pub enum GraphCompileError {
         res: ResourceName,
         pass: PassId,
     },
+    InvalidOutputResource {
+        res: ResourceName,
+    },
     ResourceTypeMismatch {
         res: ResourceName,
         pass: PassId,
         used_as: ResourceType,
         expected: ResourceType,
+    },
+    ResourceAlreadyMoved {
+        res: ResourceName,
+        pass: PassId,
+        prev_move: PassId,
     },
 }
 
@@ -70,7 +111,10 @@ pub struct Graph {
     pub(crate) output_resources: Vec<ResourceName>,
 
     resolve_cache: HashMap<u64, (GraphResourcesResolved, usize)>,
-    exec_graph_cache: HashMap<(usize, Vec<ResourceName>), ()>,
+    exec_id_cache: HashMap<(usize, Vec<ResourceName>), usize>,
+    exec_graph_cache: HashMap<usize, ExecutionGraph>,
+
+    last_exec: Option<usize>,
 }
 
 pub struct GraphStorage {
@@ -91,7 +135,9 @@ impl GraphStorage {
                 passes_impl: vec![],
                 output_resources: vec![],
                 resolve_cache: HashMap::new(),
+                exec_id_cache: HashMap::new(),
                 exec_graph_cache: HashMap::new(),
+                last_exec: None,
             }).0
     }
 
@@ -139,6 +185,7 @@ impl GraphStorage {
 
             let mut pass_resource_reads = BTreeMap::new();
             let mut pass_resource_writes = BTreeMap::new();
+            let mut pass_resource_backbuffers = Vec::new();
 
             for (i, pass) in graph.passes_impl.iter_mut().enumerate() {
                 let mut builder = GraphBuilder::new();
@@ -153,6 +200,10 @@ impl GraphStorage {
 
                     pass_resource_reads.insert(id, builder.resource_reads);
                     pass_resource_writes.insert(id, builder.resource_writes);
+
+                    for res in builder.resource_backbuffer {
+                        pass_resource_backbuffers.push((id, res));
+                    }
                 }
             }
 
@@ -163,6 +214,8 @@ impl GraphStorage {
 
                 resource_writes: pass_resource_writes,
                 resource_reads: pass_resource_reads,
+
+                resource_backbuffer: pass_resource_backbuffers,
             }
         };
 
@@ -198,16 +251,47 @@ impl GraphStorage {
 
         // TODO check write and read types match with creation types.
 
-        graph.exec_graph_cache
+        let exec_id = graph.exec_id_cache.len();
+
+        let exec_id = *graph
+            .exec_id_cache
             .entry((*resolved_id, graph.output_resources.clone()))
-            .or_insert_with(|| ());
+            .or_insert(exec_id);
+
+        let output_slice = graph.output_resources.as_slice();
+
+        for output in output_slice {
+            if !resolved.name_lookup.contains_key(output) {
+                errors.push(GraphCompileError::InvalidOutputResource {
+                    res: output.clone(),
+                });
+            }
+        }
+
+
+        graph
+            .exec_graph_cache
+            .entry(exec_id)
+            .or_insert_with(|| ExecutionGraph::new(resolved, output_slice));
+
+        // TODO remove debug
+        {
+            let exec = &graph.exec_graph_cache[&exec_id];
+            println!("{:?}", exec);
+        }
+
+        graph.last_exec = Some(exec_id);
 
         if !errors.is_empty() {
-
             Err(errors)
         } else {
             Ok(())
         }
+    }
+
+    pub fn execute(&self, graph: GraphHandle, context: &ExecutionContext) {
+        // TODO error handling
+        let graph = self.storage.get(graph).expect("Invalid graph!");
     }
 
     pub fn add_output<T: Into<ResourceName>>(&mut self, handle: GraphHandle, image: T) {
@@ -225,6 +309,8 @@ struct GraphInput {
 
     resource_reads: BTreeMap<PassId, Vec<(ResourceName, ResourceReadType, u8)>>,
     resource_writes: BTreeMap<PassId, Vec<(ResourceName, ResourceWriteType, u8)>>,
+
+    resource_backbuffer: Vec<(PassId, ResourceName)>,
 }
 
 fn resolve_input_graph(
@@ -246,66 +332,83 @@ fn resolve_input_graph(
     let mut resource_reads = BTreeMap::new();
     let mut resource_writes = BTreeMap::new();
 
+    let mut pass_creates = BTreeMap::new();
+    let mut pass_ext_depends = BTreeMap::new();
+    let mut pass_writes = BTreeMap::new();
+    let mut pass_reads = BTreeMap::new();
+
     // generate IDs for all "new" resources.
 
     for (pass, ress) in input.resource_creates {
-        'res: for (name, info) in ress {
+        let creates = pass_creates.entry(pass).or_insert(BTreeSet::new());
+
+        for (name, info) in ress {
             if let Some(id) = resource_name_lookup.get(&name) {
                 errors.push(GraphCompileError::ResourceRedefined {
                     pass,
                     res: name.clone(),
                     prev: resource_defines[id],
                 });
-                continue 'res;
+                continue;
             }
 
             let id = ResourceId(resource_defines.len());
             resource_defines.insert(id, pass);
             resource_infos.insert(id, info);
             resource_name_lookup.insert(name, id);
+
+            creates.insert(id);
         }
     }
 
     for (pass, ress) in &input.resource_copies {
-        'res: for (new_name, old_name) in ress {
+        let creates = pass_creates.entry(*pass).or_insert(BTreeSet::new());
+        for (new_name, old_name) in ress {
             if let Some(id) = resource_name_lookup.get(new_name) {
                 errors.push(GraphCompileError::ResourceRedefined {
                     pass: *pass,
                     res: new_name.clone(),
                     prev: resource_defines[id],
                 });
-                continue 'res;
+                continue;
             }
 
             let id = ResourceId(resource_defines.len());
 
             resource_defines.insert(id, *pass);
             resource_name_lookup.insert(new_name.clone(), id);
+
+            creates.insert(id);
         }
     }
 
     for (pass, ress) in &input.resource_moves {
-        'res: for (new_name, old_name) in ress {
+        let creates = pass_creates.entry(*pass).or_insert(BTreeSet::new());
+        for (new_name, old_name) in ress {
             if let Some(id) = resource_name_lookup.get(new_name) {
                 errors.push(GraphCompileError::ResourceRedefined {
                     pass: *pass,
                     res: new_name.clone(),
                     prev: resource_defines[id],
                 });
-                continue 'res;
+                continue;
             }
 
             let id = ResourceId(resource_defines.len());
 
             resource_defines.insert(id, *pass);
             resource_name_lookup.insert(new_name.clone(), id);
+
+            creates.insert(id);
         }
     }
 
     // "back-reference" old resources
 
     for (pass, ress) in input.resource_copies {
-        'res: for (new_name, old_name) in ress {
+        let depends = pass_ext_depends.entry(pass).or_insert(BTreeSet::new());
+
+        for (new_name, old_name) in ress {
             let old_id = if let Some(id) = resource_name_lookup.get(&old_name) {
                 *id
             } else {
@@ -313,7 +416,7 @@ fn resolve_input_graph(
                     pass,
                     res: old_name.clone(),
                 });
-                continue 'res;
+                continue;
             };
             let new_id = if let Some(id) = resource_name_lookup.get(&new_name) {
                 *id
@@ -322,15 +425,27 @@ fn resolve_input_graph(
                     pass,
                     res: new_name.clone(),
                 });
-                continue 'res;
+                continue;
             };
 
             resource_copies_from.insert(new_id, old_id);
+
+            // If the old id was something that is made in another pass it means we depend on
+            // another pass
+            if !pass_creates
+                .get(&pass)
+                .map(|s| s.contains(&old_id))
+                .unwrap_or(false)
+            {
+                depends.insert(old_id);
+            }
         }
     }
 
     for (pass, ress) in input.resource_moves {
-        'res: for (new_name, old_name) in ress {
+        let depends = pass_ext_depends.entry(pass).or_insert(BTreeSet::new());
+
+        for (new_name, old_name) in ress {
             let old_id = if let Some(id) = resource_name_lookup.get(&old_name) {
                 *id
             } else {
@@ -338,7 +453,7 @@ fn resolve_input_graph(
                     pass,
                     res: old_name.clone(),
                 });
-                continue 'res;
+                continue;
             };
             let new_id = if let Some(id) = resource_name_lookup.get(&new_name) {
                 *id
@@ -347,16 +462,42 @@ fn resolve_input_graph(
                     pass,
                     res: new_name.clone(),
                 });
-                continue 'res;
+                continue;
             };
+
+            if let Some(prev_res) = resource_moves_to.get(&old_id) {
+                if let Some(prev_pass) = resource_defines.get(prev_res) {
+                    errors.push(GraphCompileError::ResourceAlreadyMoved {
+                        res: old_name.clone(),
+                        pass,
+                        prev_move: *prev_pass,
+                    });
+                    continue;
+                } else {
+                    unreachable!("Moved a VALID resource that was never created??");
+                }
+            }
 
             resource_moves_from.insert(new_id, old_id);
             resource_moves_to.insert(old_id, new_id);
+
+            // If the old id was something that is made in another pass it means we depend on
+            // another pass
+            if !pass_creates
+                .get(&pass)
+                .map(|s| s.contains(&old_id))
+                .unwrap_or(false)
+            {
+                depends.insert(old_id);
+            }
         }
     }
 
     for (pass, ress) in input.resource_writes {
-        'res: for (name, ty, binding) in ress {
+        let depends = pass_ext_depends.entry(pass).or_insert(BTreeSet::new());
+        let pass_writes = pass_writes.entry(pass).or_insert(BTreeSet::new());
+
+        for (name, ty, binding) in ress {
             let id = if let Some(id) = resource_name_lookup.get(&name) {
                 *id
             } else {
@@ -364,7 +505,7 @@ fn resolve_input_graph(
                     pass,
                     res: name.clone(),
                 });
-                continue 'res;
+                continue;
             };
 
             writes.push((id, ty.clone(), pass));
@@ -372,12 +513,27 @@ fn resolve_input_graph(
             resource_writes
                 .entry(id)
                 .or_insert(BTreeSet::new())
-                .insert((pass, ty, binding));
+                .insert((pass, ty.clone(), binding));
+
+            pass_writes.insert((id, ty, binding));
+
+            // If the id is something that is made in another pass it means we depend on another
+            // pass
+            if !pass_creates
+                .get(&pass)
+                .map(|s| s.contains(&id))
+                .unwrap_or(false)
+            {
+                depends.insert(id);
+            }
         }
     }
 
     for (pass, ress) in input.resource_reads {
-        'res: for (name, ty, binding) in ress {
+        let depends = pass_ext_depends.entry(pass).or_insert(BTreeSet::new());
+        let pass_reads = pass_reads.entry(pass).or_insert(BTreeSet::new());
+
+        for (name, ty, binding) in ress {
             let id = if let Some(id) = resource_name_lookup.get(&name) {
                 *id
             } else {
@@ -385,7 +541,7 @@ fn resolve_input_graph(
                     pass,
                     res: name.clone(),
                 });
-                continue 'res;
+                continue;
             };
 
             reads.push((id, ty.clone(), pass));
@@ -393,7 +549,32 @@ fn resolve_input_graph(
             resource_reads
                 .entry(id)
                 .or_insert(BTreeSet::new())
-                .insert((pass, ty, binding));
+                .insert((pass, ty.clone(), binding));
+
+            pass_reads.insert((id, ty, binding));
+
+            // If the id is something that is made in another pass it means we depend on another
+            // pass
+            if !pass_creates
+                .get(&pass)
+                .map(|s| s.contains(&id))
+                .unwrap_or(false)
+            {
+                depends.insert(id);
+            }
+        }
+    }
+
+    let mut resource_backbuffer = BTreeSet::new();
+    for (pass, res) in input.resource_backbuffer {
+        if let Some(id) = resource_name_lookup.get(&res) {
+            resource_backbuffer.insert(*id);
+        } else {
+            errors.push(GraphCompileError::ReferencedInvalidResource {
+                res: res.clone(),
+                pass,
+            });
+            continue;
         }
     }
 
@@ -409,6 +590,13 @@ fn resolve_input_graph(
 
         reads: resource_reads,
         writes: resource_writes,
+
+        backbuffer: resource_backbuffer,
+
+        pass_creates,
+        pass_ext_depends,
+        pass_reads,
+        pass_writes,
     }
 }
 

@@ -254,6 +254,9 @@ impl Context {
         graph: graph::GraphHandle,
         exec_context: &graph::ExecutionContext,
     ) {
+
+        self.graph_storage.execute(graph, exec_context);
+
         /*
         self.graph_storage.execute(
             &self.device_ctx,

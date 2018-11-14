@@ -44,6 +44,7 @@ pub struct CompiledGraph {
 }
 
 impl CompiledGraph {
+
     pub fn create(graph: &Graph, cgraph: ConstructedGraph, output: &CowString) -> Result<Self, ()> {
         // Create the execution list from which we can compute lifetimes.
         let exec_list = cgraph.execution_list(output).map_err(|_| ())?;
@@ -245,7 +246,7 @@ impl CompiledGraph {
     }
 
     /// Find out which images `pass` is writing to
-    pub fn image_writes<'a>(&'a self, pass: PassId) -> impl Iterator<Item = ImageId> + Clone + 'a  {
+    pub fn image_writes<'a>(&'a self, pass: PassId) -> impl Iterator<Item = ImageId> + Clone + 'a {
 
         let creates = self.image_creates[&pass].iter().cloned();
         let copies = self.image_copies[&pass].iter().cloned();
