@@ -81,4 +81,12 @@ impl RenderPassStorage {
             None
         }
     }
+
+    pub fn destroy(&mut self, device: &DeviceContext, handles: &[RenderPassHandle]) {
+        for handle in handles {
+            if let Some(render_pass) = self.storage.remove(*handle) {
+                device.device.destroy_render_pass(render_pass.render_pass);
+            }
+        }
+    }
 }

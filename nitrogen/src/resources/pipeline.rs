@@ -97,6 +97,8 @@ pub struct GraphicsPipelineCreateInfo<'a> {
 
     pub vertex_attribs: Option<VertexAttribHandle>,
 
+    pub descriptor_set_layout: &'a [types::DescriptorSetLayout],
+
     pub shader_vertex: ShaderInfo<'a>,
     pub shader_fragment: Option<ShaderInfo<'a>>,
     pub shader_geometry: Option<ShaderInfo<'a>>,
@@ -226,8 +228,9 @@ impl PipelineStorage {
 
             let rasterizer = { pso::Rasterizer::FILL };
 
-            // TODO what about descriptor sets?
-            let layout = { device.device.create_pipeline_layout(&[], &[])? };
+            let layout = device
+                .device
+                .create_pipeline_layout(create_info.descriptor_set_layout, &[])?;
 
             let render_pass = render_pass_storage.raw(render_pass_handle).unwrap();
 
@@ -242,10 +245,17 @@ impl PipelineStorage {
             // TODO add attributes
             if let Some(handle) = create_info.vertex_attribs {
                 if let Some(data) = vertex_attrib_storage.raw(handle) {
-                    desc.attributes.extend_from_slice(&data[..]);
+                    desc.attributes.extend_from_slice(&data.attribs[..]);
+
+                    desc.vertex_buffers.push(pso::VertexBufferDesc {
+                        binding: 0,
+                        stride: data.buffer_stride as u32,
+                        rate: 0,
+                    });
                 }
             }
 
+            // TODO respect blend modes
             desc.blender.targets.push(pso::ColorBlendDesc(
                 pso::ColorMask::ALL,
                 pso::BlendState::ALPHA,
@@ -276,6 +286,8 @@ impl PipelineStorage {
 
         Ok(handle)
     }
+
+    pub fn destroy(&mut self, device: &DeviceContext) {}
 
     pub(crate) fn raw_graphics(&self, handle: PipelineHandle) -> Option<&GraphicsPipeline> {
         if self.storage.is_alive(handle) {

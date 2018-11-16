@@ -175,7 +175,7 @@ impl Context {
 
     pub fn image_create(
         &mut self,
-        create_infos: &[image::ImageCreateInfo],
+        create_infos: &[image::ImageCreateInfo<image::ImageUsage>],
     ) -> SmallVec<[image::Result<image::ImageHandle>; 16]> {
         self.image_storage.create(&self.device_ctx, create_infos)
     }
@@ -239,7 +239,16 @@ impl Context {
     }
 
     pub fn graph_destroy(&mut self, graph: graph::GraphHandle) {
-        self.graph_storage.destroy(graph);
+        self.graph_storage.destroy(
+            &self.device_ctx,
+            &mut self.render_pass_storage,
+            &mut self.pipeline_storage,
+            &mut self.image_storage,
+            &mut self.buffer_storage,
+            &self. vertex_attrib_storage,
+            &mut self.sampler_storage,
+            graph,
+        );
     }
 
     pub fn graph_compile(
@@ -249,68 +258,56 @@ impl Context {
         self.graph_storage.compile(graph)
     }
 
+    pub fn graph_exec_resource_destroy(&mut self, exec_res: graph::ExecutionResources) {
+        exec_res.release(
+            &self.device_ctx,
+            &mut self.image_storage,
+            &mut self.sampler_storage,
+            &mut self.buffer_storage
+        );
+    }
+
     pub fn render_graph(
         &mut self,
         graph: graph::GraphHandle,
         exec_context: &graph::ExecutionContext,
-    ) {
+    ) -> graph::ExecutionResources {
 
-        self.graph_storage.execute(graph, exec_context);
+        // self.graph_storage.execute(graph, exec_context);
 
-        /*
         self.graph_storage.execute(
             &self.device_ctx,
             &mut self.render_pass_storage,
             &mut self.pipeline_storage,
-            &self.vertex_attrib_storage,
             &mut self.image_storage,
+            &mut self.buffer_storage,
+            &self.vertex_attrib_storage,
             &mut self.sampler_storage,
             graph,
             exec_context,
-        );
-        */
+        )
     }
 
     // display
 
-    pub fn display_present(&mut self, display: DisplayHandle, graph_handle: graph::GraphHandle) {
-        /*
-        if !self.graph_storage.graphs.is_alive(graph_handle) {
+    pub fn display_present(&mut self, display: DisplayHandle, resources: &graph::ExecutionResources) {
+
+        if resources.images.len() != 1 {
             return;
         }
 
-        let graph = &self.graph_storage.graphs[graph_handle];
+        let (id, image) = resources.images.iter().next().unwrap();
 
-        if !self
-            .graph_storage
-            .compiled_graphs
-            .contains_key(&graph_handle)
-        {
-            return;
-        }
-        let cgraph = &self.graph_storage.compiled_graphs[&graph_handle];
+        println!("{:?}", resources.samplers.keys());
 
-        if !self.graph_storage.resources.contains_key(&graph_handle) {
-            return;
-        }
-
-        let resources = &self.graph_storage.resources[&graph_handle];
-
-        let (image_handle, sampler_handle) = if let Some(name) = &graph.output_image {
-            let id = cgraph.image_name_lookup[name];
-            let id = cgraph.resolve_image_id(id).unwrap();
-            resources.images[id.0].unwrap()
-        } else {
-            return;
-        };
+        let sampler = resources.samplers[id];
 
         self.displays[display].present(
             &self.device_ctx,
             &self.image_storage,
-            image_handle,
+            *image,
             &self.sampler_storage,
-            sampler_handle,
+            sampler,
         );
-        */
     }
 }

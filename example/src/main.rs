@@ -26,11 +26,11 @@ const TRIANGLE: [Vertex; 3] = [
     }, // TOP
     Vertex {
         pos: [-0.5, 0.5],
-        uv: [0.0, 0.0],
+        uv: [0.0, 1.0],
     }, // LEFT
     Vertex {
         pos: [0.5, 0.5],
-        uv: [0.0, 0.0],
+        uv: [1.0, 0.0],
     }, // RIGHT
 ];
 
@@ -112,8 +112,8 @@ fn main() {
         let create_info = nitrogen::buffer::BufferCreateInfo {
             size: std::mem::size_of_val(&TRIANGLE) as u64,
             is_transient: false,
-            usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC,
-            properties: nitrogen::resources::MemoryProperties::DEVICE_LOCAL,
+            usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC | nitrogen::buffer::BufferUsage::VERTEX,
+            properties: nitrogen::resources::MemoryProperties::CPU_VISIBLE | nitrogen::resources::MemoryProperties::COHERENT,
         };
         let buffer = ntg
             .buffer_storage
@@ -126,17 +126,20 @@ fn main() {
             data: &TRIANGLE,
         };
 
-        ntg.buffer_storage.upload_data(
+        let result = ntg.buffer_storage.upload_data(
             &ntg.device_ctx,
             &mut ntg.transfer,
             &[(buffer, upload_data)],
-        );
+        ).remove(0);
+
+        println!("{:?}", result);
 
         buffer
     };
 
     let vertex_attrib = {
         let info = nitrogen::vertex_attrib::VertexAttribInfo {
+            buffer_stride: std::mem::size_of::<Vertex>(),
             buffer_infos: &[nitrogen::vertex_attrib::VertexAttribBufferInfo {
                 index: 0,
                 elements: &[
@@ -146,7 +149,7 @@ fn main() {
                         offset: 0,
                     },
                     nitrogen::vertex_attrib::VertexAttribBufferElementInfo {
-                        location: 0,
+                        location: 1,
                         format: nitrogen::gfx::format::Format::Rg32Float,
                         offset: 8,
                     },
@@ -157,7 +160,11 @@ fn main() {
         ntg.vertex_attribs_create(&[info]).remove(0)
     };
 
-    let graph = setup_graphs(&mut ntg, vertex_attrib);
+    let graph = setup_graphs(
+        &mut ntg,
+        vertex_attrib,
+        buffer,
+    );
 
     let mut running = true;
     let mut resized = true;
@@ -191,18 +198,17 @@ fn main() {
         }
 
         let exec_context = nitrogen::graph::ExecutionContext {
-            reference_size: (400, 400),
+            reference_size: (1920, 1080),
         };
 
-        ntg.render_graph(graph, &exec_context);
+        let res = ntg.render_graph(graph, &exec_context);
 
-        ntg.display_present(display, graph);
+        ntg.display_present(display, &res);
 
-
-        // ntg.displays[display].present(&ntg.device_ctx, &ntg.image_storage, image, &ntg.sampler_storage, sampler);
-
-        // running = false;
+        ntg.graph_exec_resource_destroy(res);
     }
+
+    ntg.graph_destroy(graph);
 
     ntg.buffer_storage.destroy(&ntg.device_ctx, &[buffer]);
 
@@ -214,7 +220,8 @@ fn main() {
 
 fn setup_graphs(
     ntg: &mut nitrogen::Context,
-    _vertex_attrib: nitrogen::vertex_attrib::VertexAttribHandle,
+    vertex_attrib: nitrogen::vertex_attrib::VertexAttribHandle,
+    buffer: nitrogen::buffer::BufferHandle,
 ) -> graph::GraphHandle {
     let graph = ntg.graph_create();
 
@@ -231,54 +238,41 @@ fn setup_graphs(
 
 
 
-
     {
         let (pass_impl, info) = create_test_pass(
             |builder| {
-                builder.image_create("A", image_create_info());
 
-                builder.image_write_color("A", 1);
+                builder.image_create("ITest", image_create_info());
 
-                builder.enable();
-            },
-            |cmd| {
-                cmd.draw(0..6, 0..1);
-            }
-        );
-
-        ntg.graph_add_pass(graph, "Creator", info, Box::new(pass_impl));
-    }
-
-    {
-        let (pass_impl, info) = create_test_pass(
-            |builder| {
-                builder.image_copy("A", "CopyOfA");
-                builder.image_move("A", "B");
-
-                builder.image_write_color("B", 0);
-                builder.image_read_color("CopyOfA", 0);
+                builder.image_write_color("ITest", 0);
+                builder.image_ext_read_color(0);
 
                 builder.enable();
             },
-            |_cmd| {
+            move |cmd| {
 
-            }
+                cmd.bind_vertex_array(buffer);
+
+                // cmd.draw(0..3, 0..1);
+                cmd.draw(0..3, 0..1);
+            },
+            Some(vertex_attrib),
         );
 
-        ntg.graph_add_pass(graph, "Mover", info, Box::new(pass_impl));
+        ntg.graph_add_pass(graph, "TestPass", info, Box::new(pass_impl));
     }
 
-    ntg.graph_add_output(graph, "B");
+    ntg.graph_add_output(graph, "ITest");
 
     graph
 }
 
-fn create_test_pass<FSetUp, FExec>(setup: FSetUp, execute: FExec) -> (impl PassImpl, graph::PassInfo)
+fn create_test_pass<FSetUp, FExec>(setup: FSetUp, execute: FExec, vert: Option<nitrogen::vertex_attrib::VertexAttribHandle>) -> (impl PassImpl, graph::PassInfo)
     where FSetUp: FnMut(&mut graph::GraphBuilder),
           FExec: Fn(&mut graph::CommandBuffer) {
 
     let pass_info = nitrogen::graph::PassInfo::Graphics {
-        vertex_attrib: None, //Some(vertex_attrib),
+        vertex_attrib: vert,
         shaders: nitrogen::graph::Shaders {
             vertex: nitrogen::graph::ShaderInfo {
                 content: Cow::Borrowed(include_bytes!(concat!(

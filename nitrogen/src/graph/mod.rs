@@ -5,6 +5,19 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 
+use smallvec::SmallVec;
+
+
+use device::DeviceContext;
+use resources::{
+    image::ImageStorage,
+    buffer::BufferStorage,
+    pipeline::PipelineStorage,
+    render_pass::RenderPassStorage,
+    vertex_attrib::VertexAttribStorage,
+    sampler::SamplerStorage,
+};
+
 pub mod pass;
 pub use self::pass::*;
 
@@ -14,14 +27,9 @@ pub use self::builder::*;
 pub mod command;
 pub use self::command::*;
 
-mod setup;
-use self::setup::*;
-
-mod baked;
-use self::baked::*;
-
 mod execution;
 use self::execution::*;
+pub use self::execution::ExecutionResources;
 
 pub type GraphHandle = Handle<Graph>;
 
@@ -52,6 +60,9 @@ pub(crate) struct GraphResourcesResolved {
     /// Resources that a pass reads from
     pub(crate) pass_reads: BTreeMap<PassId, BTreeSet<(ResourceId, ResourceReadType, u8)>>,
 
+    /// External resources that are read
+    pub(crate) pass_ext_reads: BTreeMap<PassId, BTreeSet<(ResourceReadType, u8)>>,
+
     pub(crate) backbuffer: BTreeSet<ResourceId>,
 }
 
@@ -74,6 +85,24 @@ impl GraphResourcesResolved {
             None
         }
 
+    }
+
+    pub(crate) fn create_info(&self, id: ResourceId) -> Option<(ResourceId, &ResourceCreateInfo)> {
+
+        let mut next_id = self.moved_from(id)?;
+
+        // I'm tired and not sure if this will terminate in all cases. TODO...
+        loop {
+            if let Some(info) = self.infos.get(&next_id) {
+                return Some((next_id, info));
+            }
+
+            if let Some(prev) = self.copies_from.get(&next_id) {
+                next_id = self.moved_from(*prev)?;
+            } else {
+                return None;
+            }
+        }
     }
 }
 
@@ -114,7 +143,10 @@ pub struct Graph {
     exec_id_cache: HashMap<(usize, Vec<ResourceName>), usize>,
     exec_graph_cache: HashMap<usize, ExecutionGraph>,
 
+    exec_resources: HashMap<usize, ExecutionGraphResources>,
+
     last_exec: Option<usize>,
+    last_input: Option<u64>,
 }
 
 pub struct GraphStorage {
@@ -137,12 +169,37 @@ impl GraphStorage {
                 resolve_cache: HashMap::new(),
                 exec_id_cache: HashMap::new(),
                 exec_graph_cache: HashMap::new(),
+                exec_resources: HashMap::new(),
                 last_exec: None,
+                last_input: None,
             }).0
     }
 
-    pub fn destroy(&mut self, handle: GraphHandle) {
-        self.storage.remove(handle);
+    pub fn destroy(&mut self,
+                   device: &DeviceContext,
+                   render_pass_storage: &mut RenderPassStorage,
+                   pipeline_storage: &mut PipelineStorage,
+                   image_storage: &mut ImageStorage,
+                   buffer_storage: &mut BufferStorage,
+                   vertex_attrib_storage: &VertexAttribStorage,
+                   sampler_storage: &mut SamplerStorage,
+                   handle: GraphHandle) {
+        let graph = self.storage.remove(handle);
+
+        let mut storages = execution::ExecutionStorages {
+            render_pass: render_pass_storage,
+            pipeline: pipeline_storage,
+            image: image_storage,
+            buffer: buffer_storage,
+            vertex_attrib: vertex_attrib_storage,
+            sampler: sampler_storage,
+        };
+
+        if let Some(graph) = graph {
+            for (_, res) in graph.exec_resources {
+                res.release(device, &mut storages);
+            }
+        }
     }
 
     pub fn add_pass<T: Into<PassName>>(
@@ -187,6 +244,8 @@ impl GraphStorage {
             let mut pass_resource_writes = BTreeMap::new();
             let mut pass_resource_backbuffers = Vec::new();
 
+            let mut pass_resource_ext_reads = BTreeMap::new();
+
             for (i, pass) in graph.passes_impl.iter_mut().enumerate() {
                 let mut builder = GraphBuilder::new();
                 pass.setup(&mut builder);
@@ -201,6 +260,8 @@ impl GraphStorage {
                     pass_resource_reads.insert(id, builder.resource_reads);
                     pass_resource_writes.insert(id, builder.resource_writes);
 
+                    pass_resource_ext_reads.insert(id, builder.resource_ext_reads);
+
                     for res in builder.resource_backbuffer {
                         pass_resource_backbuffers.push((id, res));
                     }
@@ -214,6 +275,8 @@ impl GraphStorage {
 
                 resource_writes: pass_resource_writes,
                 resource_reads: pass_resource_reads,
+
+                resource_ext_reads: pass_resource_ext_reads,
 
                 resource_backbuffer: pass_resource_backbuffers,
             }
@@ -249,6 +312,8 @@ impl GraphStorage {
             )
         });
 
+        graph.last_input = Some(input_hash);
+
         // TODO check write and read types match with creation types.
 
         let exec_id = graph.exec_id_cache.len();
@@ -274,12 +339,6 @@ impl GraphStorage {
             .entry(exec_id)
             .or_insert_with(|| ExecutionGraph::new(resolved, output_slice));
 
-        // TODO remove debug
-        {
-            let exec = &graph.exec_graph_cache[&exec_id];
-            println!("{:?}", exec);
-        }
-
         graph.last_exec = Some(exec_id);
 
         if !errors.is_empty() {
@@ -289,9 +348,78 @@ impl GraphStorage {
         }
     }
 
-    pub fn execute(&self, graph: GraphHandle, context: &ExecutionContext) {
-        // TODO error handling
-        let graph = self.storage.get(graph).expect("Invalid graph!");
+    pub fn execute(
+        &mut self,
+        device: &DeviceContext,
+        render_pass_storage: &mut RenderPassStorage,
+        pipeline_storage: &mut PipelineStorage,
+        image_storage: &mut ImageStorage,
+        buffer_storage: &mut BufferStorage,
+        vertex_storage: &VertexAttribStorage,
+        sampler_storage: &mut SamplerStorage,
+        graph: GraphHandle,
+        context: &ExecutionContext,
+    ) -> ExecutionResources {
+        // TODO error handling !!!
+        // TODO
+        // TODO
+        let graph = self.storage.get_mut(graph).expect("Invalid graph!");
+
+        let input_hash = graph.last_input.unwrap();
+
+        let (resolved, id) = graph.resolve_cache.get(&input_hash).unwrap();
+
+        let exec_id = graph.exec_id_cache.get(&(*id, graph.output_resources.clone())).unwrap();
+
+        let exec = &graph.exec_graph_cache[exec_id];
+
+        let mut storages = execution::ExecutionStorages {
+            render_pass: render_pass_storage,
+            pipeline: pipeline_storage,
+            image: image_storage,
+            buffer: buffer_storage,
+            vertex_attrib: vertex_storage,
+            sampler: sampler_storage,
+        };
+
+        let outputs = graph.output_resources.as_slice()
+            .iter()
+            .map(|n| resolved.name_lookup[n])
+            .collect::<SmallVec<[_; 16]>>();
+
+        let resources = {
+
+            let passes = &graph.passes[..];
+
+
+            graph.exec_resources
+                .entry(*exec_id)
+                .or_insert_with(|| {
+                    execution::prepare(
+                        device,
+                        &mut storages,
+                        exec,
+                        resolved,
+                        passes,
+                        outputs.as_slice(),
+                        context,
+                    )
+                });
+
+            // TODO Aaaargh there's no immutable insert_with for HashMap :/
+            &graph.exec_resources[exec_id]
+        };
+
+
+        execution::execute(
+            device,
+            &mut storages,
+            exec,
+            resolved,
+            graph,
+            &resources,
+            context,
+        )
     }
 
     pub fn add_output<T: Into<ResourceName>>(&mut self, handle: GraphHandle, image: T) {
@@ -310,6 +438,8 @@ struct GraphInput {
     resource_reads: BTreeMap<PassId, Vec<(ResourceName, ResourceReadType, u8)>>,
     resource_writes: BTreeMap<PassId, Vec<(ResourceName, ResourceWriteType, u8)>>,
 
+    resource_ext_reads: BTreeMap<PassId, Vec<(ResourceReadType, u8)>>,
+
     resource_backbuffer: Vec<(PassId, ResourceName)>,
 }
 
@@ -319,6 +449,8 @@ fn resolve_input_graph(
     writes: &mut Vec<(ResourceId, ResourceWriteType, PassId)>,
     errors: &mut Vec<GraphCompileError>,
 ) -> GraphResourcesResolved {
+    // TODO check for duplicated binding points everywhere?
+
     println!("Create resolved graph");
 
     let mut resource_name_lookup = BTreeMap::new();
@@ -336,6 +468,8 @@ fn resolve_input_graph(
     let mut pass_ext_depends = BTreeMap::new();
     let mut pass_writes = BTreeMap::new();
     let mut pass_reads = BTreeMap::new();
+
+    let mut pass_ext_reads = BTreeMap::new();
 
     // generate IDs for all "new" resources.
 
@@ -565,6 +699,18 @@ fn resolve_input_graph(
         }
     }
 
+    for (pass, reads) in input.resource_ext_reads {
+        let entries = pass_ext_reads.entry(pass)
+            .or_insert(BTreeSet::new());
+
+        for (ty, binding) in reads {
+            // TODO check for duplicated binding points?
+            entries.insert((ty, binding));
+        }
+    }
+
+
+
     let mut resource_backbuffer = BTreeSet::new();
     for (pass, res) in input.resource_backbuffer {
         if let Some(id) = resource_name_lookup.get(&res) {
@@ -597,9 +743,12 @@ fn resolve_input_graph(
         pass_ext_depends,
         pass_reads,
         pass_writes,
+
+        pass_ext_reads,
     }
 }
 
+#[derive(Debug, Clone, Ord, PartialOrd, PartialEq, Eq)]
 pub struct ExecutionContext {
     pub reference_size: (u32, u32),
 }

@@ -6,7 +6,8 @@ use smallvec::SmallVec;
 pub type VertexAttribHandle = Handle<VertexAttrib>;
 
 pub struct VertexAttrib {
-    attribs: Vec<gfx::pso::AttributeDesc>,
+    pub(crate) buffer_stride: usize,
+    pub(crate) attribs: Vec<gfx::pso::AttributeDesc>,
 }
 
 pub struct VertexAttribStorage {
@@ -14,6 +15,7 @@ pub struct VertexAttribStorage {
 }
 
 pub struct VertexAttribInfo<'a> {
+    pub buffer_stride: usize,
     pub buffer_infos: &'a [VertexAttribBufferInfo<'a>],
 }
 
@@ -70,14 +72,14 @@ impl VertexAttribStorage {
 
                 attribs.extend(attrib_iter);
 
-                VertexAttrib { attribs }
+                VertexAttrib { attribs, buffer_stride: create_info.buffer_stride }
             }).map(|attrib| self.storage.insert(attrib).0)
             .collect()
     }
 
-    pub fn raw(&self, handle: VertexAttribHandle) -> Option<&Vec<gfx::pso::AttributeDesc>> {
+    pub fn raw(&self, handle: VertexAttribHandle) -> Option<&VertexAttrib> {
         if self.storage.is_alive(handle) {
-            Some(&self.storage[handle].attribs)
+            Some(&self.storage[handle])
         } else {
             None
         }

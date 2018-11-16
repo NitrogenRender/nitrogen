@@ -59,7 +59,7 @@ impl Hash for ImageSizeMode {
 pub type ImageHandle = Handle<Image>;
 
 #[derive(Default, Clone)]
-pub struct ImageCreateInfo {
+pub struct ImageCreateInfo<T: Into<gfx::image::Usage>> {
     pub dimension: ImageDimension,
     pub num_layers: u16,
     pub num_samples: u8,
@@ -67,7 +67,7 @@ pub struct ImageCreateInfo {
     pub format: ImageFormat,
     pub kind: ViewKind,
 
-    pub usage: ImageUsage,
+    pub usage: T,
 
     pub is_transient: bool,
 }
@@ -259,10 +259,10 @@ impl ImageStorage {
         }
     }
 
-    pub fn create(
+    pub fn create<T: Into<gfx::image::Usage> + Clone>(
         &mut self,
         device: &DeviceContext,
-        create_infos: &[ImageCreateInfo],
+        create_infos: &[ImageCreateInfo<T>],
     ) -> SmallVec<[Result<ImageHandle>; 16]> {
         use gfx::format::Format;
 
@@ -291,7 +291,7 @@ impl ImageStorage {
 
                 use gfx::memory::Properties;
 
-                let usage_flags = create_info.usage.into();
+                let usage_flags = create_info.usage.clone().into();
 
                 let alloc_type = if create_info.is_transient {
                     gfxm::Type::ShortLived

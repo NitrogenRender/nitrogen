@@ -7,6 +7,7 @@ use failure_derive::Fail;
 
 use std;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 use device::DeviceContext;
 use transfer::TransferContext;
@@ -20,6 +21,8 @@ use smallvec::smallvec;
 use smallvec::SmallVec;
 
 use resources::MemoryProperties;
+
+use types;
 
 type BufferId = usize;
 pub type BufferTypeInternal = <SmartAllocator<back::Backend> as Factory<back::Backend>>::Buffer;
@@ -141,18 +144,20 @@ pub struct BufferUploadInfo<'a, T: 'a> {
 }
 
 pub struct BufferStorage {
-    local_buffers: BTreeMap<BufferId, Buffer>,
-    host_visible_buffers: BTreeMap<BufferId, Buffer>,
-    other_buffers: BTreeMap<BufferId, Buffer>,
+    local_buffers: BTreeSet<BufferId>,
+    host_visible_buffers: BTreeSet<BufferId>,
+    other_buffers: BTreeSet<BufferId>,
+    buffers: BTreeMap<BufferId, Buffer>,
     storage: Storage<BufferType>,
 }
 
 impl BufferStorage {
     pub fn new() -> Self {
         BufferStorage {
-            local_buffers: BTreeMap::new(),
-            host_visible_buffers: BTreeMap::new(),
-            other_buffers: BTreeMap::new(),
+            local_buffers: BTreeSet::new(),
+            host_visible_buffers: BTreeSet::new(),
+            other_buffers: BTreeSet::new(),
+            buffers: BTreeMap::new(),
             storage: Storage::new(),
         }
     }
@@ -214,15 +219,17 @@ impl BufferStorage {
 
             match ty {
                 BufferType::DeviceAccessible => {
-                    self.local_buffers.insert(handle.id(), buffer);
+                    self.local_buffers.insert(handle.id());
                 }
                 BufferType::HostAccessible => {
-                    self.host_visible_buffers.insert(handle.id(), buffer);
+                    self.host_visible_buffers.insert(handle.id());
                 }
                 BufferType::UnAccessible => {
-                    self.other_buffers.insert(handle.id(), buffer);
+                    self.other_buffers.insert(handle.id());
                 }
             }
+
+            self.buffers.insert(handle.id(), buffer);
 
             results.push(Ok(handle));
         }
@@ -234,17 +241,15 @@ impl BufferStorage {
         let mut allocator = device.allocator();
         for handle in buffers {
             let id = handle.id();
-            let buffer = match self.storage.remove(*handle) {
-                Some(BufferType::DeviceAccessible) => self.local_buffers.remove(&id).unwrap(),
-                Some(BufferType::HostAccessible) => self.host_visible_buffers.remove(&id).unwrap(),
-                Some(BufferType::UnAccessible) => self.other_buffers.remove(&id).unwrap(),
-                _ => {
-                    return;
-                }
-            };
-
+            let buffer = self.buffers.remove(&id).unwrap();
             allocator.destroy_buffer(&device.device, buffer.buffer);
         }
+    }
+
+    pub(crate) fn raw(&self, buffer: BufferHandle) -> Option<&BufferTypeInternal> {
+        self.storage.get(buffer).map(|buf| {
+            &self.buffers[&buffer.id()].buffer
+        })
     }
 
     pub fn upload_data<T>(
@@ -297,7 +302,7 @@ impl BufferStorage {
 
         // Simple memory-mapped writing is enough.
         for (idx, handle, data) in cpu_accessible {
-            let buffer = self.host_visible_buffers.get(&handle.id()).unwrap();
+            let buffer = self.buffers.get(&handle.id()).unwrap();
 
             let upload_fits = data.offset + data.data.len() as u64 <= buffer.size;
 
@@ -327,7 +332,7 @@ impl BufferStorage {
                 .as_slice()
                 .iter()
                 .map(|(idx, handle, data)| {
-                    let buffer = self.local_buffers.get(&handle.id()).unwrap();
+                    let buffer = self.buffers.get(&handle.id()).unwrap();
 
                     let upload_fits = data.offset + data.data.len() as u64 <= buffer.size;
 
