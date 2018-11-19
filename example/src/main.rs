@@ -19,19 +19,23 @@ struct Vertex {
     pub uv: [f32; 2],
 }
 
-const TRIANGLE: [Vertex; 3] = [
+const TRIANGLE: [Vertex; 4] = [
     Vertex {
-        pos: [0.0, -0.5],
+        pos: [-0.5, -0.5],
         uv: [0.0, 0.0],
-    }, // TOP
+    }, // LEFT TOP
     Vertex {
         pos: [-0.5, 0.5],
         uv: [0.0, 1.0],
-    }, // LEFT
+    }, // LEFT BOTTOM
+    Vertex {
+        pos: [0.5, -0.5],
+        uv: [1.0, 0.0],
+    }, // RIGHT TOP
     Vertex {
         pos: [0.5, 0.5],
-        uv: [1.0, 0.0],
-    }, // RIGHT
+        uv: [1.0, 1.0],
+    }, // RIGHT BOTTOM
 ];
 
 fn main() {
@@ -50,6 +54,7 @@ fn main() {
             parameters: &[
                 (0, nitrogen::material::MaterialParameterType::SampledImage),
                 (1, nitrogen::material::MaterialParameterType::Sampler),
+                (2, nitrogen::material::MaterialParameterType::UniformBuffer),
             ],
         };
 
@@ -119,22 +124,6 @@ fn main() {
         (img, sampler)
     };
 
-    {
-        ntg.material_write_instance(
-            mat_example_instance,
-            &[
-                nitrogen::material::InstanceWrite {
-                    binding: 0,
-                    data: nitrogen::material::InstanceWriteData::Image { image },
-                },
-                nitrogen::material::InstanceWrite {
-                    binding: 1,
-                    data: nitrogen::material::InstanceWriteData::Sampler { sampler },
-                },
-            ],
-        );
-    }
-
     ntg.displays[display].setup_swapchain(&ntg.device_ctx);
 
     let buffer = {
@@ -194,6 +183,62 @@ fn main() {
     let mut running = true;
     let mut resized = true;
 
+    #[derive(Copy, Clone)]
+    struct UniformData {
+        color: [f32; 4],
+    }
+
+    let uniform_data = UniformData {
+        color: [0.3, 0.5, 1.0, 1.0],
+    };
+
+    let uniform_buffer = {
+
+        let create_info = nitrogen::buffer::BufferCreateInfo {
+            size: std::mem::size_of::<UniformData>() as u64,
+            is_transient: false,
+            usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC
+                | nitrogen::buffer::BufferUsage::UNIFORM,
+            properties: nitrogen::resources::MemoryProperties::CPU_VISIBLE
+                | nitrogen::resources::MemoryProperties::COHERENT,
+        };
+        let buffer = ntg.buffer_create(&[create_info]).remove(0).unwrap();
+
+        let upload_data = nitrogen::buffer::BufferUploadInfo {
+            offset: 0,
+            data: &[uniform_data],
+        };
+
+        let result = ntg.buffer_upload_data(&[(buffer, upload_data)]).remove(0);
+
+        println!("{:?}", result);
+
+        buffer
+    };
+
+
+    {
+        ntg.material_write_instance(
+            mat_example_instance,
+            &[
+                nitrogen::material::InstanceWrite {
+                    binding: 0,
+                    data: nitrogen::material::InstanceWriteData::Image { image },
+                },
+                nitrogen::material::InstanceWrite {
+                    binding: 1,
+                    data: nitrogen::material::InstanceWriteData::Sampler { sampler },
+                },
+                nitrogen::material::InstanceWrite {
+                    binding: 2,
+                    data: nitrogen::material::InstanceWriteData::Buffer { buffer: uniform_buffer },
+                },
+            ],
+        );
+    }
+
+
+
     while running {
         events.poll_events(|event| match event {
             winit::Event::WindowEvent { event, .. } => match event {
@@ -235,7 +280,7 @@ fn main() {
 
     ntg.graph_destroy(graph);
 
-    ntg.buffer_destroy(&[buffer]);
+    ntg.buffer_destroy(&[buffer, uniform_buffer]);
 
     ntg.sampler_destroy(&[sampler]);
     ntg.image_destroy(&[image]);
@@ -276,7 +321,7 @@ fn setup_graphs(
 
                 cmd.bind_graphics_descriptor_set(1, material_instance);
 
-                cmd.draw(0..3, 0..1);
+                cmd.draw(0..4, 0..1);
             },
             Some(vertex_attrib),
             vec![(1, material)],
@@ -319,7 +364,7 @@ where
             }),
             geometry: None,
         },
-        primitive: nitrogen::pipeline::Primitive::TriangleList,
+        primitive: nitrogen::pipeline::Primitive::TriangleStrip,
         blend_mode: nitrogen::render_pass::BlendMode::Alpha,
         materials,
     };

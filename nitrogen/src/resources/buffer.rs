@@ -433,11 +433,15 @@ fn write_data_to_buffer(
     use gfx::Device;
     use gfxm::Block;
 
+    let offset = offset as usize;
+
+    let range = buffer.range();
+
     let mut writer = device
         .device
-        .acquire_mapping_writer(buffer.memory(), offset..offset + data.len() as u64)?;
+        .acquire_mapping_writer(buffer.memory(), range)?;
 
-    writer[..].copy_from_slice(data);
+    writer[offset..offset + data.len()].copy_from_slice(data);
 
     device.device.release_mapping_writer(writer);
 

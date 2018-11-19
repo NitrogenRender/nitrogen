@@ -23,6 +23,11 @@ Texture2D t;
 [[vk::binding(1, 1)]]
 SamplerState s;
 
+[[vk::binding(2, 1)]]
+cbuffer {
+    float4 modulate;
+};
+
 VertexOut VertexMain(VertexIn input)
 {
     VertexOut output;
@@ -40,6 +45,7 @@ FragmentOut FragmentMain(VertexOut input)
     // output.color = float4(input.uv, 1.0, 1.0);
 
     output.color = t.Sample(s, input.uv);
+    output.color *= modulate;
 
     return output;
 }
