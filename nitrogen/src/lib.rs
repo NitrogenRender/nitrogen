@@ -37,6 +37,7 @@ use storage::{Handle, Storage};
 pub mod resources;
 pub use resources::buffer;
 pub use resources::image;
+pub use resources::material;
 pub use resources::pipeline;
 pub use resources::render_pass;
 pub use resources::sampler;
@@ -66,6 +67,7 @@ pub struct Context {
     pub sampler_storage: sampler::SamplerStorage,
     pub buffer_storage: buffer::BufferStorage,
     pub vertex_attrib_storage: vertex_attrib::VertexAttribStorage,
+    pub material_storage: material::MaterialStorage,
 
     pub displays: Storage<Display>,
     pub transfer: transfer::TransferContext,
@@ -86,6 +88,7 @@ impl Context {
         let vertex_attrib_storage = vertex_attrib::VertexAttribStorage::new();
         let pipeline_storage = pipeline::PipelineStorage::new();
         let render_pass_storage = render_pass::RenderPassStorage::new();
+        let material_storage = material::MaterialStorage::new();
 
         let graph_storage = graph::GraphStorage::new();
 
@@ -100,6 +103,7 @@ impl Context {
             sampler_storage,
             buffer_storage,
             vertex_attrib_storage,
+            material_storage,
             graph_storage,
         }
     }
@@ -160,6 +164,8 @@ impl Context {
         self.buffer_storage.release();
         self.image_storage.release(&self.device_ctx);
 
+        self.material_storage.release(&self.device_ctx);
+
         for (_, display) in self.displays {
             display.release(&self.device_ctx);
         }
@@ -205,6 +211,27 @@ impl Context {
         self.sampler_storage.destroy(&self.device_ctx, handles)
     }
 
+    // buffer
+
+    pub fn buffer_create(
+        &mut self,
+        create_infos: &[buffer::BufferCreateInfo],
+    ) -> SmallVec<[buffer::Result<buffer::BufferHandle>; 16]> {
+        self.buffer_storage.create(&self.device_ctx, create_infos)
+    }
+
+    pub fn buffer_destroy(&mut self, buffers: &[buffer::BufferHandle]) {
+        self.buffer_storage.destroy(&self.device_ctx, buffers)
+    }
+
+    pub fn buffer_upload_data<T>(
+        &mut self,
+        data: &[(buffer::BufferHandle, buffer::BufferUploadInfo<T>)],
+    ) -> SmallVec<[buffer::Result<()>; 16]> {
+        self.buffer_storage
+            .upload_data(&self.device_ctx, &mut self.transfer, data)
+    }
+
     // vertex attribs
 
     pub fn vertex_attribs_create(
@@ -216,6 +243,50 @@ impl Context {
 
     pub fn vertex_attribs_destroy(&mut self, handles: &[vertex_attrib::VertexAttribHandle]) {
         self.vertex_attrib_storage.destroy(handles);
+    }
+
+    // material
+
+    pub fn material_create(
+        &mut self,
+        create_infos: &[material::MaterialCreateInfo],
+    ) -> SmallVec<[Result<material::MaterialHandle, material::MaterialError>; 16]> {
+        self.material_storage.create(&self.device_ctx, create_infos)
+    }
+
+    pub fn material_destroy(&mut self, materials: &[material::MaterialHandle]) {
+        self.material_storage.destroy(&self.device_ctx, materials)
+    }
+
+    pub fn material_create_instance(
+        &mut self,
+        materials: &[material::MaterialHandle],
+    ) -> SmallVec<[Result<material::MaterialInstanceHandle, material::MaterialError>; 16]> {
+        self.material_storage
+            .create_instances(&self.device_ctx, materials)
+    }
+
+    pub fn material_destroy_instance(&mut self, instances: &[material::MaterialInstanceHandle]) {
+        self.material_storage
+            .destroy_instances(&self.device_ctx, instances)
+    }
+
+    pub fn material_write_instance<T>(
+        &mut self,
+        instance: material::MaterialInstanceHandle,
+        data: T,
+    ) where
+        T: IntoIterator,
+        T::Item: ::std::borrow::Borrow<material::InstanceWrite>,
+    {
+        self.material_storage.write_instance(
+            &self.device_ctx,
+            &self.sampler_storage,
+            &self.image_storage,
+            &self.buffer_storage,
+            instance,
+            data,
+        );
     }
 
     // old_graph
@@ -234,7 +305,11 @@ impl Context {
         self.graph_storage.add_pass(graph, name, info, pass_impl);
     }
 
-    pub fn graph_add_output<T: Into<graph::ResourceName>>(&mut self, graph: graph::GraphHandle, name: T) {
+    pub fn graph_add_output<T: Into<graph::ResourceName>>(
+        &mut self,
+        graph: graph::GraphHandle,
+        name: T,
+    ) {
         self.graph_storage.add_output(graph, name);
     }
 
@@ -245,8 +320,9 @@ impl Context {
             &mut self.pipeline_storage,
             &mut self.image_storage,
             &mut self.buffer_storage,
-            &self. vertex_attrib_storage,
+            &self.vertex_attrib_storage,
             &mut self.sampler_storage,
+            &self.material_storage,
             graph,
         );
     }
@@ -263,7 +339,7 @@ impl Context {
             &self.device_ctx,
             &mut self.image_storage,
             &mut self.sampler_storage,
-            &mut self.buffer_storage
+            &mut self.buffer_storage,
         );
     }
 
@@ -272,7 +348,6 @@ impl Context {
         graph: graph::GraphHandle,
         exec_context: &graph::ExecutionContext,
     ) -> graph::ExecutionResources {
-
         // self.graph_storage.execute(graph, exec_context);
 
         self.graph_storage.execute(
@@ -283,6 +358,7 @@ impl Context {
             &mut self.buffer_storage,
             &self.vertex_attrib_storage,
             &mut self.sampler_storage,
+            &self.material_storage,
             graph,
             exec_context,
         )
@@ -290,15 +366,16 @@ impl Context {
 
     // display
 
-    pub fn display_present(&mut self, display: DisplayHandle, resources: &graph::ExecutionResources) {
-
+    pub fn display_present(
+        &mut self,
+        display: DisplayHandle,
+        resources: &graph::ExecutionResources,
+    ) {
         if resources.images.len() != 1 {
             return;
         }
 
         let (id, image) = resources.images.iter().next().unwrap();
-
-        println!("{:?}", resources.samplers.keys());
 
         let sampler = resources.samplers[id];
 

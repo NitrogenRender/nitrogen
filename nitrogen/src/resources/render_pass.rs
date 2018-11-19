@@ -3,7 +3,7 @@ use storage::{Handle, Storage};
 use gfx;
 use gfx::Device;
 
-use smallvec::{SmallVec};
+use smallvec::SmallVec;
 
 use device::DeviceContext;
 

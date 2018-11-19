@@ -21,7 +21,6 @@ pub(crate) enum ResourceCreateInfo {
 pub struct GraphBuilder {
     pub(crate) enabled: bool,
 
-    // image data
     /// Mapping from names to resource create information
     pub(crate) resource_creates: Vec<(ResourceName, ResourceCreateInfo)>,
     /// Mapping from new name to src name
@@ -30,12 +29,11 @@ pub struct GraphBuilder {
     pub(crate) resource_moves: Vec<(ResourceName, ResourceName)>,
 
     /// List of resources that will be read from. Also contains read type and binding
-    pub(crate) resource_reads: Vec<(ResourceName, ResourceReadType, u8)>,
+    ///
+    /// The last binding is for samplers.
+    pub(crate) resource_reads: Vec<(ResourceName, ResourceReadType, u8, Option<u8>)>,
     /// List of resources that will be written to. Also contains write type and binding
     pub(crate) resource_writes: Vec<(ResourceName, ResourceWriteType, u8)>,
-
-    /// List of external resources that will be read
-    pub(crate) resource_ext_reads: Vec<(ResourceReadType, u8)>,
 
     /// List of resources that persist executions
     pub(crate) resource_backbuffer: Vec<ResourceName>,
@@ -72,24 +70,23 @@ impl GraphBuilder {
             .push((name.into(), W::Image(ImageWriteType::Storage), binding));
     }
 
-    pub fn image_read_color<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
-        self.resource_reads
-            .push((name.into(), R::Image(ImageReadType::Color), binding));
+    pub fn image_read_color<T: Into<ResourceName>>(
+        &mut self,
+        name: T,
+        binding: u8,
+        sampler_binding: u8,
+    ) {
+        self.resource_reads.push((
+            name.into(),
+            R::Image(ImageReadType::Color),
+            binding,
+            Some(sampler_binding),
+        ));
     }
     pub fn image_read_storage<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
         self.resource_reads
-            .push((name.into(), R::Image(ImageReadType::Storage), binding));
+            .push((name.into(), R::Image(ImageReadType::Storage), binding, None));
     }
-
-
-    pub fn image_ext_read_color(&mut self, binding: u8) {
-        self.resource_ext_reads.push((ResourceReadType::Image(ImageReadType::Color), binding));
-    }
-
-    pub fn image_ext_read_storage(&mut self, binding: u8) {
-        self.resource_ext_reads.push((ResourceReadType::Image(ImageReadType::Storage), binding));
-    }
-
 
     pub fn image_backbuffer<T: Into<ResourceName>>(&mut self, name: T) {
         self.resource_backbuffer.push(name.into());
@@ -129,26 +126,21 @@ impl GraphBuilder {
     }
 
     pub fn buffer_read_storage<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
-        self.resource_reads
-            .push((name.into(), R::Buffer(BufferReadType::Storage), binding));
+        self.resource_reads.push((
+            name.into(),
+            R::Buffer(BufferReadType::Storage),
+            binding,
+            None,
+        ));
     }
     pub fn buffer_read_storage_texel<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
         self.resource_reads.push((
             name.into(),
             R::Buffer(BufferReadType::StorageTexel),
             binding,
+            None,
         ));
     }
-
-
-    pub fn buffer_ext_read_storage(&mut self, binding: u8) {
-        self.resource_ext_reads.push((ResourceReadType::Buffer(BufferReadType::Storage), binding));
-    }
-
-    pub fn buffer_ext_read_uniform(&mut self, binding: u8) {
-        self.resource_ext_reads.push((ResourceReadType::Buffer(BufferReadType::Uniform), binding));
-    }
-
 
     pub fn buffer_backbuffer<T: Into<ResourceName>>(&mut self, name: T) {
         self.resource_backbuffer.push(name.into());

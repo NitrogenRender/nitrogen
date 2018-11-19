@@ -1,6 +1,7 @@
 use graph::builder;
 use graph::command;
 
+use material::MaterialHandle;
 use pipeline::Primitive;
 use render_pass::BlendMode;
 use vertex_attrib::VertexAttribHandle;
@@ -18,6 +19,7 @@ pub enum PassInfo {
         shaders: Shaders,
         primitive: Primitive,
         blend_mode: BlendMode,
+        materials: Vec<(usize, MaterialHandle)>,
     },
     Compute {},
 }

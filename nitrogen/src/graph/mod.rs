@@ -7,15 +7,11 @@ use std::collections::HashMap;
 
 use smallvec::SmallVec;
 
-
 use device::DeviceContext;
 use resources::{
-    image::ImageStorage,
-    buffer::BufferStorage,
-    pipeline::PipelineStorage,
-    render_pass::RenderPassStorage,
+    buffer::BufferStorage, image::ImageStorage, material::MaterialStorage,
+    pipeline::PipelineStorage, render_pass::RenderPassStorage, sampler::SamplerStorage,
     vertex_attrib::VertexAttribStorage,
-    sampler::SamplerStorage,
 };
 
 pub mod pass;
@@ -28,8 +24,8 @@ pub mod command;
 pub use self::command::*;
 
 mod execution;
-use self::execution::*;
 pub use self::execution::ExecutionResources;
+use self::execution::*;
 
 pub type GraphHandle = Handle<Graph>;
 
@@ -48,7 +44,7 @@ pub(crate) struct GraphResourcesResolved {
     pub(crate) moves_from: BTreeMap<ResourceId, ResourceId>,
     pub(crate) moves_to: BTreeMap<ResourceId, ResourceId>,
 
-    pub(crate) reads: BTreeMap<ResourceId, BTreeSet<(PassId, ResourceReadType, u8)>>,
+    pub(crate) reads: BTreeMap<ResourceId, BTreeSet<(PassId, ResourceReadType, u8, Option<u8>)>>,
     pub(crate) writes: BTreeMap<ResourceId, BTreeSet<(PassId, ResourceWriteType, u8)>>,
 
     /// Resources created by pass - includes copies and moves
@@ -58,17 +54,16 @@ pub(crate) struct GraphResourcesResolved {
     /// Resources that a pass writes to
     pub(crate) pass_writes: BTreeMap<PassId, BTreeSet<(ResourceId, ResourceWriteType, u8)>>,
     /// Resources that a pass reads from
-    pub(crate) pass_reads: BTreeMap<PassId, BTreeSet<(ResourceId, ResourceReadType, u8)>>,
-
-    /// External resources that are read
-    pub(crate) pass_ext_reads: BTreeMap<PassId, BTreeSet<(ResourceReadType, u8)>>,
+    ///
+    /// Last entry is the binding point for samplers
+    pub(crate) pass_reads:
+        BTreeMap<PassId, BTreeSet<(ResourceId, ResourceReadType, u8, Option<u8>)>>,
 
     pub(crate) backbuffer: BTreeSet<ResourceId>,
 }
 
 impl GraphResourcesResolved {
     pub(crate) fn moved_from(&self, id: ResourceId) -> Option<ResourceId> {
-
         let mut prev_id = id;
 
         // Go up the move chain until we reach the end
@@ -84,11 +79,9 @@ impl GraphResourcesResolved {
         } else {
             None
         }
-
     }
 
     pub(crate) fn create_info(&self, id: ResourceId) -> Option<(ResourceId, &ResourceCreateInfo)> {
-
         let mut next_id = self.moved_from(id)?;
 
         // I'm tired and not sure if this will terminate in all cases. TODO...
@@ -175,15 +168,18 @@ impl GraphStorage {
             }).0
     }
 
-    pub fn destroy(&mut self,
-                   device: &DeviceContext,
-                   render_pass_storage: &mut RenderPassStorage,
-                   pipeline_storage: &mut PipelineStorage,
-                   image_storage: &mut ImageStorage,
-                   buffer_storage: &mut BufferStorage,
-                   vertex_attrib_storage: &VertexAttribStorage,
-                   sampler_storage: &mut SamplerStorage,
-                   handle: GraphHandle) {
+    pub fn destroy(
+        &mut self,
+        device: &DeviceContext,
+        render_pass_storage: &mut RenderPassStorage,
+        pipeline_storage: &mut PipelineStorage,
+        image_storage: &mut ImageStorage,
+        buffer_storage: &mut BufferStorage,
+        vertex_attrib_storage: &VertexAttribStorage,
+        sampler_storage: &mut SamplerStorage,
+        material_storage: &MaterialStorage,
+        handle: GraphHandle,
+    ) {
         let graph = self.storage.remove(handle);
 
         let mut storages = execution::ExecutionStorages {
@@ -193,6 +189,7 @@ impl GraphStorage {
             buffer: buffer_storage,
             vertex_attrib: vertex_attrib_storage,
             sampler: sampler_storage,
+            material: material_storage,
         };
 
         if let Some(graph) = graph {
@@ -244,8 +241,6 @@ impl GraphStorage {
             let mut pass_resource_writes = BTreeMap::new();
             let mut pass_resource_backbuffers = Vec::new();
 
-            let mut pass_resource_ext_reads = BTreeMap::new();
-
             for (i, pass) in graph.passes_impl.iter_mut().enumerate() {
                 let mut builder = GraphBuilder::new();
                 pass.setup(&mut builder);
@@ -260,8 +255,6 @@ impl GraphStorage {
                     pass_resource_reads.insert(id, builder.resource_reads);
                     pass_resource_writes.insert(id, builder.resource_writes);
 
-                    pass_resource_ext_reads.insert(id, builder.resource_ext_reads);
-
                     for res in builder.resource_backbuffer {
                         pass_resource_backbuffers.push((id, res));
                     }
@@ -275,8 +268,6 @@ impl GraphStorage {
 
                 resource_writes: pass_resource_writes,
                 resource_reads: pass_resource_reads,
-
-                resource_ext_reads: pass_resource_ext_reads,
 
                 resource_backbuffer: pass_resource_backbuffers,
             }
@@ -333,7 +324,6 @@ impl GraphStorage {
             }
         }
 
-
         graph
             .exec_graph_cache
             .entry(exec_id)
@@ -357,6 +347,7 @@ impl GraphStorage {
         buffer_storage: &mut BufferStorage,
         vertex_storage: &VertexAttribStorage,
         sampler_storage: &mut SamplerStorage,
+        material_storage: &MaterialStorage,
         graph: GraphHandle,
         context: &ExecutionContext,
     ) -> ExecutionResources {
@@ -369,7 +360,10 @@ impl GraphStorage {
 
         let (resolved, id) = graph.resolve_cache.get(&input_hash).unwrap();
 
-        let exec_id = graph.exec_id_cache.get(&(*id, graph.output_resources.clone())).unwrap();
+        let exec_id = graph
+            .exec_id_cache
+            .get(&(*id, graph.output_resources.clone()))
+            .unwrap();
 
         let exec = &graph.exec_graph_cache[exec_id];
 
@@ -380,36 +374,34 @@ impl GraphStorage {
             buffer: buffer_storage,
             vertex_attrib: vertex_storage,
             sampler: sampler_storage,
+            material: material_storage,
         };
 
-        let outputs = graph.output_resources.as_slice()
+        let outputs = graph
+            .output_resources
+            .as_slice()
             .iter()
             .map(|n| resolved.name_lookup[n])
             .collect::<SmallVec<[_; 16]>>();
 
         let resources = {
-
             let passes = &graph.passes[..];
 
-
-            graph.exec_resources
-                .entry(*exec_id)
-                .or_insert_with(|| {
-                    execution::prepare(
-                        device,
-                        &mut storages,
-                        exec,
-                        resolved,
-                        passes,
-                        outputs.as_slice(),
-                        context,
-                    )
-                });
+            graph.exec_resources.entry(*exec_id).or_insert_with(|| {
+                execution::prepare(
+                    device,
+                    &mut storages,
+                    exec,
+                    resolved,
+                    passes,
+                    outputs.as_slice(),
+                    context,
+                )
+            });
 
             // TODO Aaaargh there's no immutable insert_with for HashMap :/
             &graph.exec_resources[exec_id]
         };
-
 
         execution::execute(
             device,
@@ -435,10 +427,8 @@ struct GraphInput {
     resource_copies: BTreeMap<PassId, Vec<(ResourceName, ResourceName)>>,
     resource_moves: BTreeMap<PassId, Vec<(ResourceName, ResourceName)>>,
 
-    resource_reads: BTreeMap<PassId, Vec<(ResourceName, ResourceReadType, u8)>>,
+    resource_reads: BTreeMap<PassId, Vec<(ResourceName, ResourceReadType, u8, Option<u8>)>>,
     resource_writes: BTreeMap<PassId, Vec<(ResourceName, ResourceWriteType, u8)>>,
-
-    resource_ext_reads: BTreeMap<PassId, Vec<(ResourceReadType, u8)>>,
 
     resource_backbuffer: Vec<(PassId, ResourceName)>,
 }
@@ -450,8 +440,6 @@ fn resolve_input_graph(
     errors: &mut Vec<GraphCompileError>,
 ) -> GraphResourcesResolved {
     // TODO check for duplicated binding points everywhere?
-
-    println!("Create resolved graph");
 
     let mut resource_name_lookup = BTreeMap::new();
 
@@ -468,8 +456,6 @@ fn resolve_input_graph(
     let mut pass_ext_depends = BTreeMap::new();
     let mut pass_writes = BTreeMap::new();
     let mut pass_reads = BTreeMap::new();
-
-    let mut pass_ext_reads = BTreeMap::new();
 
     // generate IDs for all "new" resources.
 
@@ -667,7 +653,7 @@ fn resolve_input_graph(
         let depends = pass_ext_depends.entry(pass).or_insert(BTreeSet::new());
         let pass_reads = pass_reads.entry(pass).or_insert(BTreeSet::new());
 
-        for (name, ty, binding) in ress {
+        for (name, ty, binding, sampler_binding) in ress {
             let id = if let Some(id) = resource_name_lookup.get(&name) {
                 *id
             } else {
@@ -680,12 +666,14 @@ fn resolve_input_graph(
 
             reads.push((id, ty.clone(), pass));
 
-            resource_reads
-                .entry(id)
-                .or_insert(BTreeSet::new())
-                .insert((pass, ty.clone(), binding));
+            resource_reads.entry(id).or_insert(BTreeSet::new()).insert((
+                pass,
+                ty.clone(),
+                binding,
+                sampler_binding,
+            ));
 
-            pass_reads.insert((id, ty, binding));
+            pass_reads.insert((id, ty, binding, sampler_binding));
 
             // If the id is something that is made in another pass it means we depend on another
             // pass
@@ -698,18 +686,6 @@ fn resolve_input_graph(
             }
         }
     }
-
-    for (pass, reads) in input.resource_ext_reads {
-        let entries = pass_ext_reads.entry(pass)
-            .or_insert(BTreeSet::new());
-
-        for (ty, binding) in reads {
-            // TODO check for duplicated binding points?
-            entries.insert((ty, binding));
-        }
-    }
-
-
 
     let mut resource_backbuffer = BTreeSet::new();
     for (pass, res) in input.resource_backbuffer {
@@ -743,8 +719,6 @@ fn resolve_input_graph(
         pass_ext_depends,
         pass_reads,
         pass_writes,
-
-        pass_ext_reads,
     }
 }
 

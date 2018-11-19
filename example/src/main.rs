@@ -45,6 +45,19 @@ fn main() {
 
     let display = ntg.add_display(&window);
 
+    let material = {
+        let create_info = nitrogen::material::MaterialCreateInfo {
+            parameters: &[
+                (0, nitrogen::material::MaterialParameterType::SampledImage),
+                (1, nitrogen::material::MaterialParameterType::Sampler),
+            ],
+        };
+
+        ntg.material_create(&[create_info]).remove(0).unwrap()
+    };
+
+    let mat_example_instance = { ntg.material_create_instance(&[material]).remove(0).unwrap() };
+
     let (image, sampler) = {
         let image_data = include_bytes!("../test.png");
 
@@ -70,7 +83,7 @@ fn main() {
                 ..Default::default()
             },
 
-            .. Default::default()
+            ..Default::default()
         };
 
         let img = ntg.image_create(&[create_info]).remove(0).unwrap();
@@ -106,31 +119,41 @@ fn main() {
         (img, sampler)
     };
 
+    {
+        ntg.material_write_instance(
+            mat_example_instance,
+            &[
+                nitrogen::material::InstanceWrite {
+                    binding: 0,
+                    data: nitrogen::material::InstanceWriteData::Image { image },
+                },
+                nitrogen::material::InstanceWrite {
+                    binding: 1,
+                    data: nitrogen::material::InstanceWriteData::Sampler { sampler },
+                },
+            ],
+        );
+    }
+
     ntg.displays[display].setup_swapchain(&ntg.device_ctx);
 
     let buffer = {
         let create_info = nitrogen::buffer::BufferCreateInfo {
             size: std::mem::size_of_val(&TRIANGLE) as u64,
             is_transient: false,
-            usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC | nitrogen::buffer::BufferUsage::VERTEX,
-            properties: nitrogen::resources::MemoryProperties::CPU_VISIBLE | nitrogen::resources::MemoryProperties::COHERENT,
+            usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC
+                | nitrogen::buffer::BufferUsage::VERTEX,
+            properties: nitrogen::resources::MemoryProperties::CPU_VISIBLE
+                | nitrogen::resources::MemoryProperties::COHERENT,
         };
-        let buffer = ntg
-            .buffer_storage
-            .create(&ntg.device_ctx, &[create_info])
-            .remove(0)
-            .unwrap();
+        let buffer = ntg.buffer_create(&[create_info]).remove(0).unwrap();
 
         let upload_data = nitrogen::buffer::BufferUploadInfo {
             offset: 0,
             data: &TRIANGLE,
         };
 
-        let result = ntg.buffer_storage.upload_data(
-            &ntg.device_ctx,
-            &mut ntg.transfer,
-            &[(buffer, upload_data)],
-        ).remove(0);
+        let result = ntg.buffer_upload_data(&[(buffer, upload_data)]).remove(0);
 
         println!("{:?}", result);
 
@@ -164,6 +187,8 @@ fn main() {
         &mut ntg,
         vertex_attrib,
         buffer,
+        material,
+        mat_example_instance,
     );
 
     let mut running = true;
@@ -210,10 +235,10 @@ fn main() {
 
     ntg.graph_destroy(graph);
 
-    ntg.buffer_storage.destroy(&ntg.device_ctx, &[buffer]);
+    ntg.buffer_destroy(&[buffer]);
 
-    ntg.sampler_storage.destroy(&ntg.device_ctx, &[sampler]);
-    ntg.image_storage.destroy(&ntg.device_ctx, &[image]);
+    ntg.sampler_destroy(&[sampler]);
+    ntg.image_destroy(&[image]);
 
     ntg.release();
 }
@@ -222,9 +247,10 @@ fn setup_graphs(
     ntg: &mut nitrogen::Context,
     vertex_attrib: nitrogen::vertex_attrib::VertexAttribHandle,
     buffer: nitrogen::buffer::BufferHandle,
+    material: nitrogen::material::MaterialHandle,
+    material_instance: nitrogen::material::MaterialInstanceHandle,
 ) -> graph::GraphHandle {
     let graph = ntg.graph_create();
-
 
     fn image_create_info() -> graph::ImageCreateInfo {
         graph::ImageCreateInfo {
@@ -236,27 +262,24 @@ fn setup_graphs(
         }
     }
 
-
-
     {
         let (pass_impl, info) = create_test_pass(
             |builder| {
-
                 builder.image_create("ITest", image_create_info());
 
                 builder.image_write_color("ITest", 0);
-                builder.image_ext_read_color(0);
 
                 builder.enable();
             },
             move |cmd| {
-
                 cmd.bind_vertex_array(buffer);
 
-                // cmd.draw(0..3, 0..1);
+                cmd.bind_graphics_descriptor_set(1, material_instance);
+
                 cmd.draw(0..3, 0..1);
             },
             Some(vertex_attrib),
+            vec![(1, material)],
         );
 
         ntg.graph_add_pass(graph, "TestPass", info, Box::new(pass_impl));
@@ -267,31 +290,38 @@ fn setup_graphs(
     graph
 }
 
-fn create_test_pass<FSetUp, FExec>(setup: FSetUp, execute: FExec, vert: Option<nitrogen::vertex_attrib::VertexAttribHandle>) -> (impl PassImpl, graph::PassInfo)
-    where FSetUp: FnMut(&mut graph::GraphBuilder),
-          FExec: Fn(&mut graph::CommandBuffer) {
-
+fn create_test_pass<FSetUp, FExec>(
+    setup: FSetUp,
+    execute: FExec,
+    vert: Option<nitrogen::vertex_attrib::VertexAttribHandle>,
+    materials: Vec<(usize, nitrogen::material::MaterialHandle)>,
+) -> (impl PassImpl, graph::PassInfo)
+where
+    FSetUp: FnMut(&mut graph::GraphBuilder),
+    FExec: Fn(&mut graph::CommandBuffer),
+{
     let pass_info = nitrogen::graph::PassInfo::Graphics {
         vertex_attrib: vert,
         shaders: nitrogen::graph::Shaders {
             vertex: nitrogen::graph::ShaderInfo {
                 content: Cow::Borrowed(include_bytes!(concat!(
-                        env!("OUT_DIR"),
-                        "/test.hlsl.vert.spirv"
-                    ))),
+                    env!("OUT_DIR"),
+                    "/test.hlsl.vert.spirv"
+                ))),
                 entry: "VertexMain".into(),
             },
             fragment: Some(nitrogen::graph::ShaderInfo {
                 content: Cow::Borrowed(include_bytes!(concat!(
-                        env!("OUT_DIR"),
-                        "/test.hlsl.frag.spirv"
-                    ))),
+                    env!("OUT_DIR"),
+                    "/test.hlsl.frag.spirv"
+                ))),
                 entry: "FragmentMain".into(),
             }),
             geometry: None,
         },
         primitive: nitrogen::pipeline::Primitive::TriangleList,
         blend_mode: nitrogen::render_pass::BlendMode::Alpha,
+        materials,
     };
 
     struct TestPass<FSetUp, FExec> {
@@ -300,8 +330,9 @@ fn create_test_pass<FSetUp, FExec>(setup: FSetUp, execute: FExec, vert: Option<n
     }
 
     impl<FSetUp, FExec> PassImpl for TestPass<FSetUp, FExec>
-        where FSetUp: FnMut(&mut graph::GraphBuilder),
-              FExec: Fn(&mut graph::CommandBuffer)
+    where
+        FSetUp: FnMut(&mut graph::GraphBuilder),
+        FExec: Fn(&mut graph::CommandBuffer),
     {
         fn setup(&mut self, builder: &mut graph::GraphBuilder) {
             (self.setup)(builder);
@@ -319,4 +350,3 @@ fn create_test_pass<FSetUp, FExec>(setup: FSetUp, execute: FExec, vert: Option<n
 
     (pass, pass_info)
 }
-

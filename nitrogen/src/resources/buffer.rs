@@ -247,9 +247,9 @@ impl BufferStorage {
     }
 
     pub(crate) fn raw(&self, buffer: BufferHandle) -> Option<&BufferTypeInternal> {
-        self.storage.get(buffer).map(|buf| {
-            &self.buffers[&buffer.id()].buffer
-        })
+        self.storage
+            .get(buffer)
+            .map(|buf| &self.buffers[&buffer.id()].buffer)
     }
 
     pub fn upload_data<T>(

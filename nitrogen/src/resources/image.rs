@@ -46,7 +46,7 @@ impl Hash for ImageSizeMode {
         match self {
             ImageSizeMode::ContextRelative { .. } => {
                 state.write_i8(0);
-            },
+            }
             ImageSizeMode::Absolute { width, height } => {
                 state.write_i8(1);
                 state.write_u32(*width);

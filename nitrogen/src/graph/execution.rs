@@ -15,16 +15,17 @@ use gfxm;
 
 use gfx::Device;
 
-use smallvec::{SmallVec, smallvec};
+use smallvec::{smallvec, SmallVec};
 
 use device::DeviceContext;
 use resources::{
-    buffer::{BufferStorage, BufferHandle},
-    image::{ImageStorage, ImageHandle},
+    buffer::{BufferHandle, BufferStorage},
+    image::{ImageHandle, ImageStorage},
+    material::MaterialStorage,
     pipeline::{PipelineHandle, PipelineStorage},
     render_pass::{RenderPassHandle, RenderPassStorage},
-    vertex_attrib::{VertexAttribHandle, VertexAttribStorage},
     sampler::{SamplerHandle, SamplerStorage},
+    vertex_attrib::{VertexAttribHandle, VertexAttribStorage},
 };
 
 #[derive(Debug, Clone)]
@@ -158,8 +159,6 @@ impl ExecutionGraph {
                 }).collect::<Vec<_>>()
         };
 
-        println!("{:?}", pass_execs);
-
         // We have a list of passes to execute, but those passes also create resources.
         // We can determine at which point the resources have to be created and are free to be
         // destroyed.
@@ -284,12 +283,20 @@ impl ExecutionResources {
         }
 
         {
-            let samplers = self.samplers.values().cloned().collect::<SmallVec<[_; 16]>>();
+            let samplers = self
+                .samplers
+                .values()
+                .cloned()
+                .collect::<SmallVec<[_; 16]>>();
             sampler.destroy(device, samplers.as_slice());
         }
 
         {
-            let buffers = self.buffers.values().cloned().collect::<SmallVec<[_; 16]>>();
+            let buffers = self
+                .buffers
+                .values()
+                .cloned()
+                .collect::<SmallVec<[_; 16]>>();
             buffer.destroy(device, buffers.as_slice());
         }
     }
@@ -302,6 +309,7 @@ pub(crate) struct ExecutionStorages<'a> {
     pub buffer: &'a mut BufferStorage,
     pub vertex_attrib: &'a VertexAttribStorage,
     pub sampler: &'a mut SamplerStorage,
+    pub material: &'a MaterialStorage,
 }
 
 #[derive(Debug)]
@@ -387,7 +395,7 @@ pub(crate) fn derive_resource_usage(
         }
 
         for pass in &batch.passes {
-            for (res, read_ty, _) in &resolved.pass_reads[pass] {
+            for (res, read_ty, _, _) in &resolved.pass_reads[pass] {
                 let origin = resolved.moved_from(*res).unwrap();
 
                 use super::BufferReadType;
@@ -510,16 +518,14 @@ pub(crate) fn prepare(
                     *usage |= gfx::image::Usage::TRANSFER_SRC;
                 });
                 */
-            outputs.iter()
-                .filter_map(|res| {
-                    resolved_graph.moved_from(*res)
-                })
+            outputs
+                .iter()
+                .filter_map(|res| resolved_graph.moved_from(*res))
                 .for_each(|res| {
-                    usages.image.get_mut(&res)
-                        .map(|(usage, _)| {
-                            *usage |= gfx::image::Usage::SAMPLED;
-                            *usage |= gfx::image::Usage::TRANSFER_SRC;
-                        });
+                    usages.image.get_mut(&res).map(|(usage, _)| {
+                        *usage |= gfx::image::Usage::SAMPLED;
+                        *usage |= gfx::image::Usage::TRANSFER_SRC;
+                    });
                 });
 
             // TODO do buffers
@@ -566,15 +572,12 @@ pub(crate) fn execute(
     resources: &ExecutionGraphResources,
     context: &ExecutionContext,
 ) -> ExecutionResources {
-
     let mut res = ExecutionResources {
         images: HashMap::new(),
         buffers: HashMap::new(),
         samplers: HashMap::new(),
         framebuffers: HashMap::new(),
     };
-
-    println!("{:?}", exec_graph);
 
     let mut command_pool = {
         let queue_group = device.queue_group();
@@ -608,7 +611,7 @@ pub(crate) fn execute(
                                     x: width,
                                     y: height,
                                 }
-                            },
+                            }
                             image::ImageSizeMode::ContextRelative { width, height } => {
                                 image::ImageDimension::D2 {
                                     x: (width as f64 * context.reference_size.0 as f64) as u32,
@@ -634,44 +637,46 @@ pub(crate) fn execute(
                             is_transient: true,
                         };
 
-                        let img_handle = storages.image.create(
-                            device,
-                            &[image_create_info]
-                        ).remove(0).unwrap();
+                        let img_handle = storages
+                            .image
+                            .create(device, &[image_create_info])
+                            .remove(0)
+                            .unwrap();
 
                         res.images.insert(*create, img_handle);
 
                         if usages.0.contains(gfx::image::Usage::SAMPLED) {
-                            let sampler = storages.sampler.create(
-                                device,
-                                &[sampler::SamplerCreateInfo {
-                                    min_filter: sampler::Filter::Linear,
-                                    mip_filter: sampler::Filter::Linear,
-                                    mag_filter: sampler::Filter::Linear,
-                                    wrap_mode: (sampler::WrapMode::Clamp, sampler::WrapMode::Clamp, sampler::WrapMode::Clamp),
-                                }]
-                            ).remove(0);
+                            let sampler = storages
+                                .sampler
+                                .create(
+                                    device,
+                                    &[sampler::SamplerCreateInfo {
+                                        min_filter: sampler::Filter::Linear,
+                                        mip_filter: sampler::Filter::Linear,
+                                        mag_filter: sampler::Filter::Linear,
+                                        wrap_mode: (
+                                            sampler::WrapMode::Clamp,
+                                            sampler::WrapMode::Clamp,
+                                            sampler::WrapMode::Clamp,
+                                        ),
+                                    }],
+                                ).remove(0);
 
                             res.samplers.insert(*create, sampler);
                         }
-                    },
-                    ResourceCreateInfo::Buffer(buf) => {
-                        unimplemented!()
                     }
+                    ResourceCreateInfo::Buffer(buf) => unimplemented!(),
                 }
             }
         }
 
         // create framebuffers
         {
-
             for pass in &batch.passes {
-
                 let render_pass = &resources.render_passes_graphic[pass];
                 let render_pass = storages.render_pass.raw(*render_pass).unwrap();
 
                 let (views, dims): (SmallVec<[_; 16]>, SmallVec<[_; 16]>) = {
-
                     // Do attachments have to be sorted? I assume so but I should really check the
                     // vulkan spec since gfx doesn't say much about it... TODO
 
@@ -683,7 +688,8 @@ pub(crate) fn execute(
                         .as_mut_slice()
                         .sort_by_key(|(_, _, binding)| binding);
 
-                    sorted_attachment.into_iter()
+                    sorted_attachment
+                        .into_iter()
                         .map(|(res_id, ty, binding)| {
                             let res_id = resolved_graph.moved_from(*res_id).unwrap();
 
@@ -694,14 +700,12 @@ pub(crate) fn execute(
                             let image = storages.image.raw(handle).unwrap();
 
                             (&image.view, &image.dimension)
-                        })
-                        .unzip()
+                        }).unzip()
                 };
 
                 let extent = {
                     use image;
-                    dims
-                        .as_slice()
+                    dims.as_slice()
                         .iter()
                         .map(|img_dim| match img_dim {
                             image::ImageDimension::D1 { x } => (*x, 1, 1),
@@ -715,14 +719,12 @@ pub(crate) fn execute(
                         .unwrap()
                 };
 
-                let framebuffer = device.device.create_framebuffer(
-                    render_pass,
-                    views,
-                    extent,
-                ).unwrap();
+                let framebuffer = device
+                    .device
+                    .create_framebuffer(render_pass, views, extent)
+                    .unwrap();
 
                 res.framebuffers.insert(*pass, framebuffer);
-
             }
         }
 
@@ -732,20 +734,18 @@ pub(crate) fn execute(
         // execute passes
         {
             let read_storages = super::command::ReadStorages {
-                image: storages.image,
                 buffer: storages.buffer,
+                material: storages.material,
             };
 
-
-            let mut fences: SmallVec<[_; 16]> = batch.passes
+            let mut fences: SmallVec<[_; 16]> = batch
+                .passes
                 .iter()
                 .map(|_| device.device.create_fence(false).unwrap())
                 .collect();
 
-
             // TODO FEARLESS CONCURRENCY!!!
             for (i, pass) in batch.passes.iter().enumerate() {
-
                 let pipeline = {
                     let handle = resources.pipelines_graphic[pass];
                     storages.pipeline.raw_graphics(handle).unwrap()
@@ -761,7 +761,7 @@ pub(crate) fn execute(
                 let framebuffer_extent = context.reference_size; // TODO get actual framebuffer size
 
                 let viewport = gfx::pso::Viewport {
-                    depth: 0.0 .. 1.0,
+                    depth: 0.0..1.0,
                     rect: gfx::pso::Rect {
                         x: 0,
                         y: 0,
@@ -783,12 +783,17 @@ pub(crate) fn execute(
 
                     let pass_impl = &graph.passes_impl[pass.0];
 
-
                     {
-                        let encoder = raw_cmd.begin_render_pass_inline(render_pass, framebuffer, viewport.rect, clear_values);
+                        let encoder = raw_cmd.begin_render_pass_inline(
+                            render_pass,
+                            framebuffer,
+                            viewport.rect,
+                            clear_values,
+                        );
                         let mut command = super::command::CommandBuffer {
                             encoder,
                             storages: &read_storages,
+                            pipeline_layout: &pipeline.layout,
                         };
 
                         pass_impl.execute(&mut command);
@@ -803,7 +808,9 @@ pub(crate) fn execute(
                 }
             }
 
-            device.device.wait_for_fences(fences.as_slice(), gfx::device::WaitFor::All, !0);
+            device
+                .device
+                .wait_for_fences(fences.as_slice(), gfx::device::WaitFor::All, !0);
 
             command_pool.reset();
 
@@ -824,7 +831,6 @@ pub(crate) fn execute(
             // destroy images and samplers
             for res_id in &batch.resource_destroy {
                 if let Some(img) = res.images.remove(res_id) {
-
                     let sampler = res.samplers.remove(res_id);
                     if let Some(sampler) = sampler {
                         storages.sampler.destroy(device, &[sampler]);
@@ -833,7 +839,6 @@ pub(crate) fn execute(
                     storages.image.destroy(device, &[img]);
                 }
             }
-
         }
     }
 
@@ -849,8 +854,6 @@ fn create_render_pass_graphics(
     pass: PassId,
     info: &PassInfo,
 ) -> Option<RenderPassHandle> {
-    println!("Create render pass");
-
     let attachments = {
         resolved_graph.pass_writes[&pass]
             .iter()
@@ -949,135 +952,165 @@ fn create_pipeline_graphics(
     render_pass: RenderPassHandle,
     pass: PassId,
     info: &PassInfo,
-) -> Option<PipelineHandle> {
-    let (primitive, shaders, vertex_attribs) = match info {
+) -> Option<(PipelineHandle)> {
+    use std::collections::BTreeMap;
+
+    let (primitive, shaders, vertex_attribs, materials) = match info {
         PassInfo::Graphics {
             primitive,
             shaders,
             vertex_attrib,
+            materials,
             ..
-        } => (*primitive, shaders, vertex_attrib),
+        } => (*primitive, shaders, vertex_attrib, materials),
         _ => unreachable!(),
     };
 
     use pipeline;
 
-    let layouts = {
-        let reads = resolved_graph.pass_reads[&pass].iter();
+    let (mut layouts, pass_stuff) = {
+        use super::{BufferReadType, ImageReadType, ResourceReadType};
 
-        let (read_sampled_images, other) =
-            reads
+        let mut sets = BTreeMap::new();
+
+        let (core_desc, core_range) = {
+            let reads = resolved_graph.pass_reads[&pass].iter();
+
+            let samplers = reads.clone().filter(|(_, _, _, sampler)| sampler.is_some());
+
+            let sampler_descriptors =
+                samplers
+                    .clone()
+                    .map(|(_, _, _, binding)| gfx::pso::DescriptorSetLayoutBinding {
+                        binding: binding.unwrap() as u32,
+                        ty: gfx::pso::DescriptorType::Sampler,
+                        count: 1,
+                        stage_flags: gfx::pso::ShaderStageFlags::ALL,
+                        immutable_samplers: false,
+                    });
+
+            let descriptors = reads
                 .clone()
-                .partition::<SmallVec<[_; 16]>, _>(|(res, ty, binding)| {
-                    use super::ImageReadType;
-
-                    match ty {
-                        ResourceReadType::Image(ImageReadType::Color) => true,
-                        _ => false,
+                .map(|(_res, ty, binding, _)| {
+                    gfx::pso::DescriptorSetLayoutBinding {
+                        binding: (*binding as u32),
+                        ty: match ty {
+                            ResourceReadType::Image(img) => match img {
+                                ImageReadType::Color => gfx::pso::DescriptorType::SampledImage,
+                                ImageReadType::Storage => gfx::pso::DescriptorType::StorageImage,
+                            },
+                            ResourceReadType::Buffer(buf) => {
+                                match buf {
+                                    BufferReadType::Uniform => {
+                                        gfx::pso::DescriptorType::UniformBuffer
+                                    }
+                                    BufferReadType::UniformTexel => {
+                                        // TODO test this
+                                        // does this need samplers? I think so. Let's find out!
+                                        gfx::pso::DescriptorType::UniformTexelBuffer
+                                    }
+                                    BufferReadType::Storage => {
+                                        gfx::pso::DescriptorType::StorageBuffer
+                                    }
+                                    BufferReadType::StorageTexel => {
+                                        //  TODO test this
+                                        // does this need samplers? I think so. Let's find out!
+                                        gfx::pso::DescriptorType::StorageTexelBuffer
+                                    }
+                                }
+                            }
+                        },
+                        count: 1,
+                        stage_flags: gfx::pso::ShaderStageFlags::ALL,
+                        immutable_samplers: false,
                     }
-                });
+                }).chain(sampler_descriptors);
 
-        let ext_reads = resolved_graph.pass_ext_reads[&pass].iter();
-
-        let (read_ext_sampled_images, ext_other) = ext_reads
-            .clone()
-            .partition::<SmallVec<[_; 16]>, _>(|(ty, biniding)| {
-                use super::ImageReadType;
-
-                match ty {
-                    ResourceReadType::Image(ImageReadType::Color) => true,
-                    _ => false,
-                }
-            });
-
-        let images = read_sampled_images
-            .into_iter()
-            .map(|(_, ty, binding)| (ty, binding))
-            .chain(read_ext_sampled_images.into_iter().map(|(ty, binding)| (ty, binding)));
-
-        enum ImageSetType {
-            Image,
-            Sampler,
-        }
-
-        let (image_set, sampler_set): (SmallVec<[_; 16]>, SmallVec<[_; 16]>) = images
-            .map(|(ty, binding)| {
-                let data: SmallVec<[_; 2]> = smallvec![
-                    (ImageSetType::Image, ty, binding),
-                    (ImageSetType::Sampler, ty, binding)
-                ];
-                data
-            })
-            .flatten()
-            .partition(|(ity, ty, binding)| {
-                match ity {
-                    ImageSetType::Image => true,
-                    ImageSetType::Sampler => false,
-                }
-            });
-
-        let sampler_set = sampler_set
-            .into_iter()
-            .map(|(_, ty, binding)| {
-                gfx::pso::DescriptorSetLayoutBinding {
-                    binding: *binding as u32,
+            let range = reads
+                .map(|(_, ty, _, _)| {
+                    gfx::pso::DescriptorRangeDesc {
+                        ty: match ty {
+                            ResourceReadType::Image(img) => match img {
+                                ImageReadType::Color => gfx::pso::DescriptorType::SampledImage,
+                                ImageReadType::Storage => gfx::pso::DescriptorType::StorageImage,
+                            },
+                            ResourceReadType::Buffer(buf) => {
+                                match buf {
+                                    BufferReadType::Uniform => {
+                                        gfx::pso::DescriptorType::UniformBuffer
+                                    }
+                                    BufferReadType::UniformTexel => {
+                                        // TODO test this
+                                        // does this need samplers? I think so. Let's find out!
+                                        gfx::pso::DescriptorType::UniformTexelBuffer
+                                    }
+                                    BufferReadType::Storage => {
+                                        gfx::pso::DescriptorType::StorageBuffer
+                                    }
+                                    BufferReadType::StorageTexel => {
+                                        //  TODO test this
+                                        // does this need samplers? I think so. Let's find out!
+                                        gfx::pso::DescriptorType::StorageTexelBuffer
+                                    }
+                                }
+                            }
+                        },
+                        count: 1,
+                    }
+                }).chain(samplers.map(|_| gfx::pso::DescriptorRangeDesc {
                     ty: gfx::pso::DescriptorType::Sampler,
                     count: 1,
-                    stage_flags: gfx::pso::ShaderStageFlags::ALL,
-                    immutable_samplers: false
-                }
-            })
-            .collect::<SmallVec<[_; 16]>>();
+                }));
 
-        let other_set = other
-            .into_iter()
-            .map(|(_, ty, binding)| (ty, binding))
-            .chain(ext_other.into_iter().map(|(ty, binding)| (ty, binding)))
-            .chain(image_set.into_iter().map(|(_, ty, binding)| (ty, binding)))
-            .map(|(ty, binding)| {
+            (descriptors, range)
+        };
 
-                use super::{ImageReadType, BufferReadType};
-
-                let ty = match ty {
-                    ResourceReadType::Image(img) => {
-                        match img {
-                            ImageReadType::Color => gfx::pso::DescriptorType::SampledImage,
-                            ImageReadType::Storage => gfx::pso::DescriptorType::StorageImage,
-                        }
-                    },
-                    ResourceReadType::Buffer(buf) => {
-                        match buf {
-                            BufferReadType::Uniform => gfx::pso::DescriptorType::UniformBuffer,
-                            BufferReadType::UniformTexel => gfx::pso::DescriptorType::UniformTexelBuffer,
-                            BufferReadType::Storage => gfx::pso::DescriptorType::StorageBuffer,
-                            BufferReadType::StorageTexel => gfx::pso::DescriptorType::StorageTexelBuffer,
-                        }
-                    }
+        // material sets
+        {
+            for (set, material) in materials {
+                let mat = match storages.material.raw(*material) {
+                    Some(mat) => mat,
+                    None => continue,
                 };
 
-                gfx::pso::DescriptorSetLayoutBinding {
-                    binding: *binding as u32,
-                    ty,
-                    count: 1,
-                    stage_flags: gfx::pso::ShaderStageFlags::ALL,
-                    immutable_samplers: false,
-                }
-            })
-            .collect::<SmallVec<[_; 16]>>();
+                let layout = &mat.desc_set_layout;
 
+                sets.insert(*set, layout);
+            }
+        }
+
+        use gfx::DescriptorPool;
         use gfx::Device;
+        use std::iter::once;
 
-        let sampler_set = device.device.create_descriptor_set_layout(
-            sampler_set,
-            &[]
-        ).ok()?;
-        let image_set = device.device.create_descriptor_set_layout(
-            other_set,
-            &[]
-        ).ok()?;
+        let pass_set_layout = device
+            .device
+            .create_descriptor_set_layout(core_desc, &[])
+            .ok()?;
 
-        [image_set, sampler_set]
+        let mut pass_set_pool = device.device.create_descriptor_pool(1, core_range).ok()?;
+
+        let pass_set = pass_set_pool.allocate_set(&pass_set_layout).ok()?;
+
+        (sets, (pass_set_layout, pass_set_pool, pass_set))
     };
+
+    // insert the pass set layout
+    layouts.insert(0, &pass_stuff.0);
+
+    let layouts = layouts
+        .into_iter()
+        .map(|(_, data)| {
+            // TODO warning, this is super duper unsafe
+            // Currently gfx doesn't let us clone descriptor set layouts.
+            // This is the only way around it right now. Argh.
+            // use std::mem;
+
+            data
+            // unsafe {
+            //     mem::transmute_copy(data)
+            // }
+        }).collect::<Vec<_>>();
 
     let create_info = pipeline::GraphicsPipelineCreateInfo {
         vertex_attribs: vertex_attribs.clone(),

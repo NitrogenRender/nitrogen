@@ -72,7 +72,10 @@ impl VertexAttribStorage {
 
                 attribs.extend(attrib_iter);
 
-                VertexAttrib { attribs, buffer_stride: create_info.buffer_stride }
+                VertexAttrib {
+                    attribs,
+                    buffer_stride: create_info.buffer_stride,
+                }
             }).map(|attrib| self.storage.insert(attrib).0)
             .collect()
     }

@@ -18,6 +18,11 @@ struct FragmentOut {
     float4 color;
 };
 
+[[vk::binding(0, 1)]]
+Texture2D t;
+[[vk::binding(1, 1)]]
+SamplerState s;
+
 VertexOut VertexMain(VertexIn input)
 {
     VertexOut output;
@@ -32,7 +37,9 @@ FragmentOut FragmentMain(VertexOut input)
 {
     FragmentOut output;
 
-    output.color = float4(input.uv, 1.0, 1.0);
+    // output.color = float4(input.uv, 1.0, 1.0);
+
+    output.color = t.Sample(s, input.uv);
 
     return output;
 }

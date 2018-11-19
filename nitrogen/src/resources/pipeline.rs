@@ -60,6 +60,7 @@ pub enum Pipeline {
 
 pub(crate) struct GraphicsPipeline {
     pub(crate) pipeline: types::GraphicsPipeline,
+    pub(crate) layout: types::PipelineLayout,
 }
 
 struct ComputePipeline {}
@@ -97,7 +98,7 @@ pub struct GraphicsPipelineCreateInfo<'a> {
 
     pub vertex_attribs: Option<VertexAttribHandle>,
 
-    pub descriptor_set_layout: &'a [types::DescriptorSetLayout],
+    pub descriptor_set_layout: &'a [&'a types::DescriptorSetLayout],
 
     pub shader_vertex: ShaderInfo<'a>,
     pub shader_fragment: Option<ShaderInfo<'a>>,
@@ -135,7 +136,7 @@ impl PipelineStorage {
                     render_pass_storage,
                     vertex_attrib_storage,
                     render_pass_handle,
-                    create_info.clone(),
+                    create_info,
                 )
             }).collect()
     }
@@ -147,7 +148,7 @@ impl PipelineStorage {
         render_pass_storage: &RenderPassStorage,
         vertex_attrib_storage: &VertexAttribStorage,
         render_pass_handle: RenderPassHandle,
-        create_info: GraphicsPipelineCreateInfo,
+        create_info: &GraphicsPipelineCreateInfo,
     ) -> Result<PipelineHandle> {
         struct ShaderModules {
             vertex: ShaderModule,
@@ -173,6 +174,10 @@ impl PipelineStorage {
                 None
             },
         };
+
+        let layout = device
+            .device
+            .create_pipeline_layout(create_info.descriptor_set_layout.iter().map(|d| *d), &[])?;
 
         let pipeline = {
             struct ShaderEntries<'a> {
@@ -228,10 +233,6 @@ impl PipelineStorage {
 
             let rasterizer = { pso::Rasterizer::FILL };
 
-            let layout = device
-                .device
-                .create_pipeline_layout(create_info.descriptor_set_layout, &[])?;
-
             let render_pass = render_pass_storage.raw(render_pass_handle).unwrap();
 
             let subpass = gfx::pass::Subpass {
@@ -282,7 +283,7 @@ impl PipelineStorage {
         let (handle, _) = self.storage.insert(Pipeline::Graphics);
 
         self.graphic_pipelines
-            .insert(handle.id(), GraphicsPipeline { pipeline });
+            .insert(handle.id(), GraphicsPipeline { pipeline, layout });
 
         Ok(handle)
     }

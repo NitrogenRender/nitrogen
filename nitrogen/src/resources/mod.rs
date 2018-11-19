@@ -3,6 +3,7 @@ pub use super::*;
 pub mod buffer;
 pub mod descriptor;
 pub mod image;
+pub mod material;
 pub mod pipeline;
 pub mod render_pass;
 pub mod sampler;
