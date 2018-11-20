@@ -32,8 +32,8 @@ rev = "bd7f058efe78d7626a1cc6fbc0c1d3702fb6d2e7"
 default-features = false
 
 [dependencies.gfx-memory]
-# git = "https://github.com/gfx-rs/gfx-memory"
-path = "../../../staging/gfx-memory"
+git = "https://github.com/gfx-rs/gfx-memory"
+rev = "e9bba2f935fe7b6e1fd2ed2862a0c5dcba8af364"
 
 [build-dependencies]
 shaderc = "0.3.11"
