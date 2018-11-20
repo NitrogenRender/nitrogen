@@ -97,12 +97,12 @@ impl DeviceContext {
         //        };
 
         let (device, queue_group) = adapter
-            .open_with(2, |family| {
+            .open_with(1, |family| {
                 // surfaces.iter().fold(true, |acc, surface| {
                 //     surface.supports_queue_family(family) && acc
                 // })
                 use gfx::QueueFamily;
-                family.supports_graphics() && family.supports_compute() && family.max_queues() >= 4
+                family.supports_graphics() && family.supports_compute()
             }).unwrap();
 
         DeviceContext {
