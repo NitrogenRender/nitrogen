@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 use nitrogen::graph::PassImpl;
 
 extern crate env_logger;
@@ -64,7 +68,7 @@ fn main() {
     let mat_example_instance = { ntg.material_create_instance(&[material]).remove(0).unwrap() };
 
     let (image, sampler) = {
-        let image_data = include_bytes!("../test.png");
+        let image_data = include_bytes!("../assets/test.png");
 
         let image = img::load(std::io::Cursor::new(&image_data[..]), img::PNG)
             .unwrap()
@@ -193,7 +197,6 @@ fn main() {
     };
 
     let uniform_buffer = {
-
         let create_info = nitrogen::buffer::BufferCreateInfo {
             size: std::mem::size_of::<UniformData>() as u64,
             is_transient: false,
@@ -216,7 +219,6 @@ fn main() {
         buffer
     };
 
-
     {
         ntg.material_write_instance(
             mat_example_instance,
@@ -231,13 +233,13 @@ fn main() {
                 },
                 nitrogen::material::InstanceWrite {
                     binding: 2,
-                    data: nitrogen::material::InstanceWriteData::Buffer { buffer: uniform_buffer },
+                    data: nitrogen::material::InstanceWriteData::Buffer {
+                        buffer: uniform_buffer,
+                    },
                 },
             ],
         );
     }
-
-
 
     while running {
         events.poll_events(|event| match event {

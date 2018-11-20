@@ -5,7 +5,3 @@ header = """/* This Source Code Form is subject to the terms of the Mozilla Publ
 namespace = "ntg"
 tab_width = 4
 language = "C++"
-
-# [export.rename]
-# "BindingCreationInfoX11" = "CreationInfoX11"
-# "BindingImageUploadInfo" = "ImageUploadInfo"

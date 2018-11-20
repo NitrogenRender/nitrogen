@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 extern crate shaderc;
 
 use shaderc::*;
@@ -45,8 +49,6 @@ fn main() {
             compute_shaders.insert(path.clone());
         }
     }
-
-    let out_base = PathBuf::from(env::var("OUT_DIR").unwrap());
 
     let mut compiler = Compiler::new().unwrap();
 
@@ -121,7 +123,7 @@ pub fn compile(compiler: &mut Compiler, path: PathBuf, kind: ShaderKind) {
     };
 
     if let Some(data) = artifact {
-        fs::write(out_name, data);
+        let _ = fs::write(out_name, data);
     };
 }
 

@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 struct VertexIn {
     int vertex_id : SV_VertexID;
 
@@ -42,9 +46,8 @@ FragmentOut FragmentMain(VertexOut input)
 {
     FragmentOut output;
 
-    // output.color = float4(input.uv, 1.0, 1.0);
-
     output.color = t.Sample(s, input.uv);
+
     output.color *= modulate;
 
     return output;
