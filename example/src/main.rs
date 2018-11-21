@@ -310,7 +310,20 @@ fn setup_graphs(
     }
 
     {
+        let shaders = nitrogen::graph::Shaders {
+            vertex: nitrogen::graph::ShaderInfo {
+                content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/test.hlsl.vert.spirv"))),
+                entry: "VertexMain".into(),
+            },
+            fragment: Some(nitrogen::graph::ShaderInfo {
+                content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/test.hlsl.frag.spirv"))),
+                entry: "FragmentMain".into(),
+            }),
+            geometry: None,
+        };
+
         let (pass_impl, info) = create_test_pass(
+            shaders,
             |builder| {
                 builder.image_create("ITest", image_create_info());
 
@@ -332,12 +345,50 @@ fn setup_graphs(
         ntg.graph_add_pass(graph, "TestPass", info, Box::new(pass_impl));
     }
 
-    ntg.graph_add_output(graph, "ITest");
+    {
+        let shaders = nitrogen::graph::Shaders {
+            vertex: nitrogen::graph::ShaderInfo {
+                content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/read.hlsl.vert.spirv"))),
+                entry: "VertexMain".into(),
+            },
+            fragment: Some(nitrogen::graph::ShaderInfo {
+                content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/read.hlsl.frag.spirv"))),
+                entry: "FragmentMain".into(),
+            }),
+            geometry: None,
+        };
+
+        let (pass_impl, info) = create_test_pass(
+            shaders,
+            |builder| {
+
+                builder.image_create("IOutput", image_create_info());
+
+                builder.image_write_color("IOutput", 0);
+
+                builder.image_read_color("ITest", 0, 1);
+
+                builder.enable();
+            },
+            move |cmd| {
+                cmd.bind_vertex_array(buffer);
+
+                cmd.draw(0..4, 0..1);
+            },
+            Some(vertex_attrib),
+            vec![],
+        );
+
+        ntg.graph_add_pass(graph, "ReadPass", info, Box::new(pass_impl));
+    }
+
+    ntg.graph_add_output(graph, "IOutput");
 
     graph
 }
 
 fn create_test_pass<FSetUp, FExec>(
+    shaders: nitrogen::graph::Shaders,
     setup: FSetUp,
     execute: FExec,
     vert: Option<nitrogen::vertex_attrib::VertexAttribHandle>,
@@ -349,23 +400,7 @@ where
 {
     let pass_info = nitrogen::graph::PassInfo::Graphics {
         vertex_attrib: vert,
-        shaders: nitrogen::graph::Shaders {
-            vertex: nitrogen::graph::ShaderInfo {
-                content: Cow::Borrowed(include_bytes!(concat!(
-                    env!("OUT_DIR"),
-                    "/test.hlsl.vert.spirv"
-                ))),
-                entry: "VertexMain".into(),
-            },
-            fragment: Some(nitrogen::graph::ShaderInfo {
-                content: Cow::Borrowed(include_bytes!(concat!(
-                    env!("OUT_DIR"),
-                    "/test.hlsl.frag.spirv"
-                ))),
-                entry: "FragmentMain".into(),
-            }),
-            geometry: None,
-        },
+        shaders,
         primitive: nitrogen::pipeline::Primitive::TriangleStrip,
         blend_mode: nitrogen::render_pass::BlendMode::Alpha,
         materials,

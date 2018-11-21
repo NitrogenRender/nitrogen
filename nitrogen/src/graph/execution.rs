@@ -11,6 +11,8 @@ use super::ResourceId;
 use super::ResourceName;
 use super::{ResourceReadType, ResourceWriteType};
 
+use types;
+
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -247,7 +249,10 @@ impl ExecutionGraph {
 /// Resources for a single variant of an execution graph
 pub(crate) struct ExecutionGraphResources {
     pub render_passes_graphic: HashMap<PassId, RenderPassHandle>,
+
     pub pipelines_graphic: HashMap<PassId, PipelineHandle>,
+    pub pipelines_graphic_desc_sets:
+        HashMap<PassId, (types::DescriptorSetLayout, types::DescriptorSet)>,
 
     pub usages: Option<ResourceUsages>,
 }
@@ -268,7 +273,7 @@ pub struct ExecutionResources {
     pub images: HashMap<ResourceId, ImageHandle>,
     pub samplers: HashMap<ResourceId, SamplerHandle>,
     pub buffers: HashMap<ResourceId, BufferHandle>,
-    framebuffers: HashMap<PassId, crate::types::Framebuffer>,
+    framebuffers: HashMap<PassId, types::Framebuffer>,
 }
 
 impl ExecutionResources {
@@ -502,6 +507,8 @@ pub(crate) fn prepare(
         render_passes_graphic: HashMap::new(),
         pipelines_graphic: HashMap::new(),
 
+        pipelines_graphic_desc_sets: HashMap::new(),
+
         usages: None,
     };
 
@@ -556,8 +563,9 @@ pub(crate) fn prepare(
                         *pass,
                         info,
                     );
-                    if let Some(handle) = graphics_pipeline {
+                    if let Some((handle, layout, set)) = graphics_pipeline {
                         res.pipelines_graphic.insert(*pass, handle);
+                        res.pipelines_graphic_desc_sets.insert(*pass, (layout, set));
                     }
                 }
             }
@@ -760,6 +768,84 @@ pub(crate) fn execute(
                     storages.render_pass.raw(handle).unwrap()
                 };
 
+                let (set_layout, set) = &resources.pipelines_graphic_desc_sets[pass];
+
+                // TODO transition resource layouts
+
+                // fill descriptor set
+                {
+                    let writes =
+                        resolved_graph.pass_reads[pass]
+                            .iter()
+                            .map(|(rid, ty, binding, samp)| {
+                                use super::ImageReadType;
+                                use super::BufferReadType;
+
+                                match ty {
+                                    ResourceReadType::Image(img) => {
+                                        let img_handle = &res.images[rid];
+                                        let image = storages.image.raw(*img_handle).unwrap();
+
+                                        match img {
+                                            ImageReadType::Color => {
+
+                                                let samp_handle = &res.samplers[rid];
+                                                let sampler = storages.sampler.raw(*samp_handle).unwrap();
+
+                                                let img_desc = gfx::pso::DescriptorSetWrite {
+                                                    set,
+                                                    binding: (*binding) as u32,
+                                                    array_offset: 0,
+                                                    descriptors: std::iter::once(gfx::pso::Descriptor::Image(
+                                                        &image.view,
+                                                        gfx::image::Layout::ShaderReadOnlyOptimal,
+                                                    )),
+                                                };
+
+                                                let sampler_desc = gfx::pso::DescriptorSetWrite {
+                                                    set,
+                                                    binding: samp.clone().unwrap() as u32,
+                                                    array_offset: 0,
+                                                    descriptors: std::iter::once(gfx::pso::Descriptor::Sampler(
+                                                        sampler,
+                                                    )),
+                                                };
+
+                                                let mut vec: SmallVec<[_; 2]> = SmallVec::new();
+                                                vec.push(img_desc);
+                                                vec.push(sampler_desc);
+
+                                                vec
+                                            },
+                                            ImageReadType::Storage => {
+                                                let desc = gfx::pso::DescriptorSetWrite {
+                                                    set,
+                                                    binding: (*binding) as u32,
+                                                    array_offset: 0,
+                                                    descriptors: std::iter::once(gfx::pso::Descriptor::Image(
+                                                        &image.view,
+                                                        gfx::image::Layout::ShaderReadOnlyOptimal,
+                                                    )),
+                                                };
+
+                                                let mut res: SmallVec<[_; 2]> = SmallVec::new();
+                                                res.push(desc);
+
+                                                res
+                                            }
+                                        }
+                                    },
+                                    ResourceReadType::Buffer(buf) => {
+                                        unimplemented!()
+                                    },
+                                }
+                            })
+                            .flatten();
+
+                    device.device.write_descriptor_sets(writes);
+
+                }
+
                 let framebuffer = &res.framebuffers[pass];
 
                 let framebuffer_extent = context.reference_size; // TODO get actual framebuffer size
@@ -784,6 +870,8 @@ pub(crate) fn execute(
 
                     raw_cmd.set_viewports(0, &[viewport.clone()]);
                     raw_cmd.set_scissors(0, &[viewport.rect]);
+
+                    raw_cmd.bind_graphics_descriptor_sets(&pipeline.layout, 0, Some(set), &[]);
 
                     let pass_impl = &graph.passes_impl[pass.0];
 
@@ -956,7 +1044,11 @@ fn create_pipeline_graphics(
     render_pass: RenderPassHandle,
     pass: PassId,
     info: &PassInfo,
-) -> Option<(PipelineHandle)> {
+) -> Option<(
+    PipelineHandle,
+    types::DescriptorSetLayout,
+    types::DescriptorSet,
+)> {
     use std::collections::BTreeMap;
 
     let (primitive, shaders, vertex_attribs, materials) = match info {
@@ -1099,51 +1191,57 @@ fn create_pipeline_graphics(
         (sets, (pass_set_layout, pass_set_pool, pass_set))
     };
 
-    // insert the pass set layout
-    layouts.insert(0, &pass_stuff.0);
+    let pipeline_handle = {
+        let mut layouts = layouts;
 
-    let layouts = layouts
-        .into_iter()
-        .map(|(_, data)| {
-            // TODO warning, this is super duper unsafe
-            // Currently gfx doesn't let us clone descriptor set layouts.
-            // This is the only way around it right now. Argh.
-            // use std::mem;
+        // insert the pass set layout
+        layouts.insert(0, &pass_stuff.0);
 
-            data
-            // unsafe {
-            //     mem::transmute_copy(data)
-            // }
-        }).collect::<Vec<_>>();
+        let layouts = layouts
+            .into_iter()
+            .map(|(_, data)| {
+                // TODO warning, this is super duper unsafe
+                // Currently gfx doesn't let us clone descriptor set layouts.
+                // This is the only way around it right now. Argh.
+                // use std::mem;
 
-    let create_info = pipeline::GraphicsPipelineCreateInfo {
-        vertex_attribs: vertex_attribs.clone(),
-        primitive,
-        shader_vertex: pipeline::ShaderInfo {
-            content: &shaders.vertex.content,
-            entry: &shaders.vertex.entry,
-        },
-        shader_fragment: if shaders.fragment.is_some() {
-            Some(pipeline::ShaderInfo {
-                content: &shaders.fragment.as_ref().unwrap().content,
-                entry: &shaders.fragment.as_ref().unwrap().entry,
-            })
-        } else {
-            None
-        },
-        // TODO add support for geometry shaders
-        shader_geometry: None,
-        descriptor_set_layout: &layouts[..],
+                data
+                // unsafe {
+                //     mem::transmute_copy(data)
+                // }
+            }).collect::<Vec<_>>();
+
+        let create_info = pipeline::GraphicsPipelineCreateInfo {
+            vertex_attribs: vertex_attribs.clone(),
+            primitive,
+            shader_vertex: pipeline::ShaderInfo {
+                content: &shaders.vertex.content,
+                entry: &shaders.vertex.entry,
+            },
+            shader_fragment: if shaders.fragment.is_some() {
+                Some(pipeline::ShaderInfo {
+                    content: &shaders.fragment.as_ref().unwrap().content,
+                    entry: &shaders.fragment.as_ref().unwrap().entry,
+                })
+            } else {
+                None
+            },
+            // TODO add support for geometry shaders
+            shader_geometry: None,
+            descriptor_set_layout: &layouts[..],
+        };
+
+        storages
+            .pipeline
+            .create_graphics_pipelines(
+                device,
+                storages.render_pass,
+                storages.vertex_attrib,
+                render_pass,
+                &[create_info],
+            ).remove(0)
+            .ok()
     };
 
-    storages
-        .pipeline
-        .create_graphics_pipelines(
-            device,
-            storages.render_pass,
-            storages.vertex_attrib,
-            render_pass,
-            &[create_info],
-        ).remove(0)
-        .ok()
+    pipeline_handle.map(move |handle| (handle, pass_stuff.0, pass_stuff.2))
 }
