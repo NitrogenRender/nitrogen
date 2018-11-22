@@ -35,7 +35,6 @@ FragmentOut FragmentMain(VertexOut input)
     FragmentOut output;
 
     float2 uv = input.uv;
-    uv.y = 1.0 - input.uv.y;
 
     output.color = float4(input.uv, 1.0, 1.0);
 

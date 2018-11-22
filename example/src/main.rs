@@ -25,19 +25,19 @@ struct Vertex {
 
 const TRIANGLE: [Vertex; 4] = [
     Vertex {
-        pos: [-0.5, -0.5],
+        pos: [-1.0, -1.0],
         uv: [0.0, 0.0],
     }, // LEFT TOP
     Vertex {
-        pos: [-0.5, 0.5],
+        pos: [-1.0, 1.0],
         uv: [0.0, 1.0],
     }, // LEFT BOTTOM
     Vertex {
-        pos: [0.5, -0.5],
+        pos: [1.0, -1.0],
         uv: [1.0, 0.0],
     }, // RIGHT TOP
     Vertex {
-        pos: [0.5, 0.5],
+        pos: [1.0, 1.0],
         uv: [1.0, 1.0],
     }, // RIGHT BOTTOM
 ];

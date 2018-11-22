@@ -774,76 +774,75 @@ pub(crate) fn execute(
 
                 // fill descriptor set
                 {
-                    let writes =
-                        resolved_graph.pass_reads[pass]
-                            .iter()
-                            .map(|(rid, ty, binding, samp)| {
-                                use super::ImageReadType;
-                                use super::BufferReadType;
+                    let writes = resolved_graph.pass_reads[pass]
+                        .iter()
+                        .map(|(rid, ty, binding, samp)| {
+                            use super::BufferReadType;
+                            use super::ImageReadType;
 
-                                match ty {
-                                    ResourceReadType::Image(img) => {
-                                        let img_handle = &res.images[rid];
-                                        let image = storages.image.raw(*img_handle).unwrap();
+                            match ty {
+                                ResourceReadType::Image(img) => {
+                                    let img_handle = &res.images[rid];
+                                    let image = storages.image.raw(*img_handle).unwrap();
 
-                                        match img {
-                                            ImageReadType::Color => {
+                                    match img {
+                                        ImageReadType::Color => {
+                                            let samp_handle = &res.samplers[rid];
+                                            let sampler =
+                                                storages.sampler.raw(*samp_handle).unwrap();
 
-                                                let samp_handle = &res.samplers[rid];
-                                                let sampler = storages.sampler.raw(*samp_handle).unwrap();
-
-                                                let img_desc = gfx::pso::DescriptorSetWrite {
-                                                    set,
-                                                    binding: (*binding) as u32,
-                                                    array_offset: 0,
-                                                    descriptors: std::iter::once(gfx::pso::Descriptor::Image(
+                                            let img_desc = gfx::pso::DescriptorSetWrite {
+                                                set,
+                                                binding: (*binding) as u32,
+                                                array_offset: 0,
+                                                descriptors: std::iter::once(
+                                                    gfx::pso::Descriptor::Image(
                                                         &image.view,
-                                                        gfx::image::Layout::ShaderReadOnlyOptimal,
-                                                    )),
-                                                };
+                                                        gfx::image::Layout::General,
+                                                    ),
+                                                ),
+                                            };
 
-                                                let sampler_desc = gfx::pso::DescriptorSetWrite {
-                                                    set,
-                                                    binding: samp.clone().unwrap() as u32,
-                                                    array_offset: 0,
-                                                    descriptors: std::iter::once(gfx::pso::Descriptor::Sampler(
-                                                        sampler,
-                                                    )),
-                                                };
+                                            let sampler_desc = gfx::pso::DescriptorSetWrite {
+                                                set,
+                                                binding: samp.clone().unwrap() as u32,
+                                                array_offset: 0,
+                                                descriptors: std::iter::once(
+                                                    gfx::pso::Descriptor::Sampler(sampler),
+                                                ),
+                                            };
 
-                                                let mut vec: SmallVec<[_; 2]> = SmallVec::new();
-                                                vec.push(img_desc);
-                                                vec.push(sampler_desc);
+                                            let mut vec: SmallVec<[_; 2]> = SmallVec::new();
+                                            vec.push(img_desc);
+                                            vec.push(sampler_desc);
 
-                                                vec
-                                            },
-                                            ImageReadType::Storage => {
-                                                let desc = gfx::pso::DescriptorSetWrite {
-                                                    set,
-                                                    binding: (*binding) as u32,
-                                                    array_offset: 0,
-                                                    descriptors: std::iter::once(gfx::pso::Descriptor::Image(
-                                                        &image.view,
-                                                        gfx::image::Layout::ShaderReadOnlyOptimal,
-                                                    )),
-                                                };
-
-                                                let mut res: SmallVec<[_; 2]> = SmallVec::new();
-                                                res.push(desc);
-
-                                                res
-                                            }
+                                            vec
                                         }
-                                    },
-                                    ResourceReadType::Buffer(buf) => {
-                                        unimplemented!()
-                                    },
+                                        ImageReadType::Storage => {
+                                            let desc = gfx::pso::DescriptorSetWrite {
+                                                set,
+                                                binding: (*binding) as u32,
+                                                array_offset: 0,
+                                                descriptors: std::iter::once(
+                                                    gfx::pso::Descriptor::Image(
+                                                        &image.view,
+                                                        gfx::image::Layout::General,
+                                                    ),
+                                                ),
+                                            };
+
+                                            let mut res: SmallVec<[_; 2]> = SmallVec::new();
+                                            res.push(desc);
+
+                                            res
+                                        }
+                                    }
                                 }
-                            })
-                            .flatten();
+                                ResourceReadType::Buffer(buf) => unimplemented!(),
+                            }
+                        }).flatten();
 
                     device.device.write_descriptor_sets(writes);
-
                 }
 
                 let framebuffer = &res.framebuffers[pass];
@@ -992,7 +991,8 @@ fn create_render_pass_graphics(
                     // TODO stencil and depth
                     stencil_ops: gfx::pass::AttachmentOps::DONT_CARE,
                     // TODO depth/stencil
-                    layouts: initial_layout..gfx::image::Layout::ColorAttachmentOptimal,
+                    // TODO Better layout transitions
+                    layouts: initial_layout..gfx::image::Layout::General,
                 }
             }).collect::<SmallVec<[_; 16]>>()
     };
