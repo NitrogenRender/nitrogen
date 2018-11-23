@@ -11,60 +11,73 @@ use std::fs;
 fn main() {
     let project_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
-    let shaders_dir = project_dir.join("shaders");
+    let examples = fs::read_dir(project_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir());
 
-    let mut vertex_shaders = HashSet::new();
-    let mut fragment_shaders = HashSet::new();
-    let mut geometry_shaders = HashSet::new();
-    let mut compute_shaders = HashSet::new();
+    for example in examples {
+        let example_dir = example.path();
 
-    for entry in fs::read_dir(shaders_dir).unwrap() {
-        if entry.is_err() {
-            continue;
+        let shaders_dir = example_dir.join("shaders");
+
+        let mut vertex_shaders = HashSet::new();
+        let mut fragment_shaders = HashSet::new();
+        let mut geometry_shaders = HashSet::new();
+        let mut compute_shaders = HashSet::new();
+
+        for entry in fs::read_dir(shaders_dir).unwrap() {
+            if entry.is_err() {
+                continue;
+            }
+
+            let entry = entry.unwrap();
+            let path = entry.path();
+
+            let extension = if let Some(ext) = path.extension() {
+                ext
+            } else {
+                continue;
+            };
+
+            if extension == "frag" || extension == "hlsl" {
+                fragment_shaders.insert(path.clone());
+            }
+            if extension == "vert" || extension == "hlsl" {
+                vertex_shaders.insert(path.clone());
+            }
+            if extension == "geom" || extension == "hlsl" {
+                geometry_shaders.insert(path.clone());
+            }
+            if extension == "comp" || extension == "hlsl" {
+                compute_shaders.insert(path.clone());
+            }
         }
 
-        let entry = entry.unwrap();
-        let path = entry.path();
+        let out_base = PathBuf::from(env::var("OUT_DIR").unwrap());
+        let out_base = out_base.join(example.path().file_name().unwrap());
 
-        let extension = if let Some(ext) = path.extension() {
-            ext
-        } else {
-            continue;
-        };
+        fs::create_dir_all(&out_base);
 
-        if extension == "frag" || extension == "hlsl" {
-            fragment_shaders.insert(path.clone());
+        let mut compiler = Compiler::new().unwrap();
+
+        for shader in vertex_shaders {
+            compile(&mut compiler, shader, &out_base, ShaderKind::Vertex);
         }
-        if extension == "vert" || extension == "hlsl" {
-            vertex_shaders.insert(path.clone());
+        for shader in fragment_shaders {
+            compile(&mut compiler, shader, &out_base, ShaderKind::Fragment);
         }
-        if extension == "geom" || extension == "hlsl" {
-            geometry_shaders.insert(path.clone());
+        for shader in geometry_shaders {
+            compile(&mut compiler, shader, &out_base, ShaderKind::Geometry);
         }
-        if extension == "comp" || extension == "hlsl" {
-            compute_shaders.insert(path.clone());
+        for shader in compute_shaders {
+            compile(&mut compiler, shader, &out_base, ShaderKind::Compute);
         }
     }
 
-    let out_base = PathBuf::from(env::var("OUT_DIR").unwrap());
-
-    let mut compiler = Compiler::new().unwrap();
-
-    for shader in vertex_shaders {
-        compile(&mut compiler, shader, ShaderKind::Vertex);
-    }
-    for shader in fragment_shaders {
-        compile(&mut compiler, shader, ShaderKind::Fragment);
-    }
-    for shader in geometry_shaders {
-        compile(&mut compiler, shader, ShaderKind::Geometry);
-    }
-    for shader in compute_shaders {
-        compile(&mut compiler, shader, ShaderKind::Compute);
-    }
 }
 
-pub fn compile(compiler: &mut Compiler, path: PathBuf, kind: ShaderKind) {
+pub fn compile(compiler: &mut Compiler, path: PathBuf, out_base: &PathBuf, kind: ShaderKind) {
     let contents = match fs::read_to_string(path.clone()) {
         Ok(c) => c,
         Err(_) => return,
@@ -116,7 +129,7 @@ pub fn compile(compiler: &mut Compiler, path: PathBuf, kind: ShaderKind) {
         }
 
         let new_name = new_name + ".spirv";
-        let base = PathBuf::from(env::var("OUT_DIR").unwrap());
+        let base = PathBuf::from(out_base);
         base.join(new_name)
     };
 

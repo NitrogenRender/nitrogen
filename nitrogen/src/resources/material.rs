@@ -89,7 +89,10 @@ pub struct InstanceWrite {
 pub enum InstanceWriteData {
     Sampler { sampler: SamplerHandle },
     Image { image: ImageHandle },
-    Buffer { buffer: BufferHandle },
+    Buffer {
+        buffer: BufferHandle,
+        region: ::std::ops::Range<Option<u64>>,
+    },
     // TODO buffer views for texel buffers?
     /*
     UniformTexelBuffer {
@@ -243,9 +246,9 @@ impl MaterialStorage {
                         let raw = image_storage.raw(image)?;
                         gfx::pso::Descriptor::Image(&raw.view, gfx::image::Layout::Undefined)
                     }
-                    InstanceWriteData::Buffer { buffer } => {
+                    InstanceWriteData::Buffer { buffer, ref region } => {
                         let raw = buffer_storage.raw(buffer)?;
-                        gfx::pso::Descriptor::Buffer(raw.raw(), None..None)
+                        gfx::pso::Descriptor::Buffer(raw.raw(), region.clone())
                     }
                 }),
             })

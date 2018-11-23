@@ -263,7 +263,7 @@ impl Display {
 
         let mut config = gfx::SwapchainConfig::from_caps(&surface_capability, format);
 
-        // config.present_mode = gfx::PresentMode::Immediate;
+        config.present_mode = gfx::PresentMode::Immediate;
 
         let extent = config.extent.to_extent();
 

@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use nitrogen::graph::PassImpl;
-
 extern crate env_logger;
 extern crate image as img;
 extern crate log;
@@ -12,6 +10,7 @@ extern crate winit;
 
 use nitrogen::graph;
 use nitrogen::image;
+use nitrogen::graph::PassImpl;
 
 use log::debug;
 
@@ -68,7 +67,7 @@ fn main() {
     let mat_example_instance = { ntg.material_create_instance(&[material]).remove(0).unwrap() };
 
     let (image, sampler) = {
-        let image_data = include_bytes!("../assets/test.png");
+        let image_data = include_bytes!("assets/test.png");
 
         let image = img::load(std::io::Cursor::new(&image_data[..]), img::PNG)
             .unwrap()
@@ -235,6 +234,7 @@ fn main() {
                     binding: 2,
                     data: nitrogen::material::InstanceWriteData::Buffer {
                         buffer: uniform_buffer,
+                        region: None..None,
                     },
                 },
             ],
@@ -312,11 +312,11 @@ fn setup_graphs(
     {
         let shaders = nitrogen::graph::Shaders {
             vertex: nitrogen::graph::ShaderInfo {
-                content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/test.hlsl.vert.spirv"))),
+                content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/two-pass/test.hlsl.vert.spirv"))),
                 entry: "VertexMain".into(),
             },
             fragment: Some(nitrogen::graph::ShaderInfo {
-                content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/test.hlsl.frag.spirv"))),
+                content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/two-pass/test.hlsl.frag.spirv"))),
                 entry: "FragmentMain".into(),
             }),
             geometry: None,
@@ -348,11 +348,11 @@ fn setup_graphs(
     {
         let shaders = nitrogen::graph::Shaders {
             vertex: nitrogen::graph::ShaderInfo {
-                content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/read.hlsl.vert.spirv"))),
+                content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/two-pass/read.hlsl.vert.spirv"))),
                 entry: "VertexMain".into(),
             },
             fragment: Some(nitrogen::graph::ShaderInfo {
-                content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/read.hlsl.frag.spirv"))),
+                content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/two-pass/read.hlsl.frag.spirv"))),
                 entry: "FragmentMain".into(),
             }),
             geometry: None,

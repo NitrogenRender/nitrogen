@@ -1,7 +1,7 @@
 [workspace]
 
 members = [
-    "example",
+    "examples",
     "nitrogen",
     "nitrogen-ffi",
 ]
