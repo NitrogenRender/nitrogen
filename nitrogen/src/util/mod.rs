@@ -4,6 +4,7 @@
 
 pub mod storage;
 pub mod transfer;
+pub mod submit_group;
 
 use std::borrow::Cow;
 
