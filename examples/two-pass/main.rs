@@ -188,11 +188,11 @@ fn main() {
 
     #[derive(Copy, Clone)]
     struct UniformData {
-        color: [f32; 4],
+        _color: [f32; 4],
     }
 
     let uniform_data = UniformData {
-        color: [0.3, 0.5, 1.0, 1.0],
+        _color: [0.3, 0.5, 1.0, 1.0],
     };
 
     let uniform_buffer = {
@@ -273,9 +273,11 @@ fn main() {
             reference_size: (1920, 1080),
         };
 
-        let res = ntg.render_graph(graph, &exec_context);
+        let res = {
+            let mut submit = ntg.create_submit_group();
 
-        ntg.display_present(display, &res);
+            unimplemented!()
+        };
 
         ntg.graph_exec_resource_destroy(res);
     }

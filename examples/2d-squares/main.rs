@@ -140,6 +140,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    let mut submits = vec![
+        ctx.create_submit_group(),
+        ctx.create_submit_group(),
+        ctx.create_submit_group(),
+        ctx.create_submit_group(),
+        ctx.create_submit_group(),
+    ];
+
+    let mut frame_num = 0;
+    let mut frame_idx = 0;
+
     while running {
         events_loop.poll_events(|ev| match ev {
             winit::Event::WindowEvent { event, .. } => match event {
@@ -170,15 +181,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let _ = sx.send(num_squares as usize);
 
-        let res = ctx.render_graph(graph, &exec_context);
 
-        ctx.display_present(display, &res);
+        let res = {
+            let res = submits[frame_idx].graph_render(&mut ctx, graph, &exec_context);
+
+            submits[frame_idx].display_present(&mut ctx, display, &res);
+
+            submits[frame_idx].wait(&mut ctx);
+
+            res
+        };
 
         ctx.graph_exec_resource_destroy(res);
 
         update_instance_data(&mut instance_data, &mut instance_vel);
 
         write_to_instance_buffer(&mut ctx, &instance_data, instance_buffer);
+
+        frame_num += 1;
+        frame_idx = frame_num % submits.len();
+    }
+
+    for submit in submits {
+        submit.release(&mut ctx);
     }
 
     ctx.graph_destroy(graph);
@@ -284,7 +309,7 @@ fn create_instance_data(num: u32) -> Vec<InstanceData> {
 
     let mut result = Vec::with_capacity(num as usize);
 
-    for i in 0..num {
+    for _i in 0..num {
         let size = [rng.gen_range(0.05, 0.1), rng.gen_range(0.05, 0.1)];
 
 
@@ -293,9 +318,6 @@ fn create_instance_data(num: u32) -> Vec<InstanceData> {
             rng.gen_range(-1.0, 1.0 - size[0]),
             rng.gen_range(-1.0, 1.0 - size[1]),
         ];
-
-        let color_val = i as f32 / (num - 1) as f32;
-        let color = [1.0 - color_val, 1.0 - color_val, 1.0, 1.0];
 
         let color = [
             rng.gen_range(0.3, 1.0),
