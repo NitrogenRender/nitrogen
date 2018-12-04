@@ -80,13 +80,16 @@ impl SubmitGroup {
         display: DisplayHandle,
         resources: &graph::ExecutionResources,
     ) {
-        if resources.images.len() != 1 {
+
+        let image_id = if resources.outputs.len() != 1 {
             return;
-        }
+        } else {
+            resources.outputs[0]
+        };
 
-        let (id, image) = resources.images.iter().next().unwrap();
+        let image = resources.images[&image_id];
 
-        let sampler = resources.samplers[id];
+        let sampler = resources.samplers[&image_id];
 
         ctx.displays[display].present(
             &ctx.device_ctx,
@@ -94,7 +97,7 @@ impl SubmitGroup {
             &mut self.sem_list,
             &mut self.pool_graphics,
             &ctx.image_storage,
-            *image,
+            image,
             &ctx.sampler_storage,
             sampler,
         );
@@ -111,6 +114,9 @@ impl SubmitGroup {
 
         ctx.graph_storage.execute(
             &ctx.device_ctx,
+            &mut self.sem_pool,
+            &mut self.sem_list,
+            &mut self.pool_graphics,
             &mut ctx.render_pass_storage,
             &mut ctx.pipeline_storage,
             &mut ctx.image_storage,

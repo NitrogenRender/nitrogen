@@ -16,7 +16,10 @@ use resources::{
     buffer::BufferStorage, image::ImageStorage, material::MaterialStorage,
     pipeline::PipelineStorage, render_pass::RenderPassStorage, sampler::SamplerStorage,
     vertex_attrib::VertexAttribStorage,
+    semaphore_pool::{SemaphorePool, SemaphoreList},
 };
+
+use types::CommandPool;
 
 pub mod pass;
 pub use self::pass::*;
@@ -345,6 +348,9 @@ impl GraphStorage {
     pub fn execute(
         &mut self,
         device: &DeviceContext,
+        sem_pool: &mut SemaphorePool,
+        sem_list: &mut SemaphoreList,
+        command_pool: &mut CommandPool<gfx::Graphics>,
         render_pass_storage: &mut RenderPassStorage,
         pipeline_storage: &mut PipelineStorage,
         image_storage: &mut ImageStorage,
@@ -409,6 +415,9 @@ impl GraphStorage {
 
         execution::execute(
             device,
+            sem_pool,
+            sem_list,
+            command_pool,
             &mut storages,
             exec,
             resolved,

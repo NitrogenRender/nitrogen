@@ -241,6 +241,28 @@ fn main() {
         );
     }
 
+    let mut submits = vec![
+        ntg.create_submit_group(),
+        ntg.create_submit_group(),
+        ntg.create_submit_group(),
+        ntg.create_submit_group(),
+        ntg.create_submit_group(),
+    ];
+
+    let mut flights = Vec::with_capacity(submits.len());
+    {
+        for _ in 0..submits.len() {
+            flights.push(None);
+        }
+    }
+
+    let mut frame_num = 0;
+    let mut frame_idx = 0;
+
+    let exec_context = nitrogen::graph::ExecutionContext {
+        reference_size: (1920, 1080),
+    };
+
     while running {
         events.poll_events(|event| match event {
             winit::Event::WindowEvent { event, .. } => match event {
@@ -269,22 +291,45 @@ fn main() {
             println!("{:?}", errs);
         }
 
-        let exec_context = nitrogen::graph::ExecutionContext {
-            reference_size: (1920, 1080),
-        };
+        // wait for previous frame
+        {
+            let last_idx = (frame_num + (submits.len() - 1)) % submits.len();
+
+            if let Some(res) = flights[last_idx].take() {
+                submits[last_idx].wait(&mut ntg);
+                ntg.graph_exec_resource_destroy(res);
+            }
+        }
 
         let res = {
-            let mut submit = ntg.create_submit_group();
+            let res = submits[frame_idx].graph_render(&mut ntg, graph, &exec_context);
 
-            unimplemented!()
+            submits[frame_idx].display_present(&mut ntg, display, &res);
+
+            res
         };
 
-        ntg.graph_exec_resource_destroy(res);
+        flights[frame_idx] = Some(res);
+
+        frame_num += 1;
+        frame_idx = frame_num % submits.len();
+    }
+
+    for flight in flights {
+        if let Some(res) = flight {
+            ntg.graph_exec_resource_destroy(res);
+        }
+    }
+
+    for submit in submits {
+        submit.release(&mut ntg);
     }
 
     ntg.graph_destroy(graph);
 
     ntg.buffer_destroy(&[buffer, uniform_buffer]);
+
+    ntg.material_destroy(&[material]);
 
     ntg.sampler_destroy(&[sampler]);
     ntg.image_destroy(&[image]);
