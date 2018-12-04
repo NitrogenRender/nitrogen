@@ -11,6 +11,7 @@ pub mod pipeline;
 pub mod render_pass;
 pub mod sampler;
 pub mod vertex_attrib;
+pub mod semaphore_pool;
 
 use bitflags::bitflags;
 

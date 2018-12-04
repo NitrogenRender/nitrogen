@@ -34,6 +34,8 @@ const VERTEX_DATA: [VertexData; 4] = [
     VertexData { pos: [1.0, 1.0] },
 ];
 
+const NUM_THINGS: usize = 1;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::env::set_var("RUST_LOG", "debug");
     env_logger::init();
@@ -92,7 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         buffer
     };
 
-    let num_squares = 1000;
+    let num_squares = NUM_THINGS as _;
 
     let mut instance_data = create_instance_data(num_squares);
     let mut instance_vel = create_instance_velocity(num_squares);
@@ -126,7 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ctx.material_write_instance(instance_material, std::iter::once(write));
     }
 
-    let (graph, sx) = create_graph(&mut ctx, vtx_def, material, instance_material, vertex_buffer);
+    let (graph) = create_graph(&mut ctx, vtx_def, material, instance_material, vertex_buffer);
 
     let mut running = true;
     let mut resized = true;
@@ -139,6 +141,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             reference_size: (initial_size.width as u32, initial_size.height as u32),
         }
     };
+
+    let mut submits = vec![
+        ctx.create_submit_group(),
+        ctx.create_submit_group(),
+    ];
+
+    let mut flights = Vec::with_capacity(submits.len());
+    {
+        for _ in 0..submits.len() {
+            flights.push(None);
+        }
+    }
+
+    let mut frame_num = 0;
+    let mut frame_idx = 0;
 
     while running {
         events_loop.poll_events(|ev| match ev {
@@ -168,17 +185,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
-        let _ = sx.send(num_squares as usize);
+        // wait for prev frame
+        {
+            let last_idx = (frame_num + (submits.len() - 1)) % submits.len();
 
-        let res = ctx.render_graph(graph, &exec_context);
+            if let Some(res) = flights[last_idx].take() {
+                submits[last_idx].wait(&mut ctx);
+                ctx.graph_exec_resource_destroy(res);
+            }
+        }
 
-        ctx.display_present(display, &res);
 
-        ctx.graph_exec_resource_destroy(res);
+        let res = {
+            let res = submits[frame_idx].graph_render(&mut ctx, graph, &exec_context);
+
+            submits[frame_idx].display_present(&mut ctx, display, &res);
+
+            res
+        };
+
+        flights[frame_idx] = Some(res);
 
         update_instance_data(&mut instance_data, &mut instance_vel);
 
         write_to_instance_buffer(&mut ctx, &instance_data, instance_buffer);
+
+        frame_num += 1;
+        frame_idx = frame_num % submits.len();
+    }
+
+    for submit in &mut submits {
+        submit.wait(&mut ctx);
+    }
+
+    for flight in flights {
+        if let Some(res) = flight {
+            ctx.graph_exec_resource_destroy(res);
+        }
+    }
+
+    for submit in submits {
+        submit.release(&mut ctx);
     }
 
     ctx.graph_destroy(graph);
@@ -198,15 +245,10 @@ fn create_graph(
     material: material::MaterialHandle,
     mat_instance: material::MaterialInstanceHandle,
     buffer: buffer::BufferHandle,
-) -> (
-    graph::GraphHandle,
-    Sender<usize>,
-) {
+) -> graph::GraphHandle {
     use std::borrow::Cow;
 
     let graph = ctx.graph_create();
-
-    let (sx, rx) = channel();
 
     {
         let info = graph::PassInfo::Graphics {
@@ -234,7 +276,6 @@ fn create_graph(
         };
 
         struct Pass2D {
-            rx: Receiver<usize>,
             buffer: buffer::BufferHandle,
             mat_instance: material::MaterialInstanceHandle,
         }
@@ -258,7 +299,7 @@ fn create_graph(
             }
 
             fn execute(&self, cmd: &mut graph::CommandBuffer) {
-                let things = self.rx.recv().unwrap();
+                let things = NUM_THINGS;
 
                 cmd.bind_vertex_array(self.buffer);
                 cmd.bind_graphics_descriptor_set(1, self.mat_instance);
@@ -267,14 +308,14 @@ fn create_graph(
             }
         }
 
-        let pass = Pass2D { rx, buffer, mat_instance, };
+        let pass = Pass2D { buffer, mat_instance, };
 
         ctx.graph_add_pass(graph, "2D Pass", info, Box::new(pass));
     }
 
     ctx.graph_add_output(graph, "Canvas");
 
-    (graph, sx)
+    graph
 }
 
 fn create_instance_data(num: u32) -> Vec<InstanceData> {
@@ -284,7 +325,7 @@ fn create_instance_data(num: u32) -> Vec<InstanceData> {
 
     let mut result = Vec::with_capacity(num as usize);
 
-    for i in 0..num {
+    for _i in 0..num {
         let size = [rng.gen_range(0.05, 0.1), rng.gen_range(0.05, 0.1)];
 
 
@@ -293,9 +334,6 @@ fn create_instance_data(num: u32) -> Vec<InstanceData> {
             rng.gen_range(-1.0, 1.0 - size[0]),
             rng.gen_range(-1.0, 1.0 - size[1]),
         ];
-
-        let color_val = i as f32 / (num - 1) as f32;
-        let color = [1.0 - color_val, 1.0 - color_val, 1.0, 1.0];
 
         let color = [
             rng.gen_range(0.3, 1.0),

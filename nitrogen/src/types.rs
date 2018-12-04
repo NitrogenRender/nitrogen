@@ -5,6 +5,7 @@
 use back;
 use gfx;
 
+pub type Device = <back::Backend as gfx::Backend>::Device;
 pub type GraphicsPipeline = <back::Backend as gfx::Backend>::GraphicsPipeline;
 pub type PipelineLayout = <back::Backend as gfx::Backend>::PipelineLayout;
 pub type DescriptorSetLayout = <back::Backend as gfx::Backend>::DescriptorSetLayout;
@@ -17,5 +18,7 @@ pub type Framebuffer = <back::Backend as gfx::Backend>::Framebuffer;
 pub type RenderPass = <back::Backend as gfx::Backend>::RenderPass;
 pub type Image = <back::Backend as gfx::Backend>::Image;
 pub type ImageView = <back::Backend as gfx::Backend>::ImageView;
-pub type CommandPool = <back::Backend as gfx::Backend>::CommandPool;
 pub type ShaderModule = <back::Backend as gfx::Backend>::ShaderModule;
+pub type Semaphore = <back::Backend as gfx::Backend>::Semaphore;
+pub type Fence = <back::Backend as gfx::Backend>::Fence;
+pub type CommandPool<T> = gfx::CommandPool<back::Backend, T>;

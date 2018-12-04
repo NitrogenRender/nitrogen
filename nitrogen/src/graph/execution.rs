@@ -12,6 +12,7 @@ use super::ResourceName;
 use super::{ResourceReadType, ResourceWriteType};
 
 use types;
+use types::CommandPool;
 
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -32,6 +33,8 @@ use resources::{
     render_pass::{RenderPassHandle, RenderPassStorage},
     sampler::{SamplerHandle, SamplerStorage},
     vertex_attrib::{VertexAttribHandle, VertexAttribStorage},
+
+    semaphore_pool::{SemaphoreList, SemaphorePool, Semaphore},
 };
 
 #[derive(Debug, Clone)]
@@ -270,6 +273,8 @@ impl ExecutionGraphResources {
 }
 
 pub struct ExecutionResources {
+    pub(crate) outputs: Vec<ResourceId>,
+
     pub images: HashMap<ResourceId, ImageHandle>,
     pub samplers: HashMap<ResourceId, SamplerHandle>,
     pub buffers: HashMap<ResourceId, BufferHandle>,
@@ -285,6 +290,12 @@ impl ExecutionResources {
         buffer: &mut BufferStorage,
     ) {
         use smallvec::SmallVec;
+
+        {
+            for (_, f) in self.framebuffers {
+                device.device.destroy_framebuffer(f);
+            }
+        }
 
         {
             let images = self.images.values().cloned().collect::<SmallVec<[_; 16]>>();
@@ -577,6 +588,9 @@ pub(crate) fn prepare(
 
 pub(crate) fn execute(
     device: &DeviceContext,
+    sem_pool: &mut SemaphorePool,
+    sem_list: &mut SemaphoreList,
+    command_pool: &mut CommandPool<gfx::Graphics>,
     storages: &mut ExecutionStorages,
     exec_graph: &ExecutionGraph,
     resolved_graph: &GraphResourcesResolved,
@@ -584,24 +598,20 @@ pub(crate) fn execute(
     resources: &ExecutionGraphResources,
     context: &ExecutionContext,
 ) -> ExecutionResources {
+    let outputs = graph.output_resources
+        .iter()
+        .filter_map(|name| resolved_graph.name_lookup.get(name))
+        .cloned()
+        .collect();
+
     let mut res = ExecutionResources {
         images: HashMap::new(),
         buffers: HashMap::new(),
         samplers: HashMap::new(),
         framebuffers: HashMap::new(),
+        outputs,
     };
 
-    let mut command_pool = {
-        let queue_group = device.queue_group();
-
-        device
-            .device
-            .create_command_pool_typed(
-                &queue_group,
-                gfx::pool::CommandPoolCreateFlags::empty(),
-                graph.passes.len(),
-            ).unwrap()
-    };
 
     for batch in &exec_graph.pass_execution {
         // create new resources
@@ -750,11 +760,10 @@ pub(crate) fn execute(
                 material: storages.material,
             };
 
-            let mut fences: SmallVec<[_; 16]> = batch
-                .passes
-                .iter()
-                .map(|_| device.device.create_fence(false).unwrap())
-                .collect();
+            for i in 0..batch.passes.len() {
+                let sem = sem_pool.alloc();
+                sem_list.add_next_semaphore(sem);
+            }
 
             // TODO FEARLESS CONCURRENCY!!!
             for (i, pass) in batch.passes.iter().enumerate() {
@@ -894,24 +903,19 @@ pub(crate) fn execute(
                 };
 
                 {
-                    let submission = gfx::Submission::new().submit(Some(submit));
-                    device.queue_group().queues[0].submit(submission, Some(&mut fences[i]));
+                    let submission = gfx::Submission::new()
+                        .wait_on(sem_pool.list_prev_sems(sem_list).map(|sem| (sem, gfx::pso::PipelineStage::BOTTOM_OF_PIPE)))
+                        .signal(sem_pool.list_next_sems(sem_list))
+                        .submit(Some(submit));
+                    device.queue_group().queues[0].submit(submission, None);
                 }
-            }
 
-            device
-                .device
-                .wait_for_fences(fences.as_slice(), gfx::device::WaitFor::All, !0);
-
-            command_pool.reset();
-
-            for fence in fences {
-                device.device.destroy_fence(fence);
+                sem_list.advance();
             }
         }
 
         // destroy resources
-        {
+        if false {
             // destroy framebuffers first
             for pass in &batch.passes {
                 let framebuffer = res.framebuffers.remove(pass).unwrap();
@@ -932,8 +936,6 @@ pub(crate) fn execute(
             }
         }
     }
-
-    device.device.destroy_command_pool(command_pool.into_raw());
 
     res
 }

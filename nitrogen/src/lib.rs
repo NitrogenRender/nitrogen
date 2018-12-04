@@ -33,6 +33,7 @@ use device::DeviceContext;
 pub mod util;
 pub use util::storage;
 pub use util::transfer;
+pub use util::submit_group;
 
 pub use util::CowString;
 
@@ -51,6 +52,8 @@ pub mod graph;
 
 #[cfg(feature = "x11")]
 use ash::vk;
+
+use std::sync::Arc;
 
 pub type DisplayHandle = Handle<Display>;
 
@@ -75,14 +78,14 @@ pub struct Context {
 
     pub displays: Storage<Display>,
     pub transfer: transfer::TransferContext,
-    pub device_ctx: DeviceContext,
+    pub device_ctx: Arc<DeviceContext>,
     pub instance: back::Instance,
 }
 
 impl Context {
     pub fn new(name: &str, version: u32) -> Self {
         let instance = back::Instance::create(name, version);
-        let device_ctx = DeviceContext::new(&instance);
+        let device_ctx = Arc::new(DeviceContext::new(&instance));
 
         let transfer = transfer::TransferContext::new(&device_ctx);
 
@@ -176,7 +179,7 @@ impl Context {
 
         self.transfer.release(&self.device_ctx);
 
-        self.device_ctx.release();
+        Arc::try_unwrap(self.device_ctx).ok().unwrap().release();
     }
 
     // convenience functions that delegate the work
@@ -347,48 +350,9 @@ impl Context {
         );
     }
 
-    pub fn render_graph(
-        &mut self,
-        graph: graph::GraphHandle,
-        exec_context: &graph::ExecutionContext,
-    ) -> graph::ExecutionResources {
-        // self.graph_storage.execute(graph, exec_context);
+    // submit group
 
-        self.graph_storage.execute(
-            &self.device_ctx,
-            &mut self.render_pass_storage,
-            &mut self.pipeline_storage,
-            &mut self.image_storage,
-            &mut self.buffer_storage,
-            &self.vertex_attrib_storage,
-            &mut self.sampler_storage,
-            &self.material_storage,
-            graph,
-            exec_context,
-        )
-    }
-
-    // display
-
-    pub fn display_present(
-        &mut self,
-        display: DisplayHandle,
-        resources: &graph::ExecutionResources,
-    ) {
-        if resources.images.len() != 1 {
-            return;
-        }
-
-        let (id, image) = resources.images.iter().next().unwrap();
-
-        let sampler = resources.samplers[id];
-
-        self.displays[display].present(
-            &self.device_ctx,
-            &self.image_storage,
-            *image,
-            &self.sampler_storage,
-            sampler,
-        );
+    pub fn create_submit_group(&self) -> submit_group::SubmitGroup {
+        submit_group::SubmitGroup::new(self.device_ctx.clone())
     }
 }

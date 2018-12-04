@@ -104,6 +104,7 @@ pub unsafe extern "C" fn display_present(
     let device_ctx = &(*context).device_ctx;
     let display_ctx = &mut (*context).displays[display.into()];
 
+    /*
     display_ctx.present(
         &device_ctx,
         &(*context).image_storage,
@@ -111,4 +112,6 @@ pub unsafe extern "C" fn display_present(
         &(*context).sampler_storage,
         sampler.into(),
     )
+    */
+    true
 }

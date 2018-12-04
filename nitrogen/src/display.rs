@@ -13,7 +13,10 @@ use sampler;
 
 use types::*;
 
+use resources::semaphore_pool::{SemaphorePool, SemaphoreList};
+
 use std;
+use std::sync::Arc;
 
 pub struct Display {
     pub surface: Surface,
@@ -22,8 +25,6 @@ pub struct Display {
 
     pub swapchain: Option<Swapchain>,
     pub display_format: gfx::format::Format,
-
-    pub command_pool: gfx::CommandPool<back::Backend, gfx::General>,
 
     pub framebuffers: Vec<Framebuffer>,
     pub images: Vec<(Image, ImageView)>,
@@ -44,18 +45,6 @@ impl Display {
         use gfx::pso;
         use gfx::DescriptorPool;
         use gfx::Surface;
-
-        let command_pool = {
-            let queue_group = device.queue_group();
-
-            device
-                .device
-                .create_command_pool_typed(
-                    &queue_group,
-                    gfx::pool::CommandPoolCreateFlags::empty(),
-                    1,
-                ).expect("Can't create command pool")
-        };
 
         let (_, formats, _) = surface.compatibility(&device.adapter.physical_device);
 
@@ -214,7 +203,6 @@ impl Display {
         Display {
             surface,
             surface_size: (1, 1),
-            command_pool,
             swapchain: None,
             display_format: format,
             framebuffers: vec![],
@@ -322,9 +310,12 @@ impl Display {
     /// Present an image to the screen.
     ///
     /// The image has to be the same size as the swapchain images in order to preserve aspect ratio.
-    pub fn present(
-        &mut self,
+    pub(crate) fn present<'a>(
+        &'a mut self,
         device: &DeviceContext,
+        sem_pool: &mut SemaphorePool,
+        sem_list: &mut SemaphoreList,
+        command_pool: &mut CommandPool<gfx::Graphics>,
         image_storage: &image::ImageStorage,
         image: image::ImageHandle,
         sampler_storage: &sampler::SamplerStorage,
@@ -350,16 +341,16 @@ impl Display {
         };
 
         if let Some(ref mut swapchain) = self.swapchain {
-            let mut swapchain_sem = device
-                .device
-                .create_semaphore()
-                .expect("Can't create swapchain semaphore");
+
+            let mut sem_acquire = sem_pool.alloc();
 
             let index =
-                match swapchain.acquire_image(!0, gfx::FrameSync::Semaphore(&mut swapchain_sem)) {
+                match swapchain.acquire_image(!0, gfx::FrameSync::Semaphore(&*sem_acquire)) {
                     Err(_) => return false,
                     Ok(image) => image,
                 };
+
+            sem_list.add_prev_semaphore(sem_acquire);
 
             let viewport = gfx::pso::Viewport {
                 depth: 0.0..1.0,
@@ -390,7 +381,7 @@ impl Display {
             ]);
 
             let submit = {
-                let mut cmd = self.command_pool.acquire_command_buffer(false);
+                let mut cmd = command_pool.acquire_command_buffer(false);
 
                 cmd.set_viewports(0, &[viewport.clone()]);
                 cmd.set_scissors(0, &[viewport.rect]);
@@ -423,28 +414,28 @@ impl Display {
                 cmd.finish()
             };
 
-            let mut submit_fence = device
-                .device
-                .create_fence(false)
-                .expect("can't create submission fence");
+            let sem_blit = sem_pool.alloc();
+            let sem_present = sem_pool.alloc();
+
+            sem_list.add_next_semaphore(sem_blit);
 
             {
                 let submission = gfx::Submission::new()
-                    .wait_on(&[(&swapchain_sem, pso::PipelineStage::BOTTOM_OF_PIPE)])
+                    .wait_on(sem_pool.list_prev_sems(sem_list).map(|sem| {
+                        (sem, pso::PipelineStage::BOTTOM_OF_PIPE)
+                    }))
+                    .signal(&[&*sem_present])
+                    .signal(sem_pool.list_next_sems(sem_list))
                     .submit(Some(submit));
-                device.queue_group().queues[0].submit(submission, Some(&mut submit_fence));
+                device.queue_group().queues[0].submit(submission, None);
             }
 
-            device.device.wait_for_fence(&submit_fence, !0);
-            device.device.destroy_fence(submit_fence);
-            device.device.destroy_semaphore(swapchain_sem);
+            let res = swapchain
+                .present(&mut device.queue_group().queues[0], index, std::iter::once(sem_present))
+                .is_ok();
 
-            // without this call we are leaking memory. sigh...
-            self.command_pool.reset();
 
-            swapchain
-                .present(&mut device.queue_group().queues[0], index, &[])
-                .is_ok()
+            res
         } else {
             false
         }
@@ -467,10 +458,6 @@ impl Display {
         device
             .device
             .destroy_graphics_pipeline(self.display_pipeline);
-
-        device
-            .device
-            .destroy_command_pool(self.command_pool.into_raw());
 
         for framebuffer in self.framebuffers {
             device.device.destroy_framebuffer(framebuffer);

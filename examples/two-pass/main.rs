@@ -188,11 +188,11 @@ fn main() {
 
     #[derive(Copy, Clone)]
     struct UniformData {
-        color: [f32; 4],
+        _color: [f32; 4],
     }
 
     let uniform_data = UniformData {
-        color: [0.3, 0.5, 1.0, 1.0],
+        _color: [0.3, 0.5, 1.0, 1.0],
     };
 
     let uniform_buffer = {
@@ -241,6 +241,25 @@ fn main() {
         );
     }
 
+    let mut submits = vec![
+        ntg.create_submit_group(),
+        ntg.create_submit_group(),
+    ];
+
+    let mut flights = Vec::with_capacity(submits.len());
+    {
+        for _ in 0..submits.len() {
+            flights.push(None);
+        }
+    }
+
+    let mut frame_num = 0;
+    let mut frame_idx = 0;
+
+    let exec_context = nitrogen::graph::ExecutionContext {
+        reference_size: (1920, 1080),
+    };
+
     while running {
         events.poll_events(|event| match event {
             winit::Event::WindowEvent { event, .. } => match event {
@@ -269,20 +288,49 @@ fn main() {
             println!("{:?}", errs);
         }
 
-        let exec_context = nitrogen::graph::ExecutionContext {
-            reference_size: (1920, 1080),
+        // wait for previous frame
+        {
+            let last_idx = (frame_num + (submits.len() - 1)) % submits.len();
+
+            if let Some(res) = flights[last_idx].take() {
+                submits[last_idx].wait(&mut ntg);
+                ntg.graph_exec_resource_destroy(res);
+            }
+        }
+
+        let res = {
+            let res = submits[frame_idx].graph_render(&mut ntg, graph, &exec_context);
+
+            submits[frame_idx].display_present(&mut ntg, display, &res);
+
+            res
         };
 
-        let res = ntg.render_graph(graph, &exec_context);
+        flights[frame_idx] = Some(res);
 
-        ntg.display_present(display, &res);
+        frame_num += 1;
+        frame_idx = frame_num % submits.len();
+    }
 
-        ntg.graph_exec_resource_destroy(res);
+    for submit in &mut submits {
+        submit.wait(&mut ntg);
+    }
+
+    for flight in flights {
+        if let Some(res) = flight {
+            ntg.graph_exec_resource_destroy(res);
+        }
+    }
+
+    for submit in submits {
+        submit.release(&mut ntg);
     }
 
     ntg.graph_destroy(graph);
 
     ntg.buffer_destroy(&[buffer, uniform_buffer]);
+
+    ntg.material_destroy(&[material]);
 
     ntg.sampler_destroy(&[sampler]);
     ntg.image_destroy(&[image]);
