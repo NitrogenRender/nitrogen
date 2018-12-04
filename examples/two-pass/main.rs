@@ -244,9 +244,6 @@ fn main() {
     let mut submits = vec![
         ntg.create_submit_group(),
         ntg.create_submit_group(),
-        ntg.create_submit_group(),
-        ntg.create_submit_group(),
-        ntg.create_submit_group(),
     ];
 
     let mut flights = Vec::with_capacity(submits.len());
@@ -313,6 +310,10 @@ fn main() {
 
         frame_num += 1;
         frame_idx = frame_num % submits.len();
+    }
+
+    for submit in &mut submits {
+        submit.wait(&mut ntg);
     }
 
     for flight in flights {

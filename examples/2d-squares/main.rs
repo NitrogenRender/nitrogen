@@ -145,9 +145,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut submits = vec![
         ctx.create_submit_group(),
         ctx.create_submit_group(),
-        ctx.create_submit_group(),
-        ctx.create_submit_group(),
-        ctx.create_submit_group(),
     ];
 
     let mut flights = Vec::with_capacity(submits.len());
@@ -215,6 +212,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         frame_num += 1;
         frame_idx = frame_num % submits.len();
+    }
+
+    for submit in &mut submits {
+        submit.wait(&mut ctx);
+    }
+
+    for flight in flights {
+        if let Some(res) = flight {
+            ctx.graph_exec_resource_destroy(res);
+        }
     }
 
     for submit in submits {
