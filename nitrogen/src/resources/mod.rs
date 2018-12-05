@@ -10,8 +10,8 @@ pub mod material;
 pub mod pipeline;
 pub mod render_pass;
 pub mod sampler;
-pub mod vertex_attrib;
 pub mod semaphore_pool;
+pub mod vertex_attrib;
 
 use bitflags::bitflags;
 

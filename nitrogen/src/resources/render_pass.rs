@@ -75,7 +75,8 @@ impl RenderPassStorage {
                     }
                     Err(e) => Err(e.into()),
                 }
-            }).collect()
+            })
+            .collect()
     }
 
     pub fn raw(&self, handle: RenderPassHandle) -> Option<&::types::RenderPass> {

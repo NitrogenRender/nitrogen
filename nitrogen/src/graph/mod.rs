@@ -13,10 +13,14 @@ use smallvec::SmallVec;
 
 use device::DeviceContext;
 use resources::{
-    buffer::BufferStorage, image::ImageStorage, material::MaterialStorage,
-    pipeline::PipelineStorage, render_pass::RenderPassStorage, sampler::SamplerStorage,
+    buffer::BufferStorage,
+    image::ImageStorage,
+    material::MaterialStorage,
+    pipeline::PipelineStorage,
+    render_pass::RenderPassStorage,
+    sampler::SamplerStorage,
+    semaphore_pool::{SemaphoreList, SemaphorePool},
     vertex_attrib::VertexAttribStorage,
-    semaphore_pool::{SemaphorePool, SemaphoreList},
 };
 
 use types::CommandPool;
@@ -172,7 +176,8 @@ impl GraphStorage {
                 exec_resources: HashMap::new(),
                 last_exec: None,
                 last_input: None,
-            }).0
+            })
+            .0
     }
 
     pub fn destroy(

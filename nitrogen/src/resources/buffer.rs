@@ -317,7 +317,8 @@ impl BufferStorage {
                         &buffer.buffer,
                         data.offset,
                         to_u8_slice(data.data),
-                    ).into()
+                    )
+                    .into()
                 }
             } else {
                 Err(BufferError::UploadOutOfBounds)
@@ -345,7 +346,8 @@ impl BufferStorage {
                     } else {
                         (*idx, Some((data, buffer)))
                     }
-                }).filter_map(|(idx, res)| {
+                })
+                .filter_map(|(idx, res)| {
                     let (data, buffer) = match res {
                         None => {
                             results[idx] = Err(BufferError::UploadOutOfBounds);
@@ -374,7 +376,8 @@ impl BufferStorage {
                         }
                         Ok(staging) => Some((idx, data, buffer, staging)),
                     }
-                }).collect::<SmallVec<[_; 16]>>()
+                })
+                .collect::<SmallVec<[_; 16]>>()
         };
 
         // do copying and writing
@@ -392,7 +395,8 @@ impl BufferStorage {
                         }
                         Ok(()) => Some((data, buffer, staging)),
                     }
-                }).map(|(data, buffer, staging)| {
+                })
+                .map(|(data, buffer, staging)| {
                     use transfer::BufferTransfer;
 
                     let upload_sice = unsafe { to_u8_slice(data.data) };
@@ -403,7 +407,8 @@ impl BufferStorage {
                         offset: data.offset,
                         data: upload_sice,
                     }
-                }).collect::<SmallVec<[_; 16]>>();
+                })
+                .collect::<SmallVec<[_; 16]>>();
 
             transfer.copy_buffers(device, buffer_transfers.as_slice());
         }

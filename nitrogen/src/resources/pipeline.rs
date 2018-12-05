@@ -142,7 +142,8 @@ impl PipelineStorage {
                     render_pass_handle,
                     create_info,
                 )
-            }).collect()
+            })
+            .collect()
     }
 
     // I'm sorry Mike Acton

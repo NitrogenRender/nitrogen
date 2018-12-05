@@ -80,7 +80,8 @@ impl VertexAttribStorage {
                     attribs,
                     buffer_stride: create_info.buffer_stride,
                 }
-            }).map(|attrib| self.storage.insert(attrib).0)
+            })
+            .map(|attrib| self.storage.insert(attrib).0)
             .collect()
     }
 

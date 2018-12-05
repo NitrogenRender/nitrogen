@@ -493,7 +493,8 @@ impl ImageStorage {
                     upload_nums,
                     (upload_width, upload_height),
                 ))
-            }).collect::<SmallVec<[_; 16]>>();
+            })
+            .collect::<SmallVec<[_; 16]>>();
 
         {
             let upload_data = staging_data
@@ -574,7 +575,8 @@ impl ImageStorage {
                     };
 
                     Some(transfer_data)
-                }).collect::<SmallVec<[_; 16]>>();
+                })
+                .collect::<SmallVec<[_; 16]>>();
 
             transfer.copy_buffers_to_images(device, upload_data.as_slice());
         }

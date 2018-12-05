@@ -13,7 +13,7 @@ use sampler;
 
 use types::*;
 
-use resources::semaphore_pool::{SemaphorePool, SemaphoreList};
+use resources::semaphore_pool::{SemaphoreList, SemaphorePool};
 
 use std;
 use std::sync::Arc;
@@ -107,7 +107,8 @@ impl Display {
                     },
                 ],
                 &[],
-            ).expect("Can't create descriptor set layout");
+            )
+            .expect("Can't create descriptor set layout");
 
         let mut set_pool = device
             .device
@@ -123,7 +124,8 @@ impl Display {
                         count: 1,
                     },
                 ],
-            ).expect("Can't create descriptor pool");
+            )
+            .expect("Can't create descriptor pool");
 
         let desc_set = set_pool.allocate_set(&set_layout).unwrap();
 
@@ -132,7 +134,8 @@ impl Display {
             .create_pipeline_layout(
                 std::iter::once(&set_layout),
                 &[], // TODO push constants
-            ).expect("Can't create pipeline layout");
+            )
+            .expect("Can't create pipeline layout");
 
         let pipeline = {
             let vs_mod = {
@@ -286,9 +289,11 @@ impl Display {
                                     levels: 0..1,
                                     layers: 0..1,
                                 },
-                            ).unwrap();
+                            )
+                            .unwrap();
                         (img, view)
-                    }).collect::<Vec<_>>();
+                    })
+                    .collect::<Vec<_>>();
                 let fbos = pairs
                     .iter()
                     .map(|&(ref _image, ref view)| {
@@ -296,7 +301,8 @@ impl Display {
                             .device
                             .create_framebuffer(&self.display_renderpass, Some(view), extent)
                             .unwrap()
-                    }).collect::<Vec<_>>();
+                    })
+                    .collect::<Vec<_>>();
 
                 (pairs, fbos)
             }
@@ -341,14 +347,13 @@ impl Display {
         };
 
         if let Some(ref mut swapchain) = self.swapchain {
-
             let mut sem_acquire = sem_pool.alloc();
 
-            let index =
-                match swapchain.acquire_image(!0, gfx::FrameSync::Semaphore(&*sem_acquire)) {
-                    Err(_) => return false,
-                    Ok(image) => image,
-                };
+            let index = match swapchain.acquire_image(!0, gfx::FrameSync::Semaphore(&*sem_acquire))
+            {
+                Err(_) => return false,
+                Ok(image) => image,
+            };
 
             sem_list.add_prev_semaphore(sem_acquire);
 
@@ -421,9 +426,11 @@ impl Display {
 
             {
                 let submission = gfx::Submission::new()
-                    .wait_on(sem_pool.list_prev_sems(sem_list).map(|sem| {
-                        (sem, pso::PipelineStage::BOTTOM_OF_PIPE)
-                    }))
+                    .wait_on(
+                        sem_pool
+                            .list_prev_sems(sem_list)
+                            .map(|sem| (sem, pso::PipelineStage::BOTTOM_OF_PIPE)),
+                    )
                     .signal(&[&*sem_present])
                     .signal(sem_pool.list_next_sems(sem_list))
                     .submit(Some(submit));
@@ -431,9 +438,12 @@ impl Display {
             }
 
             let res = swapchain
-                .present(&mut device.queue_group().queues[0], index, std::iter::once(sem_present))
+                .present(
+                    &mut device.queue_group().queues[0],
+                    index,
+                    std::iter::once(sem_present),
+                )
                 .is_ok();
-
 
             res
         } else {

@@ -2,10 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut};
 use std::borrow::Borrow;
 use std::cell::UnsafeCell;
+use std::marker::PhantomData;
+use std::ops::{Deref, DerefMut};
 
 /// Any type that implements this trait can be used to create and free elements
 /// of a [`Pool<T>`]
@@ -23,20 +23,17 @@ pub(crate) struct PoolInner<T, Impl: PoolImpl<T>> {
     size: usize,
 }
 
-
 /// A pool to insert (or allocate) items which can be reused after freeing
 pub struct Pool<T, Impl: PoolImpl<T>> {
     inner: UnsafeCell<PoolInner<T, Impl>>,
 }
 
 impl<T, Impl: PoolImpl<T>> Pool<T, Impl> {
-
     pub fn new(back: Impl) -> Self {
         Pool::with_intial_elems(back, 0)
     }
 
     pub fn with_intial_elems(mut back: Impl, cap: usize) -> Self {
-
         let mut values = Vec::with_capacity(cap);
         for _ in 0..cap {
             values.push(back.new_elem());
@@ -50,11 +47,7 @@ impl<T, Impl: PoolImpl<T>> Pool<T, Impl> {
             nexts.push(None);
         }
 
-        let next_free = if cap > 0 {
-            Some(0)
-        } else {
-            None
-        };
+        let next_free = if cap > 0 { Some(0) } else { None };
 
         Pool {
             inner: UnsafeCell::new(PoolInner {
@@ -63,7 +56,7 @@ impl<T, Impl: PoolImpl<T>> Pool<T, Impl> {
                 nexts,
                 next_free,
                 size: 0,
-            })
+            }),
         }
     }
 
@@ -74,15 +67,11 @@ impl<T, Impl: PoolImpl<T>> Pool<T, Impl> {
     }
 
     pub fn len(&self) -> usize {
-        unsafe {
-            self.get().size
-        }
+        unsafe { self.get().size }
     }
 
     pub fn cap(&self) -> usize {
-        unsafe {
-            self.get().values.len()
-        }
+        unsafe { self.get().values.len() }
     }
 
     pub fn alloc(&self) -> PoolElem<'_, Impl, T> {
@@ -138,7 +127,6 @@ impl<T, Impl: PoolImpl<T>> Pool<T, Impl> {
     }
 
     pub fn reset(&mut self) {
-
         let this = unsafe { self.get() };
 
         use std::mem::replace;
@@ -159,9 +147,9 @@ impl<T, Impl: PoolImpl<T>> Drop for Pool<T, Impl> {
     }
 }
 
-
 pub struct PoolElem<'a, Impl, T>
-    where Impl: PoolImpl<T>,
+where
+    Impl: PoolImpl<T>,
 {
     idx: usize,
     pool: *mut (),
@@ -169,7 +157,8 @@ pub struct PoolElem<'a, Impl, T>
 }
 
 impl<'a, Impl, T> PoolElem<'a, Impl, T>
-    where Impl: PoolImpl<T>,
+where
+    Impl: PoolImpl<T>,
 {
     #[allow(unused_unsafe)]
     pub(crate) unsafe fn into_idx(self) -> usize {
@@ -194,7 +183,8 @@ impl<'a, Impl, T> PoolElem<'a, Impl, T>
 }
 
 impl<'a, Impl, T> Drop for PoolElem<'a, Impl, T>
-    where Impl: PoolImpl<T>,
+where
+    Impl: PoolImpl<T>,
 {
     fn drop(&mut self) {
         use std::mem::transmute;
@@ -206,7 +196,8 @@ impl<'a, Impl, T> Drop for PoolElem<'a, Impl, T>
 }
 
 impl<'a, Impl, T> Deref for PoolElem<'a, Impl, T>
-    where Impl: PoolImpl<T>,
+where
+    Impl: PoolImpl<T>,
 {
     type Target = T;
 
@@ -220,7 +211,8 @@ impl<'a, Impl, T> Deref for PoolElem<'a, Impl, T>
 }
 
 impl<'a, Impl, T> DerefMut for PoolElem<'a, Impl, T>
-    where Impl: PoolImpl<T>,
+where
+    Impl: PoolImpl<T>,
 {
     fn deref_mut(&mut self) -> &mut <Self as Deref>::Target {
         use std::mem::transmute;
@@ -232,13 +224,13 @@ impl<'a, Impl, T> DerefMut for PoolElem<'a, Impl, T>
 }
 
 impl<'a, Impl, T> Borrow<T> for PoolElem<'a, Impl, T>
-    where Impl: PoolImpl<T>,
+where
+    Impl: PoolImpl<T>,
 {
     fn borrow(&self) -> &T {
         &*self
     }
 }
-
 
 #[cfg(test)]
 mod test {
@@ -255,8 +247,7 @@ mod test {
             *elem = 0;
         }
 
-        fn free_elem(&mut self, _elem: usize) {
-        }
+        fn free_elem(&mut self, _elem: usize) {}
     }
 
     #[test]

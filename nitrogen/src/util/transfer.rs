@@ -44,7 +44,8 @@ impl TransferContext {
                     &queue_group,
                     gfx::pool::CommandPoolCreateFlags::TRANSIENT,
                     1,
-                ).expect("Can't create command pool")
+                )
+                .expect("Can't create command pool")
         };
 
         TransferContext { command_pool }

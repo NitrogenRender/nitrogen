@@ -6,12 +6,11 @@ use gfx;
 
 use std::sync::Arc;
 
-use util::pool::{Pool, PoolImpl, PoolElem};
 use device::DeviceContext;
 use types;
+use util::pool::{Pool, PoolElem, PoolImpl};
 
 use smallvec::SmallVec;
-
 
 pub type Semaphore<'a> = PoolElem<'a, SemaphorePoolImpl, types::Semaphore>;
 pub struct SemaphorePool(pub(crate) Pool<types::Semaphore, SemaphorePoolImpl>);
@@ -37,22 +36,24 @@ impl SemaphorePool {
         self.0.cap()
     }
 
-    pub fn list_prev_sems<'a>(&'a self, list: &'a SemaphoreList) -> Box<dyn Iterator<Item = &'a types::Semaphore> + 'a> {
-        Box::new(list.prev_semaphores.as_slice()
-            .iter()
-            .map(move |idx| {
-                let this = unsafe { self.0.get() };
-                &this.values[*idx]
-            }))
+    pub fn list_prev_sems<'a>(
+        &'a self,
+        list: &'a SemaphoreList,
+    ) -> Box<dyn Iterator<Item = &'a types::Semaphore> + 'a> {
+        Box::new(list.prev_semaphores.as_slice().iter().map(move |idx| {
+            let this = unsafe { self.0.get() };
+            &this.values[*idx]
+        }))
     }
 
-    pub fn list_next_sems<'a>(&'a self, list: &'a SemaphoreList) -> Box<dyn Iterator<Item = &'a types::Semaphore> + 'a> {
-        Box::new(list.next_semaphores.as_slice()
-            .iter()
-            .map(move |idx| {
-                let this = unsafe { self.0.get() };
-                &this.values[*idx]
-            }))
+    pub fn list_next_sems<'a>(
+        &'a self,
+        list: &'a SemaphoreList,
+    ) -> Box<dyn Iterator<Item = &'a types::Semaphore> + 'a> {
+        Box::new(list.next_semaphores.as_slice().iter().map(move |idx| {
+            let this = unsafe { self.0.get() };
+            &this.values[*idx]
+        }))
     }
 
     pub fn clear(&mut self) {
@@ -103,7 +104,8 @@ impl SemaphoreList {
 
     pub fn advance(&mut self) {
         self.prev_semaphores.clear();
-        self.prev_semaphores.extend(self.next_semaphores.iter().cloned());
+        self.prev_semaphores
+            .extend(self.next_semaphores.iter().cloned());
         self.next_semaphores.clear();
     }
 }

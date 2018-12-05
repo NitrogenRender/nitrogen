@@ -87,8 +87,12 @@ pub struct InstanceWrite {
 }
 
 pub enum InstanceWriteData {
-    Sampler { sampler: SamplerHandle },
-    Image { image: ImageHandle },
+    Sampler {
+        sampler: SamplerHandle,
+    },
+    Image {
+        image: ImageHandle,
+    },
     Buffer {
         buffer: BufferHandle,
         region: ::std::ops::Range<Option<u64>>,
@@ -132,7 +136,8 @@ impl MaterialStorage {
                         stage_flags: gfx::pso::ShaderStageFlags::ALL,
                         immutable_samplers: false,
                     },
-                ).collect::<SmallVec<[_; 16]>>();
+                )
+                .collect::<SmallVec<[_; 16]>>();
 
             let res = device
                 .device
@@ -301,7 +306,8 @@ impl Material {
             .map(|(_binding, ty)| gfx::pso::DescriptorRangeDesc {
                 count: 1,
                 ty: ty.clone().into(),
-            }).collect::<SmallVec<[_; 16]>>();
+            })
+            .collect::<SmallVec<[_; 16]>>();
 
         let pool = device
             .device

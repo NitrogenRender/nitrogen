@@ -32,9 +32,8 @@ use resources::{
     pipeline::{PipelineHandle, PipelineStorage},
     render_pass::{RenderPassHandle, RenderPassStorage},
     sampler::{SamplerHandle, SamplerStorage},
+    semaphore_pool::{Semaphore, SemaphoreList, SemaphorePool},
     vertex_attrib::{VertexAttribHandle, VertexAttribStorage},
-
-    semaphore_pool::{SemaphoreList, SemaphorePool, Semaphore},
 };
 
 #[derive(Debug, Clone)]
@@ -76,7 +75,8 @@ impl ExecutionGraph {
                     None
                 }
                 Some(id) => Some(*id),
-            }).collect::<HashSet<_>>();
+            })
+            .collect::<HashSet<_>>();
 
         // We keep a list of things we should **not** destroy.
         // At the time of this writing, the only special case is the original
@@ -165,7 +165,8 @@ impl ExecutionGraph {
                     }
 
                     deduped
-                }).collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
         };
 
         // We have a list of passes to execute, but those passes also create resources.
@@ -240,7 +241,8 @@ impl ExecutionGraph {
                         resource_destroy: deletes,
                         passes: batch,
                     }
-                }).collect()
+                })
+                .collect()
         };
 
         ExecutionGraph {
@@ -598,7 +600,8 @@ pub(crate) fn execute(
     resources: &ExecutionGraphResources,
     context: &ExecutionContext,
 ) -> ExecutionResources {
-    let outputs = graph.output_resources
+    let outputs = graph
+        .output_resources
         .iter()
         .filter_map(|name| resolved_graph.name_lookup.get(name))
         .cloned()
@@ -611,7 +614,6 @@ pub(crate) fn execute(
         framebuffers: HashMap::new(),
         outputs,
     };
-
 
     for batch in &exec_graph.pass_execution {
         // create new resources
@@ -682,7 +684,8 @@ pub(crate) fn execute(
                                             sampler::WrapMode::Clamp,
                                         ),
                                     }],
-                                ).remove(0);
+                                )
+                                .remove(0);
 
                             res.samplers.insert(*create, sampler);
                         }
@@ -722,7 +725,8 @@ pub(crate) fn execute(
                             let image = storages.image.raw(handle).unwrap();
 
                             (&image.view, &image.dimension)
-                        }).unzip()
+                        })
+                        .unzip()
                 };
 
                 let extent = {
@@ -733,11 +737,13 @@ pub(crate) fn execute(
                             image::ImageDimension::D1 { x } => (*x, 1, 1),
                             image::ImageDimension::D2 { x, y } => (*x, *y, 1),
                             image::ImageDimension::D3 { x, y, z } => (*x, *y, *z),
-                        }).map(|(x, y, z)| gfx::image::Extent {
+                        })
+                        .map(|(x, y, z)| gfx::image::Extent {
                             width: x,
                             height: y,
                             depth: z,
-                        }).next()
+                        })
+                        .next()
                         .unwrap()
                 };
 
@@ -849,7 +855,8 @@ pub(crate) fn execute(
                                 }
                                 ResourceReadType::Buffer(buf) => unimplemented!(),
                             }
-                        }).flatten();
+                        })
+                        .flatten();
 
                     device.device.write_descriptor_sets(writes);
                 }
@@ -904,7 +911,11 @@ pub(crate) fn execute(
 
                 {
                     let submission = gfx::Submission::new()
-                        .wait_on(sem_pool.list_prev_sems(sem_list).map(|sem| (sem, gfx::pso::PipelineStage::BOTTOM_OF_PIPE)))
+                        .wait_on(
+                            sem_pool
+                                .list_prev_sems(sem_list)
+                                .map(|sem| (sem, gfx::pso::PipelineStage::BOTTOM_OF_PIPE)),
+                        )
                         .signal(sem_pool.list_next_sems(sem_list))
                         .submit(Some(submit));
                     device.queue_group().queues[0].submit(submission, None);
@@ -959,7 +970,8 @@ fn create_render_pass_graphics(
                     ResourceWriteType::Image(ImageWriteType::DepthStencil) => true,
                     _ => false,
                 }
-            }).map(|(res, ty, binding)| {
+            })
+            .map(|(res, ty, binding)| {
                 let (origin, info) = resolved_graph.create_info(*res).unwrap();
 
                 use super::ResourceCreateInfo;
@@ -996,7 +1008,8 @@ fn create_render_pass_graphics(
                     // TODO Better layout transitions
                     layouts: initial_layout..gfx::image::Layout::General,
                 }
-            }).collect::<SmallVec<[_; 16]>>()
+            })
+            .collect::<SmallVec<[_; 16]>>()
     };
 
     let color_attachments = attachments
@@ -1122,7 +1135,8 @@ fn create_pipeline_graphics(
                         stage_flags: gfx::pso::ShaderStageFlags::ALL,
                         immutable_samplers: false,
                     }
-                }).chain(sampler_descriptors);
+                })
+                .chain(sampler_descriptors);
 
             let range = reads
                 .map(|(_, ty, _, _)| {
@@ -1155,7 +1169,8 @@ fn create_pipeline_graphics(
                         },
                         count: 1,
                     }
-                }).chain(samplers.map(|_| gfx::pso::DescriptorRangeDesc {
+                })
+                .chain(samplers.map(|_| gfx::pso::DescriptorRangeDesc {
                     ty: gfx::pso::DescriptorType::Sampler,
                     count: 1,
                 }));
@@ -1211,7 +1226,8 @@ fn create_pipeline_graphics(
                 // unsafe {
                 //     mem::transmute_copy(data)
                 // }
-            }).collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>();
 
         let create_info = pipeline::GraphicsPipelineCreateInfo {
             vertex_attribs: vertex_attribs.clone(),
@@ -1241,7 +1257,8 @@ fn create_pipeline_graphics(
                 storages.vertex_attrib,
                 render_pass,
                 &[create_info],
-            ).remove(0)
+            )
+            .remove(0)
             .ok()
     };
 

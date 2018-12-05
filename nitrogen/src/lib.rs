@@ -32,8 +32,8 @@ use device::DeviceContext;
 
 pub mod util;
 pub use util::storage;
-pub use util::transfer;
 pub use util::submit_group;
+pub use util::transfer;
 
 pub use util::CowString;
 

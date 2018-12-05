@@ -103,7 +103,8 @@ impl DeviceContext {
                 // })
                 use gfx::QueueFamily;
                 family.supports_graphics() && family.supports_compute()
-            }).unwrap();
+            })
+            .unwrap();
 
         DeviceContext {
             memory_allocator: Mutex::new(memory_allocator),
