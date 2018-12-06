@@ -9,8 +9,8 @@ extern crate nitrogen;
 extern crate winit;
 
 use nitrogen::graph;
-use nitrogen::image;
 use nitrogen::graph::PassImpl;
+use nitrogen::image;
 
 use log::debug;
 
@@ -241,10 +241,7 @@ fn main() {
         );
     }
 
-    let mut submits = vec![
-        ntg.create_submit_group(),
-        ntg.create_submit_group(),
-    ];
+    let mut submits = vec![ntg.create_submit_group(), ntg.create_submit_group()];
 
     let mut flights = Vec::with_capacity(submits.len());
     {
@@ -360,11 +357,17 @@ fn setup_graphs(
     {
         let shaders = nitrogen::graph::Shaders {
             vertex: nitrogen::graph::ShaderInfo {
-                content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/two-pass/test.hlsl.vert.spirv"))),
+                content: Cow::Borrowed(include_bytes!(concat!(
+                    env!("OUT_DIR"),
+                    "/two-pass/test.hlsl.vert.spirv"
+                ))),
                 entry: "VertexMain".into(),
             },
             fragment: Some(nitrogen::graph::ShaderInfo {
-                content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/two-pass/test.hlsl.frag.spirv"))),
+                content: Cow::Borrowed(include_bytes!(concat!(
+                    env!("OUT_DIR"),
+                    "/two-pass/test.hlsl.frag.spirv"
+                ))),
                 entry: "FragmentMain".into(),
             }),
             geometry: None,
@@ -396,11 +399,17 @@ fn setup_graphs(
     {
         let shaders = nitrogen::graph::Shaders {
             vertex: nitrogen::graph::ShaderInfo {
-                content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/two-pass/read.hlsl.vert.spirv"))),
+                content: Cow::Borrowed(include_bytes!(concat!(
+                    env!("OUT_DIR"),
+                    "/two-pass/read.hlsl.vert.spirv"
+                ))),
                 entry: "VertexMain".into(),
             },
             fragment: Some(nitrogen::graph::ShaderInfo {
-                content: Cow::Borrowed(include_bytes!(concat!(env!("OUT_DIR"), "/two-pass/read.hlsl.frag.spirv"))),
+                content: Cow::Borrowed(include_bytes!(concat!(
+                    env!("OUT_DIR"),
+                    "/two-pass/read.hlsl.frag.spirv"
+                ))),
                 entry: "FragmentMain".into(),
             }),
             geometry: None,
@@ -409,7 +418,6 @@ fn setup_graphs(
         let (pass_impl, info) = create_test_pass(
             shaders,
             |builder| {
-
                 builder.image_create("IOutput", image_create_info());
 
                 builder.image_write_color("IOutput", 0);

@@ -22,3 +22,5 @@ pub type ShaderModule = <back::Backend as gfx::Backend>::ShaderModule;
 pub type Semaphore = <back::Backend as gfx::Backend>::Semaphore;
 pub type Fence = <back::Backend as gfx::Backend>::Fence;
 pub type CommandPool<T> = gfx::CommandPool<back::Backend, T>;
+pub type QueueGroup<T> = gfx::QueueGroup<back::Backend, T>;
+pub type CommandQueue<T> = gfx::CommandQueue<back::Backend, T>;

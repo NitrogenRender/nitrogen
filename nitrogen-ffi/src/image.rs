@@ -164,7 +164,8 @@ pub unsafe extern "C" fn image_create(
 
                 is_transient: create_info.is_transient,
             }
-        }).collect::<SmallVec<[_; 16]>>();
+        })
+        .collect::<SmallVec<[_; 16]>>();
 
     let results = context
         .image_storage
@@ -217,7 +218,8 @@ pub unsafe extern "C" fn image_upload_data(
             };
 
             (handle, upload_info)
-        }).collect::<SmallVec<[_; 16]>>();
+        })
+        .collect::<SmallVec<[_; 16]>>();
 
     let results = context.image_storage.upload_data(
         &context.device_ctx,

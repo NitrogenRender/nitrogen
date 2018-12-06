@@ -6,8 +6,8 @@ extern crate nitrogen;
 extern crate rand;
 extern crate winit;
 
-extern crate log;
 extern crate env_logger;
+extern crate log;
 
 use nitrogen::*;
 
@@ -128,12 +128,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ctx.material_write_instance(instance_material, std::iter::once(write));
     }
 
-    let (graph) = create_graph(&mut ctx, vtx_def, material, instance_material, vertex_buffer);
+    let (graph) = create_graph(
+        &mut ctx,
+        vtx_def,
+        material,
+        instance_material,
+        vertex_buffer,
+    );
 
     let mut running = true;
     let mut resized = true;
-
-
 
     let mut exec_context = {
         let initial_size = window.get_inner_size().unwrap();
@@ -142,10 +146,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let mut submits = vec![
-        ctx.create_submit_group(),
-        ctx.create_submit_group(),
-    ];
+    let mut submits = vec![ctx.create_submit_group(), ctx.create_submit_group()];
 
     let mut flights = Vec::with_capacity(submits.len());
     {
@@ -164,7 +165,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     running = false;
                 }
                 winit::WindowEvent::Resized(size) => {
-
                     exec_context.reference_size = (size.width as u32, size.height as u32);
 
                     resized = true;
@@ -194,7 +194,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ctx.graph_exec_resource_destroy(res);
             }
         }
-
 
         let res = {
             let res = submits[frame_idx].graph_render(&mut ctx, graph, &exec_context);
@@ -308,7 +307,10 @@ fn create_graph(
             }
         }
 
-        let pass = Pass2D { buffer, mat_instance, };
+        let pass = Pass2D {
+            buffer,
+            mat_instance,
+        };
 
         ctx.graph_add_pass(graph, "2D Pass", info, Box::new(pass));
     }
@@ -327,8 +329,6 @@ fn create_instance_data(num: u32) -> Vec<InstanceData> {
 
     for _i in 0..num {
         let size = [rng.gen_range(0.05, 0.1), rng.gen_range(0.05, 0.1)];
-
-
 
         let pos = [
             rng.gen_range(-1.0, 1.0 - size[0]),
@@ -367,7 +367,6 @@ fn update_instance_data(data: &mut [InstanceData], velocities: &mut [[f32; 2]]) 
     assert_eq!(data.len(), velocities.len());
 
     for i in 0..data.len() {
-
         let mut new_pos = [
             data[i].pos[0] + velocities[i][0],
             data[i].pos[1] + velocities[i][1],
@@ -383,7 +382,6 @@ fn update_instance_data(data: &mut [InstanceData], velocities: &mut [[f32; 2]]) 
         }
 
         data[i].pos = new_pos;
-
     }
 }
 

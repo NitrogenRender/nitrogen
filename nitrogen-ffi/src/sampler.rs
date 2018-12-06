@@ -96,7 +96,8 @@ pub unsafe extern "C" fn sampler_create(
         .map(|c| {
             let create_info = Into::<sampler::SamplerCreateInfo>::into(*c);
             create_info
-        }).collect::<SmallVec<[_; 16]>>();
+        })
+        .collect::<SmallVec<[_; 16]>>();
 
     let sampler_handles = context
         .sampler_storage
