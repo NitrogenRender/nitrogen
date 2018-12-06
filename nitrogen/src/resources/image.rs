@@ -43,6 +43,17 @@ impl Default for ImageDimension {
     }
 }
 
+impl ImageDimension {
+    pub fn as_triple(&self, fill: u32) -> (u32, u32, u32) {
+        use self::ImageDimension::*;
+        match self {
+            D1 { x } => (*x, fill, fill),
+            D2 { x, y } => (*x, *y, fill),
+            D3 { x, y, z } => (*x, *y, *z),
+        }
+    }
+}
+
 #[derive(PartialOrd, PartialEq, Debug, Clone, Copy)]
 pub enum ImageSizeMode {
     ContextRelative { width: f32, height: f32 },
