@@ -26,7 +26,10 @@ use smallvec::SmallVec;
 
 use resources::MemoryProperties;
 
+use resources::semaphore_pool::SemaphoreList;
+use resources::semaphore_pool::SemaphorePool;
 use types;
+use types::CommandPool;
 
 type BufferId = usize;
 pub type BufferTypeInternal = <SmartAllocator<back::Backend> as Factory<back::Backend>>::Buffer;
@@ -259,7 +262,10 @@ impl BufferStorage {
     pub fn upload_data<T>(
         &mut self,
         device: &DeviceContext,
-        transfer: &mut TransferContext,
+        sem_pool: &SemaphorePool,
+        sem_list: &mut SemaphoreList,
+        cmd_pool: &mut CommandPool<gfx::Transfer>,
+        transfer: &TransferContext,
         data: &[(BufferHandle, BufferUploadInfo<T>)],
     ) -> SmallVec<[Result<()>; 16]> {
         let mut results = smallvec![Ok(()); data.len()];
@@ -410,10 +416,21 @@ impl BufferStorage {
                 })
                 .collect::<SmallVec<[_; 16]>>();
 
-            transfer.copy_buffers(device, buffer_transfers.as_slice());
+            transfer.copy_buffers(
+                device,
+                sem_pool,
+                sem_list,
+                cmd_pool,
+                buffer_transfers.as_slice(),
+            );
         }
 
         staging_data.into_iter().for_each(|(_, _, _, staging)| {
+            // FIXME destroy only after the submit group is done
+            // FIXME
+            // FIXME DO IT THOMAS
+            // FIXME
+            // FIXME You know you have to do it eventually
             allocator.destroy_buffer(&device.device, staging);
         });
 

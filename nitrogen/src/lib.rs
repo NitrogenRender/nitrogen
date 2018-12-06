@@ -87,7 +87,7 @@ impl Context {
         let instance = back::Instance::create(name, version);
         let device_ctx = Arc::new(DeviceContext::new(&instance));
 
-        let transfer = transfer::TransferContext::new(&device_ctx);
+        let transfer = transfer::TransferContext::new();
 
         let image_storage = image::ImageStorage::new();
         let sampler_storage = sampler::SamplerStorage::new();
@@ -177,7 +177,7 @@ impl Context {
             display.release(&self.device_ctx);
         }
 
-        self.transfer.release(&self.device_ctx);
+        self.transfer.release();
 
         Arc::try_unwrap(self.device_ctx).ok().unwrap().release();
     }
@@ -191,14 +191,6 @@ impl Context {
         create_infos: &[image::ImageCreateInfo<image::ImageUsage>],
     ) -> SmallVec<[image::Result<image::ImageHandle>; 16]> {
         self.image_storage.create(&self.device_ctx, create_infos)
-    }
-
-    pub fn image_upload_data(
-        &mut self,
-        images: &[(image::ImageHandle, image::ImageUploadInfo)],
-    ) -> SmallVec<[image::Result<()>; 16]> {
-        self.image_storage
-            .upload_data(&self.device_ctx, &mut self.transfer, images)
     }
 
     pub fn image_destroy(&mut self, handles: &[image::ImageHandle]) {
@@ -229,14 +221,6 @@ impl Context {
 
     pub fn buffer_destroy(&mut self, buffers: &[buffer::BufferHandle]) {
         self.buffer_storage.destroy(&self.device_ctx, buffers)
-    }
-
-    pub fn buffer_upload_data<T>(
-        &mut self,
-        data: &[(buffer::BufferHandle, buffer::BufferUploadInfo<T>)],
-    ) -> SmallVec<[buffer::Result<()>; 16]> {
-        self.buffer_storage
-            .upload_data(&self.device_ctx, &mut self.transfer, data)
     }
 
     // vertex attribs

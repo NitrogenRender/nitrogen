@@ -424,6 +424,8 @@ impl Display {
 
             sem_list.add_next_semaphore(sem_blit);
 
+            let mut queue = device.graphics_queue();
+
             {
                 let submission = gfx::Submission::new()
                     .wait_on(
@@ -434,15 +436,11 @@ impl Display {
                     .signal(&[&*sem_present])
                     .signal(sem_pool.list_next_sems(sem_list))
                     .submit(Some(submit));
-                device.queue_group().queues[0].submit(submission, None);
+                queue.submit(submission, None);
             }
 
             let res = swapchain
-                .present(
-                    &mut device.queue_group().queues[0],
-                    index,
-                    std::iter::once(sem_present),
-                )
+                .present(&mut *queue, index, std::iter::once(sem_present))
                 .is_ok();
 
             res

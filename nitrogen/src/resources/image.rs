@@ -25,6 +25,9 @@ use util::storage::{Handle, Storage};
 use transfer::TransferContext;
 
 use device::DeviceContext;
+use resources::semaphore_pool::SemaphoreList;
+use resources::semaphore_pool::SemaphorePool;
+use types::CommandPool;
 
 #[derive(Copy, Clone, Debug)]
 pub enum ImageDimension {
@@ -365,7 +368,10 @@ impl ImageStorage {
     pub fn upload_data(
         &self,
         device: &DeviceContext,
-        transfer: &mut TransferContext,
+        sem_pool: &SemaphorePool,
+        sem_list: &mut SemaphoreList,
+        cmd_pool: &mut CommandPool<gfx::Transfer>,
+        transfer: &TransferContext,
         images: &[(ImageHandle, ImageUploadInfo)],
     ) -> SmallVec<[Result<()>; 16]> {
         let mut results = smallvec![Ok(()); images.len()];
@@ -578,7 +584,13 @@ impl ImageStorage {
                 })
                 .collect::<SmallVec<[_; 16]>>();
 
-            transfer.copy_buffers_to_images(device, upload_data.as_slice());
+            transfer.copy_buffers_to_images(
+                device,
+                sem_pool,
+                sem_list,
+                cmd_pool,
+                upload_data.as_slice(),
+            );
         }
 
         staging_data

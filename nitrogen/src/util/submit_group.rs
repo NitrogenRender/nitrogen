@@ -121,6 +121,36 @@ impl SubmitGroup {
         )
     }
 
+    pub fn image_upload_data(
+        &mut self,
+        ctx: &mut Context,
+        images: &[(image::ImageHandle, image::ImageUploadInfo)],
+    ) -> SmallVec<[image::Result<()>; 16]> {
+        ctx.image_storage.upload_data(
+            &ctx.device_ctx,
+            &self.sem_pool,
+            &mut self.sem_list,
+            &mut self.pool_transfer,
+            &ctx.transfer,
+            images,
+        )
+    }
+
+    pub fn buffer_upload_data<T>(
+        &mut self,
+        ctx: &mut Context,
+        data: &[(buffer::BufferHandle, buffer::BufferUploadInfo<T>)],
+    ) -> SmallVec<[buffer::Result<()>; 16]> {
+        ctx.buffer_storage.upload_data(
+            &ctx.device_ctx,
+            &self.sem_pool,
+            &mut self.sem_list,
+            &mut self.pool_transfer,
+            &ctx.transfer,
+            data,
+        )
+    }
+
     pub fn wait(&mut self, ctx: &mut Context) {
         let mut fence = ctx.device_ctx.device.create_fence(false).unwrap();
 
@@ -131,7 +161,9 @@ impl SubmitGroup {
                     .map(|sem| (sem, gfx::pso::PipelineStage::BOTTOM_OF_PIPE)),
             );
 
-            ctx.device_ctx.transfer_queue().submit(submit, Some(&mut fence));
+            ctx.device_ctx
+                .transfer_queue()
+                .submit(submit, Some(&mut fence));
 
             ctx.device_ctx.device.wait_for_fence(&fence, !0);
         }
