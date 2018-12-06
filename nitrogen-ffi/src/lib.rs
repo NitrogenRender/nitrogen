@@ -81,7 +81,7 @@ pub unsafe extern "C" fn display_setup_swapchain(context: *mut Context, display:
     let device_ctx = &(*context).device_ctx;
     let display_ctx = &mut (*context).displays[display.into()];
 
-    display_ctx.setup_swapchain(device_ctx);
+    // display_ctx.setup_swapchain(device_ctx);
 }
 
 #[no_mangle]

@@ -35,6 +35,7 @@ use resources::{
     semaphore_pool::{Semaphore, SemaphoreList, SemaphorePool},
     vertex_attrib::{VertexAttribHandle, VertexAttribStorage},
 };
+use submit_group::ResourceList;
 
 #[derive(Debug, Clone)]
 pub struct ExecutionBatch {
@@ -286,7 +287,7 @@ pub struct ExecutionResources {
 impl ExecutionResources {
     pub fn release(
         self,
-        device: &DeviceContext,
+        res_list: &mut ResourceList,
         image: &mut ImageStorage,
         sampler: &mut SamplerStorage,
         buffer: &mut BufferStorage,
@@ -294,14 +295,8 @@ impl ExecutionResources {
         use smallvec::SmallVec;
 
         {
-            for (_, f) in self.framebuffers {
-                device.device.destroy_framebuffer(f);
-            }
-        }
-
-        {
             let images = self.images.values().cloned().collect::<SmallVec<[_; 16]>>();
-            image.destroy(device, images.as_slice());
+            image.destroy(res_list, images.as_slice());
         }
 
         {
@@ -310,7 +305,7 @@ impl ExecutionResources {
                 .values()
                 .cloned()
                 .collect::<SmallVec<[_; 16]>>();
-            sampler.destroy(device, samplers.as_slice());
+            sampler.destroy(res_list, samplers.as_slice());
         }
 
         {
@@ -319,7 +314,7 @@ impl ExecutionResources {
                 .values()
                 .cloned()
                 .collect::<SmallVec<[_; 16]>>();
-            buffer.destroy(device, buffers.as_slice());
+            buffer.destroy(res_list, buffers.as_slice());
         }
     }
 }
@@ -592,7 +587,8 @@ pub(crate) fn execute(
     device: &DeviceContext,
     sem_pool: &mut SemaphorePool,
     sem_list: &mut SemaphoreList,
-    command_pool: &mut CommandPool<gfx::Graphics>,
+    cmd_pool: &mut CommandPool<gfx::Graphics>,
+    res_list: &mut ResourceList,
     storages: &mut ExecutionStorages,
     exec_graph: &ExecutionGraph,
     resolved_graph: &GraphResourcesResolved,
@@ -880,7 +876,7 @@ pub(crate) fn execute(
                 )];
 
                 let submit = {
-                    let mut raw_cmd = command_pool.acquire_command_buffer(false);
+                    let mut raw_cmd = cmd_pool.acquire_command_buffer(false);
                     raw_cmd.bind_graphics_pipeline(&pipeline.pipeline);
 
                     raw_cmd.set_viewports(0, &[viewport.clone()]);
@@ -918,7 +914,7 @@ pub(crate) fn execute(
                         )
                         .signal(sem_pool.list_next_sems(sem_list))
                         .submit(Some(submit));
-                    device.queue_group().queues[0].submit(submission, None);
+                    device.graphics_queue().submit(submission, None);
                 }
 
                 sem_list.advance();
@@ -926,12 +922,12 @@ pub(crate) fn execute(
         }
 
         // destroy resources
-        if false {
+        {
             // destroy framebuffers first
             for pass in &batch.passes {
                 let framebuffer = res.framebuffers.remove(pass).unwrap();
 
-                device.device.destroy_framebuffer(framebuffer);
+                res_list.queue_framebuffer(framebuffer);
             }
 
             // destroy images and samplers
@@ -939,10 +935,10 @@ pub(crate) fn execute(
                 if let Some(img) = res.images.remove(res_id) {
                     let sampler = res.samplers.remove(res_id);
                     if let Some(sampler) = sampler {
-                        storages.sampler.destroy(device, &[sampler]);
+                        storages.sampler.destroy(res_list, &[sampler]);
                     }
 
-                    storages.image.destroy(device, &[img]);
+                    storages.image.destroy(res_list, &[img]);
                 }
             }
         }

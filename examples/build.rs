@@ -74,7 +74,6 @@ fn main() {
             compile(&mut compiler, shader, &out_base, ShaderKind::Compute);
         }
     }
-
 }
 
 pub fn compile(compiler: &mut Compiler, path: PathBuf, out_base: &PathBuf, kind: ShaderKind) {
@@ -119,13 +118,14 @@ pub fn compile(compiler: &mut Compiler, path: PathBuf, out_base: &PathBuf, kind:
         let mut new_name = path.file_name().unwrap().to_string_lossy().to_string();
 
         if lang == SourceLanguage::HLSL {
-            new_name = new_name + match kind {
-                ShaderKind::Vertex => ".vert",
-                ShaderKind::Fragment => ".frag",
-                ShaderKind::Geometry => ".geom",
-                ShaderKind::Compute => ".comp",
-                _ => unreachable!(),
-            };
+            new_name = new_name
+                + match kind {
+                    ShaderKind::Vertex => ".vert",
+                    ShaderKind::Fragment => ".frag",
+                    ShaderKind::Geometry => ".geom",
+                    ShaderKind::Compute => ".comp",
+                    _ => unreachable!(),
+                };
         }
 
         let new_name = new_name + ".spirv";

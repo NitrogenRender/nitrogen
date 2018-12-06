@@ -26,7 +26,11 @@ use smallvec::SmallVec;
 
 use resources::MemoryProperties;
 
+use resources::semaphore_pool::SemaphoreList;
+use resources::semaphore_pool::SemaphorePool;
+use submit_group::ResourceList;
 use types;
+use types::CommandPool;
 
 type BufferId = usize;
 pub type BufferTypeInternal = <SmartAllocator<back::Backend> as Factory<back::Backend>>::Buffer;
@@ -241,12 +245,11 @@ impl BufferStorage {
         results
     }
 
-    pub fn destroy(&mut self, device: &DeviceContext, buffers: &[BufferHandle]) {
-        let mut allocator = device.allocator();
+    pub fn destroy(&mut self, res_list: &mut ResourceList, buffers: &[BufferHandle]) {
         for handle in buffers {
             let id = handle.id();
             let buffer = self.buffers.remove(&id).unwrap();
-            allocator.destroy_buffer(&device.device, buffer.buffer);
+            res_list.queue_buffer(buffer.buffer);
         }
     }
 
@@ -259,7 +262,11 @@ impl BufferStorage {
     pub fn upload_data<T>(
         &mut self,
         device: &DeviceContext,
-        transfer: &mut TransferContext,
+        sem_pool: &SemaphorePool,
+        sem_list: &mut SemaphoreList,
+        cmd_pool: &mut CommandPool<gfx::Transfer>,
+        res_list: &mut ResourceList,
+        transfer: &TransferContext,
         data: &[(BufferHandle, BufferUploadInfo<T>)],
     ) -> SmallVec<[Result<()>; 16]> {
         let mut results = smallvec![Ok(()); data.len()];
@@ -410,11 +417,17 @@ impl BufferStorage {
                 })
                 .collect::<SmallVec<[_; 16]>>();
 
-            transfer.copy_buffers(device, buffer_transfers.as_slice());
+            transfer.copy_buffers(
+                device,
+                sem_pool,
+                sem_list,
+                cmd_pool,
+                buffer_transfers.as_slice(),
+            );
         }
 
         staging_data.into_iter().for_each(|(_, _, _, staging)| {
-            allocator.destroy_buffer(&device.device, staging);
+            res_list.queue_buffer(staging);
         });
 
         results

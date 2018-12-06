@@ -108,13 +108,14 @@ pub fn compile(compiler: &mut Compiler, path: PathBuf, kind: ShaderKind) {
         let mut new_name = path.file_name().unwrap().to_string_lossy().to_string();
 
         if lang == SourceLanguage::HLSL {
-            new_name = new_name + match kind {
-                ShaderKind::Vertex => ".vert",
-                ShaderKind::Fragment => ".frag",
-                ShaderKind::Geometry => ".geom",
-                ShaderKind::Compute => ".comp",
-                _ => unreachable!(),
-            };
+            new_name = new_name
+                + match kind {
+                    ShaderKind::Vertex => ".vert",
+                    ShaderKind::Fragment => ".frag",
+                    ShaderKind::Geometry => ".geom",
+                    ShaderKind::Compute => ".comp",
+                    _ => unreachable!(),
+                };
         }
 
         let new_name = new_name + ".spirv";

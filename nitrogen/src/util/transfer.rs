@@ -13,6 +13,9 @@ use buffer::BufferTypeInternal;
 use image::ImageType;
 
 use device::DeviceContext;
+use resources::semaphore_pool::SemaphoreList;
+use resources::semaphore_pool::SemaphorePool;
+use types::CommandPool;
 
 pub struct BufferTransfer<'a> {
     pub src: &'a BufferTypeInternal,
@@ -29,40 +32,28 @@ pub struct BufferImageTransfer<'a> {
     pub copy_information: gfx::command::BufferImageCopy,
 }
 
-pub struct TransferContext {
-    command_pool: gfx::CommandPool<back::Backend, gfx::General>,
-}
+pub struct TransferContext;
 
 impl TransferContext {
-    pub fn new(device: &DeviceContext) -> Self {
-        let command_pool = {
-            let queue_group = device.queue_group();
-
-            device
-                .device
-                .create_command_pool_typed(
-                    &queue_group,
-                    gfx::pool::CommandPoolCreateFlags::TRANSIENT,
-                    1,
-                )
-                .expect("Can't create command pool")
-        };
-
-        TransferContext { command_pool }
+    pub fn new() -> Self {
+        TransferContext
     }
 
-    pub fn release(self, device: &DeviceContext) {
-        device
-            .device
-            .destroy_command_pool(self.command_pool.into_raw());
-    }
+    pub fn release(self) {}
 
-    pub fn copy_buffers(&mut self, device: &DeviceContext, buffers: &[BufferTransfer]) {
+    pub fn copy_buffers(
+        &self,
+        device: &DeviceContext,
+        sem_pool: &SemaphorePool,
+        sem_list: &mut SemaphoreList,
+        cmd_pool: &mut CommandPool<gfx::Transfer>,
+        buffers: &[BufferTransfer],
+    ) {
         use gfx::buffer::Access;
         use gfx::pso::PipelineStage;
 
         let submit = {
-            let mut cmd = self.command_pool.acquire_command_buffer(false);
+            let mut cmd = cmd_pool.acquire_command_buffer(false);
 
             for buffer_transfer in buffers {
                 let entry_barrier = gfx::memory::Barrier::Buffer {
@@ -101,27 +92,31 @@ impl TransferContext {
             cmd.finish()
         };
 
-        let fence = device
-            .device
-            .create_fence(false)
-            .expect("can't create submission fence");
+        let sem = sem_pool.alloc();
+        sem_list.add_next_semaphore(sem);
 
         {
-            let submission = gfx::Submission::new().submit(std::iter::once(submit));
+            let submission = gfx::Submission::new()
+                .wait_on(
+                    sem_pool
+                        .list_prev_sems(sem_list)
+                        .map(|sem| (sem, gfx::pso::PipelineStage::BOTTOM_OF_PIPE)),
+                )
+                .signal(sem_pool.list_next_sems(sem_list))
+                .submit(std::iter::once(submit));
 
-            let mut queue_group = device.queue_group();
-            queue_group.queues[0].submit(submission, Some(&fence));
+            device.transfer_queue().submit(submission, None);
         }
 
-        device.device.wait_for_fence(&fence, !0);
-        device.device.destroy_fence(fence);
-
-        self.command_pool.reset();
+        sem_list.advance();
     }
 
     pub fn copy_buffers_to_images(
-        &mut self,
+        &self,
         device: &DeviceContext,
+        sem_pool: &SemaphorePool,
+        sem_list: &mut SemaphoreList,
+        cmd_pool: &mut CommandPool<gfx::Transfer>,
         images: &[BufferImageTransfer],
     ) {
         use gfx::image::Access;
@@ -130,7 +125,7 @@ impl TransferContext {
         use gfx::pso::PipelineStage;
 
         let submit = {
-            let mut cmd = self.command_pool.acquire_command_buffer(false);
+            let mut cmd = cmd_pool.acquire_command_buffer(false);
 
             for transfer in images {
                 let entry_barrier = Barrier::Image {
@@ -170,21 +165,22 @@ impl TransferContext {
             cmd.finish()
         };
 
-        let fence = device
-            .device
-            .create_fence(false)
-            .expect("Can't create submission fence");
+        let sem = sem_pool.alloc();
+        sem_list.add_next_semaphore(sem);
 
         {
-            let submission = gfx::Submission::new().submit(std::iter::once(submit));
+            let submission = gfx::Submission::new()
+                .wait_on(
+                    sem_pool
+                        .list_prev_sems(sem_list)
+                        .map(|sem| (sem, gfx::pso::PipelineStage::BOTTOM_OF_PIPE)),
+                )
+                .signal(sem_pool.list_next_sems(sem_list))
+                .submit(std::iter::once(submit));
 
-            let mut queue_group = device.queue_group();
-            queue_group.queues[0].submit(submission, Some(&fence));
+            device.transfer_queue().submit(submission, None);
         }
 
-        device.device.wait_for_fence(&fence, !0);
-        device.device.destroy_fence(fence);
-
-        self.command_pool.reset();
+        sem_list.advance();
     }
 }

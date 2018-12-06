@@ -37,6 +37,7 @@ pub use self::command::*;
 mod execution;
 pub use self::execution::ExecutionResources;
 use self::execution::*;
+use submit_group::ResourceList;
 
 pub type GraphHandle = Handle<Graph>;
 
@@ -355,7 +356,8 @@ impl GraphStorage {
         device: &DeviceContext,
         sem_pool: &mut SemaphorePool,
         sem_list: &mut SemaphoreList,
-        command_pool: &mut CommandPool<gfx::Graphics>,
+        cmd_pool: &mut CommandPool<gfx::Graphics>,
+        res_list: &mut ResourceList,
         render_pass_storage: &mut RenderPassStorage,
         pipeline_storage: &mut PipelineStorage,
         image_storage: &mut ImageStorage,
@@ -422,7 +424,8 @@ impl GraphStorage {
             device,
             sem_pool,
             sem_list,
-            command_pool,
+            cmd_pool,
+            res_list,
             &mut storages,
             exec,
             resolved,

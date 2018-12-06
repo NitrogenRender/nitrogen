@@ -96,7 +96,8 @@ pub unsafe extern "C" fn sampler_create(
         .map(|c| {
             let create_info = Into::<sampler::SamplerCreateInfo>::into(*c);
             create_info
-        }).collect::<SmallVec<[_; 16]>>();
+        })
+        .collect::<SmallVec<[_; 16]>>();
 
     let sampler_handles = context
         .sampler_storage
@@ -120,7 +121,7 @@ pub unsafe extern "C" fn sampler_destroy(
         .map(|s| SamplerHandle::into(s.clone()))
         .collect::<SmallVec<[_; 16]>>();
 
-    context
-        .sampler_storage
-        .destroy(&context.device_ctx, samplers.as_slice());
+    // context
+    //     .sampler_storage
+    //     .destroy(&context.device_ctx, samplers.as_slice());
 }

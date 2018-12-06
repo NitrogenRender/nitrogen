@@ -17,6 +17,7 @@ use resources::semaphore_pool::{SemaphoreList, SemaphorePool};
 
 use std;
 use std::sync::Arc;
+use submit_group::ResourceList;
 
 pub struct Display {
     pub surface: Surface,
@@ -223,7 +224,7 @@ impl Display {
     /// Setup the swapchain and associated framebuffers/images.
     ///
     /// Destroys the old swapchain, so the caller needs to make sure that it's no longer in use
-    pub fn setup_swapchain(&mut self, device: &DeviceContext) {
+    pub fn setup_swapchain(&mut self, device: &DeviceContext, res_list: &mut ResourceList) {
         use gfx::Surface;
 
         {
@@ -232,11 +233,11 @@ impl Display {
             let images = replace(&mut self.images, vec![]);
 
             for framebuffer in framebuffers {
-                device.device.destroy_framebuffer(framebuffer);
+                res_list.queue_framebuffer(framebuffer);
             }
 
             for (_, image_view) in images {
-                device.device.destroy_image_view(image_view);
+                res_list.queue_image_view(image_view);
             }
 
             // FIXME this is a workaround for an issue with gfx:
@@ -424,6 +425,8 @@ impl Display {
 
             sem_list.add_next_semaphore(sem_blit);
 
+            let mut queue = device.graphics_queue();
+
             {
                 let submission = gfx::Submission::new()
                     .wait_on(
@@ -434,16 +437,14 @@ impl Display {
                     .signal(&[&*sem_present])
                     .signal(sem_pool.list_next_sems(sem_list))
                     .submit(Some(submit));
-                device.queue_group().queues[0].submit(submission, None);
+                queue.submit(submission, None);
             }
 
             let res = swapchain
-                .present(
-                    &mut device.queue_group().queues[0],
-                    index,
-                    std::iter::once(sem_present),
-                )
+                .present(&mut *queue, index, std::iter::once(sem_present))
                 .is_ok();
+
+            sem_list.advance();
 
             res
         } else {

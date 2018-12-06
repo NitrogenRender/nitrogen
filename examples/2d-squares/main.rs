@@ -6,12 +6,12 @@ extern crate nitrogen;
 extern crate rand;
 extern crate winit;
 
-extern crate log;
 extern crate env_logger;
+extern crate log;
 
 use nitrogen::*;
 
-use std::sync::mpsc::{channel, Receiver, Sender};
+use nitrogen::submit_group::SubmitGroup;
 
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
@@ -34,7 +34,7 @@ const VERTEX_DATA: [VertexData; 4] = [
     VertexData { pos: [1.0, 1.0] },
 ];
 
-const NUM_THINGS: usize = 1;
+const NUM_THINGS: usize = 100_000;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::env::set_var("RUST_LOG", "debug");
@@ -49,6 +49,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut ctx = Context::new("2d-squares", 1);
     let display = ctx.add_display(&window);
+
+    let mut submit = ctx.create_submit_group();
 
     let material = {
         let create_info = material::MaterialCreateInfo {
@@ -89,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             data: &VERTEX_DATA,
         };
 
-        ctx.buffer_upload_data(&[(buffer, upload_info)]);
+        submit.buffer_upload_data(&mut ctx, &[(buffer, upload_info)]);
 
         buffer
     };
@@ -114,7 +116,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ctx.buffer_create(&[create_info]).remove(0).unwrap()
     };
 
-    write_to_instance_buffer(&mut ctx, &instance_data, instance_buffer);
+    write_to_instance_buffer(&mut submit, &mut ctx, &instance_data, instance_buffer);
 
     {
         let write = material::InstanceWrite {
@@ -128,12 +130,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ctx.material_write_instance(instance_material, std::iter::once(write));
     }
 
-    let (graph) = create_graph(&mut ctx, vtx_def, material, instance_material, vertex_buffer);
+    let (graph) = create_graph(
+        &mut ctx,
+        vtx_def,
+        material,
+        instance_material,
+        vertex_buffer,
+    );
 
     let mut running = true;
     let mut resized = true;
-
-
 
     let mut exec_context = {
         let initial_size = window.get_inner_size().unwrap();
@@ -142,17 +148,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let mut submits = vec![
-        ctx.create_submit_group(),
-        ctx.create_submit_group(),
-    ];
-
-    let mut flights = Vec::with_capacity(submits.len());
-    {
-        for _ in 0..submits.len() {
-            flights.push(None);
-        }
-    }
+    let mut submits = vec![submit, ctx.create_submit_group()];
 
     let mut frame_num = 0;
     let mut frame_idx = 0;
@@ -164,7 +160,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     running = false;
                 }
                 winit::WindowEvent::Resized(size) => {
-
                     exec_context.reference_size = (size.width as u32, size.height as u32);
 
                     resized = true;
@@ -173,10 +168,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
             _ => {}
         });
-
-        if resized {
-            ctx.displays[display].setup_swapchain(&ctx.device_ctx);
-        }
 
         // render stuff
         let res = ctx.graph_compile(graph);
@@ -189,47 +180,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         {
             let last_idx = (frame_num + (submits.len() - 1)) % submits.len();
 
-            if let Some(res) = flights[last_idx].take() {
-                submits[last_idx].wait(&mut ctx);
-                ctx.graph_exec_resource_destroy(res);
-            }
+            submits[last_idx].wait(&mut ctx);
         }
 
+        {
+            if resized {
+                submits[frame_idx].display_setup_swapchain(&mut ctx, display);
+                resized = false;
+            }
 
-        let res = {
             let res = submits[frame_idx].graph_render(&mut ctx, graph, &exec_context);
 
             submits[frame_idx].display_present(&mut ctx, display, &res);
 
-            res
-        };
+            update_instance_data(&mut instance_data, &mut instance_vel);
 
-        flights[frame_idx] = Some(res);
+            write_to_instance_buffer(
+                &mut submits[frame_idx],
+                &mut ctx,
+                &instance_data,
+                instance_buffer,
+            );
 
-        update_instance_data(&mut instance_data, &mut instance_vel);
-
-        write_to_instance_buffer(&mut ctx, &instance_data, instance_buffer);
+            submits[frame_idx].graph_resources_destroy(&mut ctx, res);
+        }
 
         frame_num += 1;
         frame_idx = frame_num % submits.len();
     }
 
-    for submit in &mut submits {
+    submits[0].buffer_destroy(&mut ctx, &[vertex_buffer, instance_buffer]);
+
+    for mut submit in submits {
         submit.wait(&mut ctx);
-    }
-
-    for flight in flights {
-        if let Some(res) = flight {
-            ctx.graph_exec_resource_destroy(res);
-        }
-    }
-
-    for submit in submits {
         submit.release(&mut ctx);
     }
 
     ctx.graph_destroy(graph);
-    ctx.buffer_destroy(&[vertex_buffer, instance_buffer]);
     ctx.vertex_attribs_destroy(&[vtx_def]);
     ctx.material_destroy(&[material]);
     ctx.remove_display(display);
@@ -308,7 +295,10 @@ fn create_graph(
             }
         }
 
-        let pass = Pass2D { buffer, mat_instance, };
+        let pass = Pass2D {
+            buffer,
+            mat_instance,
+        };
 
         ctx.graph_add_pass(graph, "2D Pass", info, Box::new(pass));
     }
@@ -327,8 +317,6 @@ fn create_instance_data(num: u32) -> Vec<InstanceData> {
 
     for _i in 0..num {
         let size = [rng.gen_range(0.05, 0.1), rng.gen_range(0.05, 0.1)];
-
-
 
         let pos = [
             rng.gen_range(-1.0, 1.0 - size[0]),
@@ -367,7 +355,6 @@ fn update_instance_data(data: &mut [InstanceData], velocities: &mut [[f32; 2]]) 
     assert_eq!(data.len(), velocities.len());
 
     for i in 0..data.len() {
-
         let mut new_pos = [
             data[i].pos[0] + velocities[i][0],
             data[i].pos[1] + velocities[i][1],
@@ -383,15 +370,15 @@ fn update_instance_data(data: &mut [InstanceData], velocities: &mut [[f32; 2]]) 
         }
 
         data[i].pos = new_pos;
-
     }
 }
 
 fn write_to_instance_buffer(
+    submit: &mut SubmitGroup,
     ctx: &mut Context,
     data: &[InstanceData],
     buffer: buffer::BufferHandle,
 ) {
     let upload_info = buffer::BufferUploadInfo { offset: 0, data };
-    ctx.buffer_upload_data(&[(buffer, upload_info)]);
+    submit.buffer_upload_data(ctx, &[(buffer, upload_info)]);
 }

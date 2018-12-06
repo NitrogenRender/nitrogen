@@ -164,7 +164,8 @@ pub unsafe extern "C" fn image_create(
 
                 is_transient: create_info.is_transient,
             }
-        }).collect::<SmallVec<[_; 16]>>();
+        })
+        .collect::<SmallVec<[_; 16]>>();
 
     let results = context
         .image_storage
@@ -217,7 +218,9 @@ pub unsafe extern "C" fn image_upload_data(
             };
 
             (handle, upload_info)
-        }).collect::<SmallVec<[_; 16]>>();
+        })
+        .collect::<SmallVec<[_; 16]>>();
+    /*
 
     let results = context.image_storage.upload_data(
         &context.device_ctx,
@@ -228,6 +231,7 @@ pub unsafe extern "C" fn image_upload_data(
     for (i, result) in results.into_iter().enumerate() {
         successes[i] = result.is_ok();
     }
+    */
 }
 
 #[no_mangle]
@@ -245,5 +249,5 @@ pub unsafe extern "C" fn image_destroy(
         .map(|image| (*image).into())
         .collect::<Vec<_>>();
 
-    context.image_storage.destroy(&context.device_ctx, &images);
+    // context.image_storage.destroy(&context.device_ctx, &images);
 }
