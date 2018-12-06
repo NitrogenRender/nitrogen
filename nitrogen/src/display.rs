@@ -27,17 +27,7 @@ pub struct Display {
     pub swapchain: Option<Swapchain>,
     pub display_format: gfx::format::Format,
 
-    pub framebuffers: Vec<Framebuffer>,
     pub images: Vec<(Image, ImageView)>,
-
-    pub display_renderpass: RenderPass,
-    pub display_pipeline: GraphicsPipeline,
-    pub display_pipeline_layout: PipelineLayout,
-    pub display_desc_set: DescriptorSet,
-    pub display_desc_set_layout: DescriptorSetLayout,
-    pub display_desc_pool: DescriptorPool,
-
-    pub clear_color: (f32, f32, f32, f32),
 }
 
 impl Display {
@@ -51,173 +41,12 @@ impl Display {
 
         let format = formats.unwrap().remove(0);
 
-        let renderpass = {
-            use gfx::pass;
-
-            let attachment = pass::Attachment {
-                format: Some(format),
-                samples: 1,
-                ops: pass::AttachmentOps {
-                    load: pass::AttachmentLoadOp::Clear,
-                    store: pass::AttachmentStoreOp::Store,
-                },
-                stencil_ops: pass::AttachmentOps::DONT_CARE,
-                layouts: gfx::image::Layout::Undefined..gfx::image::Layout::Present,
-            };
-
-            let subpass = pass::SubpassDesc {
-                colors: &[(0, gfx::image::Layout::ColorAttachmentOptimal)],
-                depth_stencil: None,
-                inputs: &[],
-                resolves: &[],
-                preserves: &[],
-            };
-
-            let dependency = pass::SubpassDependency {
-                passes: pass::SubpassRef::External..pass::SubpassRef::Pass(0),
-                stages: gfx::pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT
-                    ..gfx::pso::PipelineStage::COLOR_ATTACHMENT_OUTPUT,
-                accesses: gfx::image::Access::empty()
-                    ..(gfx::image::Access::COLOR_ATTACHMENT_READ
-                        | gfx::image::Access::COLOR_ATTACHMENT_WRITE),
-            };
-
-            device
-                .device
-                .create_render_pass(&[attachment], &[subpass], &[dependency])
-                .expect("Can't create renderpass")
-        };
-
-        let set_layout = device
-            .device
-            .create_descriptor_set_layout(
-                &[
-                    pso::DescriptorSetLayoutBinding {
-                        binding: 0,
-                        ty: pso::DescriptorType::SampledImage,
-                        count: 1,
-                        stage_flags: pso::ShaderStageFlags::FRAGMENT,
-                        immutable_samplers: false,
-                    },
-                    pso::DescriptorSetLayoutBinding {
-                        binding: 1,
-                        ty: pso::DescriptorType::Sampler,
-                        count: 1,
-                        stage_flags: pso::ShaderStageFlags::FRAGMENT,
-                        immutable_samplers: false,
-                    },
-                ],
-                &[],
-            )
-            .expect("Can't create descriptor set layout");
-
-        let mut set_pool = device
-            .device
-            .create_descriptor_pool(
-                1,
-                &[
-                    pso::DescriptorRangeDesc {
-                        ty: pso::DescriptorType::SampledImage,
-                        count: 1,
-                    },
-                    pso::DescriptorRangeDesc {
-                        ty: pso::DescriptorType::Sampler,
-                        count: 1,
-                    },
-                ],
-            )
-            .expect("Can't create descriptor pool");
-
-        let desc_set = set_pool.allocate_set(&set_layout).unwrap();
-
-        let pipeline_layout = device
-            .device
-            .create_pipeline_layout(
-                std::iter::once(&set_layout),
-                &[], // TODO push constants
-            )
-            .expect("Can't create pipeline layout");
-
-        let pipeline = {
-            let vs_mod = {
-                let binary = include_bytes!(concat!(env!("OUT_DIR"), "/present.hlsl.vert.spirv"));
-
-                device.device.create_shader_module(binary).unwrap()
-            };
-
-            let fs_mod = {
-                let binary = include_bytes!(concat!(env!("OUT_DIR"), "/present.hlsl.frag.spirv"));
-
-                device.device.create_shader_module(binary).unwrap()
-            };
-
-            let pipe = {
-                let (vs_entry, fs_entry) = (
-                    pso::EntryPoint {
-                        entry: "VertexMain",
-                        module: &vs_mod,
-                        specialization: pso::Specialization::default(),
-                    },
-                    pso::EntryPoint {
-                        entry: "FragmentMain",
-                        module: &fs_mod,
-                        specialization: pso::Specialization::default(),
-                    },
-                );
-
-                let shaders = pso::GraphicsShaderSet {
-                    vertex: vs_entry,
-                    hull: None,
-                    domain: None,
-                    geometry: None,
-                    fragment: Some(fs_entry),
-                };
-
-                let subpass = gfx::pass::Subpass {
-                    index: 0,
-                    main_pass: &renderpass,
-                };
-
-                let desc = {
-                    let mut desc = pso::GraphicsPipelineDesc::new(
-                        shaders,
-                        gfx::Primitive::TriangleList,
-                        pso::Rasterizer::FILL,
-                        &pipeline_layout,
-                        subpass,
-                    );
-
-                    desc.blender.targets.push(pso::ColorBlendDesc(
-                        pso::ColorMask::ALL,
-                        pso::BlendState::ALPHA,
-                    ));
-
-                    desc
-                };
-
-                device.device.create_graphics_pipeline(&desc, None)
-            };
-
-            device.device.destroy_shader_module(vs_mod);
-            device.device.destroy_shader_module(fs_mod);
-
-            pipe.unwrap()
-        };
-
         Display {
             surface,
             surface_size: (1, 1),
             swapchain: None,
             display_format: format,
-            framebuffers: vec![],
             images: vec![],
-            display_pipeline: pipeline,
-            display_desc_set: desc_set,
-            display_desc_set_layout: set_layout,
-            display_desc_pool: set_pool,
-            display_pipeline_layout: pipeline_layout,
-            display_renderpass: renderpass,
-            clear_color: (0.0, 0.0, 0.0, 1.0),
         }
     }
 
@@ -229,12 +58,7 @@ impl Display {
 
         {
             use std::mem::replace;
-            let framebuffers = replace(&mut self.framebuffers, vec![]);
             let images = replace(&mut self.images, vec![]);
-
-            for framebuffer in framebuffers {
-                res_list.queue_framebuffer(framebuffer);
-            }
 
             for (_, image_view) in images {
                 res_list.queue_image_view(image_view);
@@ -243,6 +67,7 @@ impl Display {
             // FIXME this is a workaround for an issue with gfx:
             // when you provide an old swapchain upon swapchain creation, it takes ownership of the
             // old one. The implementation doesn't actually free it, so the swapchain is leaked.
+
             if let Some(old_swapchain) = self.swapchain.take() {
                 device.device.destroy_swapchain(old_swapchain);
             }
@@ -254,6 +79,8 @@ impl Display {
         let format = self.display_format;
 
         let mut config = gfx::SwapchainConfig::from_caps(&surface_capability, format);
+        config.image_usage |= gfx::image::Usage::TRANSFER_DST;
+        config.image_layers = 1;
 
         config.present_mode = gfx::PresentMode::Immediate;
 
@@ -272,8 +99,9 @@ impl Display {
 
         // A swapchain might give us a list of images as a backbuffer or alternatively a single
         // framebuffer.
-        // For each image an associated framebuffer is created.
-        let (images, fbos) = match backbuffer {
+        // Since we directly blit, we don't need any framebuffers. This also means we ignore the
+        // case where a framebuffer is handed to us.
+        let images = match backbuffer {
             gfx::Backbuffer::Images(images) => {
                 let pairs = images
                     .into_iter()
@@ -295,22 +123,11 @@ impl Display {
                         (img, view)
                     })
                     .collect::<Vec<_>>();
-                let fbos = pairs
-                    .iter()
-                    .map(|&(ref _image, ref view)| {
-                        device
-                            .device
-                            .create_framebuffer(&self.display_renderpass, Some(view), extent)
-                            .unwrap()
-                    })
-                    .collect::<Vec<_>>();
-
-                (pairs, fbos)
+                pairs
             }
-            gfx::Backbuffer::Framebuffer(framebuffer) => (vec![], vec![framebuffer]),
+            gfx::Backbuffer::Framebuffer(_framebuffer) => unimplemented!(),
         };
 
-        self.framebuffers = fbos;
         self.images = images;
     }
 
@@ -358,63 +175,112 @@ impl Display {
 
             sem_list.add_prev_semaphore(sem_acquire);
 
-            let viewport = gfx::pso::Viewport {
-                depth: 0.0..1.0,
-                rect: gfx::pso::Rect {
-                    x: 0,
-                    y: 0,
-                    w: self.surface_size.0 as _,
-                    h: self.surface_size.1 as _,
-                },
-            };
-
-            device.device.write_descriptor_sets(vec![
-                pso::DescriptorSetWrite {
-                    set: &self.display_desc_set,
-                    binding: 0,
-                    array_offset: 0,
-                    descriptors: Some(pso::Descriptor::Image(
-                        &image.view,
-                        gfx::image::Layout::Undefined,
-                    )),
-                },
-                pso::DescriptorSetWrite {
-                    set: &self.display_desc_set,
-                    binding: 1,
-                    array_offset: 0,
-                    descriptors: Some(pso::Descriptor::Sampler(sampler)),
-                },
-            ]);
-
             let submit = {
                 let mut cmd = command_pool.acquire_command_buffer(false);
 
-                cmd.set_viewports(0, &[viewport.clone()]);
-                cmd.set_scissors(0, &[viewport.rect]);
-                cmd.bind_graphics_pipeline(&self.display_pipeline);
-                cmd.bind_graphics_descriptor_sets(
-                    &self.display_pipeline_layout,
-                    0,
-                    std::iter::once(&self.display_desc_set),
-                    &[],
-                );
+                let src_image = image.image.raw();
+                let dst_image = &self.images[index as usize].0;
 
+                let subres_range = gfx::image::SubresourceRange {
+                    aspects: gfx::format::Aspects::COLOR,
+                    levels: 0..1,
+                    layers: 0..1,
+                };
+
+                // entry barrier
                 {
-                    let mut encoder = cmd.begin_render_pass_inline(
-                        &self.display_renderpass,
-                        &self.framebuffers[index as usize],
-                        viewport.rect,
-                        &[gfx::command::ClearValue::Color(
-                            gfx::command::ClearColor::Float([
-                                self.clear_color.0,
-                                self.clear_color.1,
-                                self.clear_color.2,
-                                self.clear_color.3,
-                            ]),
-                        )],
-                    );
+                    use gfx::image::Access;
+                    use gfx::image::Layout;
+                    use gfx::pso::PipelineStage;
 
-                    encoder.draw(0..6, 0..1);
+                    let src_barrier = gfx::memory::Barrier::Image {
+                        states: (Access::empty(), Layout::Undefined)
+                            ..(Access::TRANSFER_WRITE, Layout::TransferSrcOptimal),
+                        target: src_image,
+                        range: subres_range.clone(),
+                    };
+                    let dst_barrier = gfx::memory::Barrier::Image {
+                        states: (Access::empty(), Layout::Undefined)
+                            ..(Access::TRANSFER_WRITE, Layout::TransferDstOptimal),
+                        target: dst_image,
+                        range: subres_range.clone(),
+                    };
+
+                    cmd.pipeline_barrier(
+                        PipelineStage::TOP_OF_PIPE..PipelineStage::TRANSFER,
+                        gfx::memory::Dependencies::empty(),
+                        &[src_barrier, dst_barrier],
+                    );
+                }
+
+                // perform blit
+                {
+                    let src_layout = gfx::image::Layout::TransferSrcOptimal;
+
+                    let dst_layout = gfx::image::Layout::TransferDstOptimal;
+
+                    let filter = gfx::image::Filter::Linear;
+
+                    let subresource = gfx::image::SubresourceLayers {
+                        aspects: gfx::format::Aspects::COLOR,
+                        level: 0,
+                        layers: 0..1,
+                    };
+
+                    let origin_bound = gfx::image::Offset { x: 0, y: 0, z: 0 };
+                    let src_bounds = {
+                        let (x, y, z) = image.dimension.as_triple(1);
+                        gfx::image::Offset {
+                            x: x as _,
+                            y: y as _,
+                            z: z as _,
+                        }
+                    };
+                    let dst_bounds = gfx::image::Offset {
+                        x: self.surface_size.0 as _,
+                        y: self.surface_size.1 as _,
+                        z: 1,
+                    };
+
+                    cmd.blit_image(
+                        src_image,
+                        src_layout,
+                        dst_image,
+                        dst_layout,
+                        filter,
+                        &[gfx::command::ImageBlit {
+                            src_subresource: subresource.clone(),
+                            src_bounds: origin_bound..src_bounds,
+                            dst_subresource: subresource,
+                            dst_bounds: origin_bound..dst_bounds,
+                        }],
+                    );
+                }
+
+                // exit barrier
+                {
+                    use gfx::image::Access;
+                    use gfx::image::Layout;
+                    use gfx::pso::PipelineStage;
+
+                    let src_barrier = gfx::memory::Barrier::Image {
+                        states: (Access::TRANSFER_WRITE, Layout::TransferSrcOptimal)
+                            ..(Access::empty(), Layout::General),
+                        target: src_image,
+                        range: subres_range.clone(),
+                    };
+                    let dst_barrier = gfx::memory::Barrier::Image {
+                        states: (Access::TRANSFER_WRITE, Layout::TransferDstOptimal)
+                            ..(Access::empty(), Layout::Present),
+                        target: dst_image,
+                        range: subres_range.clone(),
+                    };
+
+                    cmd.pipeline_barrier(
+                        PipelineStage::TRANSFER..PipelineStage::BOTTOM_OF_PIPE,
+                        gfx::memory::Dependencies::empty(),
+                        &[src_barrier, dst_barrier],
+                    );
                 }
 
                 cmd.finish()
@@ -456,24 +322,6 @@ impl Display {
     pub fn release(mut self, device: &DeviceContext) {
         use gfx::DescriptorPool;
 
-        self.display_desc_pool.reset();
-        device
-            .device
-            .destroy_descriptor_pool(self.display_desc_pool);
-        device
-            .device
-            .destroy_pipeline_layout(self.display_pipeline_layout);
-        device
-            .device
-            .destroy_descriptor_set_layout(self.display_desc_set_layout);
-        device
-            .device
-            .destroy_graphics_pipeline(self.display_pipeline);
-
-        for framebuffer in self.framebuffers {
-            device.device.destroy_framebuffer(framebuffer);
-        }
-
         for (_, image_view) in self.images {
             device.device.destroy_image_view(image_view);
         }
@@ -481,7 +329,5 @@ impl Display {
         if let Some(swapchain) = self.swapchain {
             device.device.destroy_swapchain(swapchain);
         }
-
-        device.device.destroy_render_pass(self.display_renderpass);
     }
 }

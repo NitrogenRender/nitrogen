@@ -85,16 +85,6 @@ pub unsafe extern "C" fn display_setup_swapchain(context: *mut Context, display:
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn display_set_clear_color(
-    context: *mut Context,
-    display: DisplayHandle,
-    color: [f32; 4],
-) {
-    let display_ctx = &mut (*context).displays[display.into()];
-    display_ctx.clear_color = (color[0], color[1], color[2], color[3]);
-}
-
-#[no_mangle]
 pub unsafe extern "C" fn display_present(
     context: *mut Context,
     display: DisplayHandle,
