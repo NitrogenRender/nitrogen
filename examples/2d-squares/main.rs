@@ -12,6 +12,7 @@ extern crate log;
 use nitrogen::*;
 
 use std::sync::mpsc::{channel, Receiver, Sender};
+use nitrogen::submit_group::SubmitGroup;
 
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
@@ -49,6 +50,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut ctx = Context::new("2d-squares", 1);
     let display = ctx.add_display(&window);
+
+    let mut submit = ctx.create_submit_group();
 
     let material = {
         let create_info = material::MaterialCreateInfo {
@@ -89,7 +92,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             data: &VERTEX_DATA,
         };
 
-        ctx.buffer_upload_data(&[(buffer, upload_info)]);
+        submit.buffer_upload_data(&mut ctx, &[(buffer, upload_info)]);
 
         buffer
     };
@@ -114,7 +117,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ctx.buffer_create(&[create_info]).remove(0).unwrap()
     };
 
-    write_to_instance_buffer(&mut ctx, &instance_data, instance_buffer);
+    write_to_instance_buffer(&mut submit, &mut ctx, &instance_data, instance_buffer);
 
     {
         let write = material::InstanceWrite {
@@ -146,7 +149,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let mut submits = vec![ctx.create_submit_group(), ctx.create_submit_group()];
+    let mut submits = vec![submit, ctx.create_submit_group()];
 
     let mut flights = Vec::with_capacity(submits.len());
     {
@@ -200,14 +203,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             submits[frame_idx].display_present(&mut ctx, display, &res);
 
+            update_instance_data(&mut instance_data, &mut instance_vel);
+
+            write_to_instance_buffer(&mut submits[frame_idx], &mut ctx, &instance_data, instance_buffer);
+
             res
         };
 
         flights[frame_idx] = Some(res);
 
-        update_instance_data(&mut instance_data, &mut instance_vel);
-
-        write_to_instance_buffer(&mut ctx, &instance_data, instance_buffer);
 
         frame_num += 1;
         frame_idx = frame_num % submits.len();
@@ -386,10 +390,11 @@ fn update_instance_data(data: &mut [InstanceData], velocities: &mut [[f32; 2]]) 
 }
 
 fn write_to_instance_buffer(
+    submit: &mut SubmitGroup,
     ctx: &mut Context,
     data: &[InstanceData],
     buffer: buffer::BufferHandle,
 ) {
     let upload_info = buffer::BufferUploadInfo { offset: 0, data };
-    ctx.buffer_upload_data(&[(buffer, upload_info)]);
+    submit.buffer_upload_data(ctx, &[(buffer, upload_info)]);
 }

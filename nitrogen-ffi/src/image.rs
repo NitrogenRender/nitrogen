@@ -220,6 +220,7 @@ pub unsafe extern "C" fn image_upload_data(
             (handle, upload_info)
         })
         .collect::<SmallVec<[_; 16]>>();
+    /*
 
     let results = context.image_storage.upload_data(
         &context.device_ctx,
@@ -230,6 +231,7 @@ pub unsafe extern "C" fn image_upload_data(
     for (i, result) in results.into_iter().enumerate() {
         successes[i] = result.is_ok();
     }
+    */
 }
 
 #[no_mangle]

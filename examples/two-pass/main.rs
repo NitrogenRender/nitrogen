@@ -50,6 +50,8 @@ fn main() {
 
     let mut ntg = nitrogen::Context::new("nitrogen test", 1);
 
+    let mut submit = ntg.create_submit_group();
+
     let display = ntg.add_display(&window);
 
     let material = {
@@ -106,7 +108,7 @@ fn main() {
                 target_offset: (0, 0, 0),
             };
 
-            ntg.image_upload_data(&[(img, data)]).remove(0).unwrap()
+            submit.image_upload_data(&mut ntg, &[(img, data)]).remove(0).unwrap()
         }
 
         drop(image);
@@ -145,7 +147,7 @@ fn main() {
             data: &TRIANGLE,
         };
 
-        let result = ntg.buffer_upload_data(&[(buffer, upload_data)]).remove(0);
+        let result = submit.buffer_upload_data(&mut ntg, &[(buffer, upload_data)]).remove(0);
 
         println!("{:?}", result);
 
@@ -211,7 +213,7 @@ fn main() {
             data: &[uniform_data],
         };
 
-        let result = ntg.buffer_upload_data(&[(buffer, upload_data)]).remove(0);
+        let result = submit.buffer_upload_data(&mut ntg, &[(buffer, upload_data)]).remove(0);
 
         println!("{:?}", result);
 
@@ -241,7 +243,7 @@ fn main() {
         );
     }
 
-    let mut submits = vec![ntg.create_submit_group(), ntg.create_submit_group()];
+    let mut submits = vec![submit, ntg.create_submit_group()];
 
     let mut flights = Vec::with_capacity(submits.len());
     {
