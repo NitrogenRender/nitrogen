@@ -30,20 +30,10 @@ pub struct SubmitGroup {
 impl SubmitGroup {
     pub fn new(device: Arc<DeviceContext>) -> Self {
         let (gfx, cmpt, trns) = {
-            use std::ops::Deref;
-
-            // TODO better queue handing AHHHH
-            let queues = device.queue_group();
-            let queues = queues.deref();
-
-            use std::mem::transmute;
-
-            // I am _so_ sorry for all this unsafe :(
-
             let gfx = device
                 .device
                 .create_command_pool_typed(
-                    unsafe { transmute(queues) },
+                    device.graphics_queue_group(),
                     gfx::pool::CommandPoolCreateFlags::empty(),
                     0,
                 )
@@ -51,7 +41,7 @@ impl SubmitGroup {
             let cmpt = device
                 .device
                 .create_command_pool_typed(
-                    unsafe { transmute(queues) },
+                    device.compute_queue_group(),
                     gfx::pool::CommandPoolCreateFlags::empty(),
                     0,
                 )
@@ -59,7 +49,7 @@ impl SubmitGroup {
             let trns = device
                 .device
                 .create_command_pool_typed(
-                    unsafe { transmute(queues) },
+                    device.transfer_queue_group(),
                     gfx::pool::CommandPoolCreateFlags::empty(),
                     0,
                 )
@@ -141,7 +131,7 @@ impl SubmitGroup {
                     .map(|sem| (sem, gfx::pso::PipelineStage::BOTTOM_OF_PIPE)),
             );
 
-            ctx.device_ctx.queue_group().queues[0].submit(submit, Some(&mut fence));
+            ctx.device_ctx.transfer_queue().submit(submit, Some(&mut fence));
 
             ctx.device_ctx.device.wait_for_fence(&fence, !0);
         }
