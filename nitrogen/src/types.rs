@@ -18,6 +18,7 @@ pub type Framebuffer = <back::Backend as gfx::Backend>::Framebuffer;
 pub type RenderPass = <back::Backend as gfx::Backend>::RenderPass;
 pub type Image = <back::Backend as gfx::Backend>::Image;
 pub type ImageView = <back::Backend as gfx::Backend>::ImageView;
+pub type Buffer = <back::Backend as gfx::Backend>::Buffer;
 pub type ShaderModule = <back::Backend as gfx::Backend>::ShaderModule;
 pub type Semaphore = <back::Backend as gfx::Backend>::Semaphore;
 pub type Fence = <back::Backend as gfx::Backend>::Fence;

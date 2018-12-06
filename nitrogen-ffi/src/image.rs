@@ -249,5 +249,5 @@ pub unsafe extern "C" fn image_destroy(
         .map(|image| (*image).into())
         .collect::<Vec<_>>();
 
-    context.image_storage.destroy(&context.device_ctx, &images);
+    // context.image_storage.destroy(&context.device_ctx, &images);
 }

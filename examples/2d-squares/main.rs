@@ -11,7 +11,6 @@ extern crate log;
 
 use nitrogen::*;
 
-use std::sync::mpsc::{channel, Receiver, Sender};
 use nitrogen::submit_group::SubmitGroup;
 
 #[derive(Copy, Clone, Debug)]
@@ -35,7 +34,7 @@ const VERTEX_DATA: [VertexData; 4] = [
     VertexData { pos: [1.0, 1.0] },
 ];
 
-const NUM_THINGS: usize = 1;
+const NUM_THINGS: usize = 100_000;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::env::set_var("RUST_LOG", "debug");
@@ -151,13 +150,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut submits = vec![submit, ctx.create_submit_group()];
 
-    let mut flights = Vec::with_capacity(submits.len());
-    {
-        for _ in 0..submits.len() {
-            flights.push(None);
-        }
-    }
-
     let mut frame_num = 0;
     let mut frame_idx = 0;
 
@@ -177,10 +169,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             _ => {}
         });
 
-        if resized {
-            ctx.displays[display].setup_swapchain(&ctx.device_ctx);
-        }
-
         // render stuff
         let res = ctx.graph_compile(graph);
         if let Err(err) = res {
@@ -192,47 +180,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         {
             let last_idx = (frame_num + (submits.len() - 1)) % submits.len();
 
-            if let Some(res) = flights[last_idx].take() {
-                submits[last_idx].wait(&mut ctx);
-                ctx.graph_exec_resource_destroy(res);
-            }
+            submits[last_idx].wait(&mut ctx);
         }
 
-        let res = {
+        {
+            if resized {
+                submits[frame_idx].display_setup_swapchain(&mut ctx, display);
+                resized = false;
+            }
+
             let res = submits[frame_idx].graph_render(&mut ctx, graph, &exec_context);
 
             submits[frame_idx].display_present(&mut ctx, display, &res);
 
             update_instance_data(&mut instance_data, &mut instance_vel);
 
-            write_to_instance_buffer(&mut submits[frame_idx], &mut ctx, &instance_data, instance_buffer);
+            write_to_instance_buffer(
+                &mut submits[frame_idx],
+                &mut ctx,
+                &instance_data,
+                instance_buffer,
+            );
 
-            res
-        };
-
-        flights[frame_idx] = Some(res);
-
+            submits[frame_idx].graph_resources_destroy(&mut ctx, res);
+        }
 
         frame_num += 1;
         frame_idx = frame_num % submits.len();
     }
 
-    for submit in &mut submits {
+    submits[0].buffer_destroy(&mut ctx, &[vertex_buffer, instance_buffer]);
+
+    for mut submit in submits {
         submit.wait(&mut ctx);
-    }
-
-    for flight in flights {
-        if let Some(res) = flight {
-            ctx.graph_exec_resource_destroy(res);
-        }
-    }
-
-    for submit in submits {
         submit.release(&mut ctx);
     }
 
     ctx.graph_destroy(graph);
-    ctx.buffer_destroy(&[vertex_buffer, instance_buffer]);
     ctx.vertex_attribs_destroy(&[vtx_def]);
     ctx.material_destroy(&[material]);
     ctx.remove_display(display);

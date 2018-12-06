@@ -27,6 +27,7 @@ use transfer::TransferContext;
 use device::DeviceContext;
 use resources::semaphore_pool::SemaphoreList;
 use resources::semaphore_pool::SemaphorePool;
+use submit_group::ResourceList;
 use types::CommandPool;
 
 #[derive(Copy, Clone, Debug)]
@@ -371,6 +372,7 @@ impl ImageStorage {
         sem_pool: &SemaphorePool,
         sem_list: &mut SemaphoreList,
         cmd_pool: &mut CommandPool<gfx::Transfer>,
+        res_list: &mut ResourceList,
         transfer: &TransferContext,
         images: &[(ImageHandle, ImageUploadInfo)],
     ) -> SmallVec<[Result<()>; 16]> {
@@ -596,7 +598,7 @@ impl ImageStorage {
         staging_data
             .into_iter()
             .for_each(|(_, _, _, staging_buffer, _, _)| {
-                allocator.destroy_buffer(&device.device, staging_buffer);
+                res_list.queue_buffer(staging_buffer);
             });
 
         results
@@ -610,14 +612,12 @@ impl ImageStorage {
         }
     }
 
-    pub fn destroy(&mut self, device: &DeviceContext, handles: &[ImageHandle]) {
-        let mut allocator = device.allocator();
-
+    pub fn destroy(&mut self, res_list: &mut ResourceList, handles: &[ImageHandle]) {
         for handle in handles {
             match self.storage.remove(*handle) {
                 Some(image) => {
-                    allocator.destroy_image(&device.device, image.image);
-                    device.device.destroy_image_view(image.view);
+                    res_list.queue_image(image.image);
+                    res_list.queue_image_view(image.view);
 
                     if self.transfer_dst.contains(&handle.id()) {
                         self.transfer_dst.remove(&handle.id());

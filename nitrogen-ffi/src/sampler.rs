@@ -121,7 +121,7 @@ pub unsafe extern "C" fn sampler_destroy(
         .map(|s| SamplerHandle::into(s.clone()))
         .collect::<SmallVec<[_; 16]>>();
 
-    context
-        .sampler_storage
-        .destroy(&context.device_ctx, samplers.as_slice());
+    // context
+    //     .sampler_storage
+    //     .destroy(&context.device_ctx, samplers.as_slice());
 }

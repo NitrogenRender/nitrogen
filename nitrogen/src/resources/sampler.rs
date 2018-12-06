@@ -12,6 +12,7 @@ use util::storage::Storage;
 
 use smallvec::SmallVec;
 
+use submit_group::ResourceList;
 use types::Sampler;
 
 #[derive(Copy, Clone)]
@@ -122,11 +123,11 @@ impl SamplerStorage {
         }
     }
 
-    pub fn destroy(&mut self, device: &DeviceContext, handles: &[SamplerHandle]) {
+    pub fn destroy(&mut self, res_list: &mut ResourceList, handles: &[SamplerHandle]) {
         for handle in handles {
             match self.storage.remove(*handle) {
                 Some(sampler) => {
-                    device.device.destroy_sampler(sampler);
+                    res_list.queue_sampler(sampler);
                 }
                 None => {}
             }

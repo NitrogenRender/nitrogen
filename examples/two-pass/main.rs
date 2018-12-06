@@ -108,7 +108,10 @@ fn main() {
                 target_offset: (0, 0, 0),
             };
 
-            submit.image_upload_data(&mut ntg, &[(img, data)]).remove(0).unwrap()
+            submit
+                .image_upload_data(&mut ntg, &[(img, data)])
+                .remove(0)
+                .unwrap()
         }
 
         drop(image);
@@ -129,7 +132,7 @@ fn main() {
         (img, sampler)
     };
 
-    ntg.displays[display].setup_swapchain(&ntg.device_ctx);
+    submit.display_setup_swapchain(&mut ntg, display);
 
     let buffer = {
         let create_info = nitrogen::buffer::BufferCreateInfo {
@@ -147,7 +150,9 @@ fn main() {
             data: &TRIANGLE,
         };
 
-        let result = submit.buffer_upload_data(&mut ntg, &[(buffer, upload_data)]).remove(0);
+        let result = submit
+            .buffer_upload_data(&mut ntg, &[(buffer, upload_data)])
+            .remove(0);
 
         println!("{:?}", result);
 
@@ -213,7 +218,9 @@ fn main() {
             data: &[uniform_data],
         };
 
-        let result = submit.buffer_upload_data(&mut ntg, &[(buffer, upload_data)]).remove(0);
+        let result = submit
+            .buffer_upload_data(&mut ntg, &[(buffer, upload_data)])
+            .remove(0);
 
         println!("{:?}", result);
 
@@ -245,13 +252,6 @@ fn main() {
 
     let mut submits = vec![submit, ntg.create_submit_group()];
 
-    let mut flights = Vec::with_capacity(submits.len());
-    {
-        for _ in 0..submits.len() {
-            flights.push(None);
-        }
-    }
-
     let mut frame_num = 0;
     let mut frame_idx = 0;
 
@@ -273,14 +273,6 @@ fn main() {
             _ => {}
         });
 
-        if resized {
-            debug!("resize!");
-
-            ntg.displays[display].setup_swapchain(&ntg.device_ctx);
-
-            resized = false;
-        }
-
         // ntg.graph_compile(graph);
         if let Err(errs) = ntg.graph_compile(graph) {
             println!("Errors occured while compiling the old_graph");
@@ -291,48 +283,38 @@ fn main() {
         {
             let last_idx = (frame_num + (submits.len() - 1)) % submits.len();
 
-            if let Some(res) = flights[last_idx].take() {
-                submits[last_idx].wait(&mut ntg);
-                ntg.graph_exec_resource_destroy(res);
-            }
+            submits[last_idx].wait(&mut ntg);
         }
 
-        let res = {
+        {
+            if resized {
+                submits[frame_idx].display_setup_swapchain(&mut ntg, display);
+                resized = false;
+            }
+
             let res = submits[frame_idx].graph_render(&mut ntg, graph, &exec_context);
 
             submits[frame_idx].display_present(&mut ntg, display, &res);
 
-            res
-        };
-
-        flights[frame_idx] = Some(res);
+            submits[frame_idx].graph_resources_destroy(&mut ntg, res);
+        }
 
         frame_num += 1;
         frame_idx = frame_num % submits.len();
     }
 
-    for submit in &mut submits {
+    submits[0].buffer_destroy(&mut ntg, &[buffer, uniform_buffer]);
+    submits[0].image_destroy(&mut ntg, &[image]);
+    submits[0].sampler_destroy(&mut ntg, &[sampler]);
+
+    for mut submit in submits {
         submit.wait(&mut ntg);
-    }
-
-    for flight in flights {
-        if let Some(res) = flight {
-            ntg.graph_exec_resource_destroy(res);
-        }
-    }
-
-    for submit in submits {
         submit.release(&mut ntg);
     }
 
     ntg.graph_destroy(graph);
 
-    ntg.buffer_destroy(&[buffer, uniform_buffer]);
-
     ntg.material_destroy(&[material]);
-
-    ntg.sampler_destroy(&[sampler]);
-    ntg.image_destroy(&[image]);
 
     ntg.release();
 }
