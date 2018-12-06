@@ -918,7 +918,7 @@ pub(crate) fn execute(
                         )
                         .signal(sem_pool.list_next_sems(sem_list))
                         .submit(Some(submit));
-                    device.queue_group().queues[0].submit(submission, None);
+                    device.graphics_queue().submit(submission, None);
                 }
 
                 sem_list.advance();
