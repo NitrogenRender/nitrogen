@@ -8,12 +8,12 @@ authors = ["Thomas Herzog <thomas.herzog@simedis.com>"]
 [features]
 default = ["winit_support"]
 winit_support = ["gfx-backend-vulkan/winit", "winit"]
-x11 = []
+x11 = ["ash"]
 
 
 
 [dependencies]
-ash = "0.24.4"
+ash = { version = "0.24.4", optional = true }
 slab = "0.4.1"
 failure = "0.1.2"
 failure_derive = "0.1.2"
@@ -34,6 +34,3 @@ default-features = false
 [dependencies.gfx-memory]
 git = "https://github.com/gfx-rs/gfx-memory"
 rev = "e9bba2f935fe7b6e1fd2ed2862a0c5dcba8af364"
-
-[build-dependencies]
-shaderc = "0.3.11"

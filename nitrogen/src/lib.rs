@@ -66,20 +66,20 @@ pub type DisplayHandle = Handle<Display>;
 // MOUNTAINS OF CRASHES WILL POUR ONTO YOU.
 // So please, just don't.
 pub struct Context {
-    pub graph_storage: graph::GraphStorage,
+    pub(crate) graph_storage: graph::GraphStorage,
 
-    pub render_pass_storage: render_pass::RenderPassStorage,
-    pub pipeline_storage: pipeline::PipelineStorage,
-    pub image_storage: image::ImageStorage,
-    pub sampler_storage: sampler::SamplerStorage,
-    pub buffer_storage: buffer::BufferStorage,
-    pub vertex_attrib_storage: vertex_attrib::VertexAttribStorage,
-    pub material_storage: material::MaterialStorage,
+    pub(crate) render_pass_storage: render_pass::RenderPassStorage,
+    pub(crate) pipeline_storage: pipeline::PipelineStorage,
+    pub(crate) image_storage: image::ImageStorage,
+    pub(crate) sampler_storage: sampler::SamplerStorage,
+    pub(crate) buffer_storage: buffer::BufferStorage,
+    pub(crate) vertex_attrib_storage: vertex_attrib::VertexAttribStorage,
+    pub(crate) material_storage: material::MaterialStorage,
 
-    pub displays: Storage<Display>,
-    pub transfer: transfer::TransferContext,
-    pub device_ctx: Arc<DeviceContext>,
-    pub instance: back::Instance,
+    pub(crate) displays: Storage<Display>,
+    pub(crate) transfer: transfer::TransferContext,
+    pub(crate) device_ctx: Arc<DeviceContext>,
+    pub(crate) instance: back::Instance,
 }
 
 impl Context {
@@ -182,8 +182,6 @@ impl Context {
         Arc::try_unwrap(self.device_ctx).ok().unwrap().release();
     }
 
-    // convenience functions that delegate the work
-
     // image
 
     pub fn image_create(
@@ -267,8 +265,6 @@ impl Context {
             data,
         );
     }
-
-    // old_graph
 
     pub fn graph_create(&mut self) -> graph::GraphHandle {
         self.graph_storage.create()
