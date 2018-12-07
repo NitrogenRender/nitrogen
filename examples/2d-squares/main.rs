@@ -2,13 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-extern crate nitrogen;
-extern crate rand;
-extern crate winit;
-
-extern crate env_logger;
-extern crate log;
-
 use std::time::Instant;
 
 use nitrogen::*;
@@ -258,7 +251,7 @@ fn create_graph(
 
     {
         let info = graph::PassInfo::Graphics {
-            vertex_attrib: Some(vertex_attrib),
+            vertex_attrib: vec![(0, vertex_attrib)],
             shaders: graph::Shaders {
                 vertex: graph::ShaderInfo {
                     content: Cow::Borrowed(include_bytes!(concat!(
@@ -304,10 +297,13 @@ fn create_graph(
                 builder.enable();
             }
 
-            fn execute(&self, cmd: &mut graph::CommandBuffer) {
+            fn execute(
+                &self,
+                cmd: &mut graph::CommandBuffer,
+            ) {
                 let things = NUM_THINGS;
 
-                cmd.bind_vertex_array(self.buffer);
+                cmd.bind_vertex_array(0, self.buffer);
                 cmd.bind_graphics_descriptor_set(1, self.mat_instance);
 
                 cmd.draw(0..4, 0..things as u32);

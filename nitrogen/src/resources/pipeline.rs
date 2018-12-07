@@ -97,7 +97,7 @@ impl From<Primitive> for gfx::Primitive {
 pub struct GraphicsPipelineCreateInfo<'a> {
     pub primitive: Primitive,
 
-    pub vertex_attribs: Option<VertexAttribHandle>,
+    pub vertex_attribs: Vec<(usize, VertexAttribHandle)>,
 
     pub descriptor_set_layout: &'a [&'a types::DescriptorSetLayout],
 
@@ -246,12 +246,12 @@ impl PipelineStorage {
                 pso::GraphicsPipelineDesc::new(shaders, primitive, rasterizer, &layout, subpass);
 
             // TODO add attributes
-            if let Some(handle) = create_info.vertex_attribs {
-                if let Some(data) = vertex_attrib_storage.raw(handle) {
+            for (i, attrib) in &create_info.vertex_attribs {
+                if let Some(data) = vertex_attrib_storage.raw(*attrib) {
                     desc.attributes.extend_from_slice(&data.attribs[..]);
 
                     desc.vertex_buffers.push(pso::VertexBufferDesc {
-                        binding: 0,
+                        binding: *i as u32,
                         stride: data.buffer_stride as u32,
                         rate: 0,
                     });
