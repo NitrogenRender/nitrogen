@@ -135,6 +135,7 @@ pub unsafe extern "C" fn image_create(
     successes: *mut bool,
     count: usize,
 ) {
+    /*
     let context = &mut *context;
 
     let create_infos = slice::from_raw_parts(create_infos, count);
@@ -185,6 +186,7 @@ pub unsafe extern "C" fn image_create(
             }
         }
     }
+    */
 }
 
 #[no_mangle]
@@ -195,6 +197,7 @@ pub unsafe extern "C" fn image_upload_data(
     successes: *mut bool,
     count: usize,
 ) {
+    /*
     let context = &mut *context;
 
     let images = slice::from_raw_parts(images, count);
@@ -231,6 +234,8 @@ pub unsafe extern "C" fn image_upload_data(
     for (i, result) in results.into_iter().enumerate() {
         successes[i] = result.is_ok();
     }
+    */
+
     */
 }
 

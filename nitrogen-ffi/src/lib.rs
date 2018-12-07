@@ -78,8 +78,8 @@ pub unsafe extern "C" fn context_release(context: *mut Context) {
 
 #[no_mangle]
 pub unsafe extern "C" fn display_setup_swapchain(context: *mut Context, display: DisplayHandle) {
-    let device_ctx = &(*context).device_ctx;
-    let display_ctx = &mut (*context).displays[display.into()];
+    // let device_ctx = &(*context).device_ctx;
+    // let display_ctx = &mut (*context).displays[display.into()];
 
     // display_ctx.setup_swapchain(device_ctx);
 }
@@ -91,8 +91,8 @@ pub unsafe extern "C" fn display_present(
     image: image::ImageHandle,
     sampler: sampler::SamplerHandle,
 ) -> bool {
-    let device_ctx = &(*context).device_ctx;
-    let display_ctx = &mut (*context).displays[display.into()];
+    // let device_ctx = &(*context).device_ctx;
+    // let display_ctx = &mut (*context).displays[display.into()];
 
     /*
     display_ctx.present(

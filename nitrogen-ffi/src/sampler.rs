@@ -86,6 +86,7 @@ pub unsafe extern "C" fn sampler_create(
     handles: *mut SamplerHandle,
     count: usize,
 ) {
+    /*
     let context = &mut *context;
 
     let internal_create_infos = slice::from_raw_parts(create_infos, count);
@@ -106,6 +107,7 @@ pub unsafe extern "C" fn sampler_create(
     for (i, sampler) in sampler_handles.into_iter().enumerate() {
         handles[i] = SamplerHandle(sampler.id(), sampler.generation());
     }
+    */
 }
 
 #[no_mangle]
@@ -114,6 +116,7 @@ pub unsafe extern "C" fn sampler_destroy(
     samplers: *const SamplerHandle,
     sampler_count: usize,
 ) {
+    /*
     let context = &mut *context;
 
     let samplers = slice::from_raw_parts(samplers, sampler_count)
@@ -124,4 +127,5 @@ pub unsafe extern "C" fn sampler_destroy(
     // context
     //     .sampler_storage
     //     .destroy(&context.device_ctx, samplers.as_slice());
+    */
 }
