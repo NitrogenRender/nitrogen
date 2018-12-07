@@ -2,11 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-extern crate env_logger;
 extern crate image as img;
-extern crate log;
-extern crate nitrogen;
-extern crate winit;
 
 use nitrogen::graph;
 use nitrogen::graph::PassImpl;
@@ -367,13 +363,13 @@ fn setup_graphs(
                 builder.enable();
             },
             move |cmd| {
-                cmd.bind_vertex_array(buffer);
+                cmd.bind_vertex_array(0, buffer);
 
                 cmd.bind_graphics_descriptor_set(1, material_instance);
 
                 cmd.draw(0..4, 0..1);
             },
-            Some(vertex_attrib),
+            vec![(0, vertex_attrib)],
             vec![(1, material)],
         );
 
@@ -411,11 +407,11 @@ fn setup_graphs(
                 builder.enable();
             },
             move |cmd| {
-                cmd.bind_vertex_array(buffer);
+                cmd.bind_vertex_array(0, buffer);
 
                 cmd.draw(0..4, 0..1);
             },
-            Some(vertex_attrib),
+            vec![(0, vertex_attrib)],
             vec![],
         );
 
@@ -431,7 +427,7 @@ fn create_test_pass<FSetUp, FExec>(
     shaders: nitrogen::graph::Shaders,
     setup: FSetUp,
     execute: FExec,
-    vert: Option<nitrogen::vertex_attrib::VertexAttribHandle>,
+    vert: Vec<(usize, nitrogen::vertex_attrib::VertexAttribHandle)>,
     materials: Vec<(usize, nitrogen::material::MaterialHandle)>,
 ) -> (impl PassImpl, graph::PassInfo)
 where

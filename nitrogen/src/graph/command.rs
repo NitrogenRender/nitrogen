@@ -28,14 +28,14 @@ impl<'a> CommandBuffer<'a> {
         self.encoder.draw(vertices, instances);
     }
 
-    pub fn bind_vertex_array(&mut self, buffer: BufferHandle) {
+    pub fn bind_vertex_array(&mut self, index: usize, buffer: BufferHandle) {
         let buffer = if let Some(buf) = self.storages.buffer.raw(buffer) {
             buf.raw()
         } else {
             return;
         };
 
-        self.encoder.bind_vertex_buffers(0, Some((buffer, 0)));
+        self.encoder.bind_vertex_buffers(0, Some((buffer, index as u64)));
     }
 
     pub fn bind_graphics_descriptor_set(

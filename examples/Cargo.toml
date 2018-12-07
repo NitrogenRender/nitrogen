@@ -3,6 +3,7 @@ name = "nitrogen-examples"
 version = "0.1.0"
 publish = false
 authors = ["Thomas Herzog <thomas.herzog@simedis.com>"]
+edition = "2018"
 
 [dependencies]
 nitrogen = { path = "../nitrogen", features = ["winit"] }
