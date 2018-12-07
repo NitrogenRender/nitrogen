@@ -11,6 +11,7 @@ struct VertexIn {
 
 struct VertexOut {
     float4 position : SV_Position;
+    float2 vert;
 
     uint idx;
 };
@@ -42,6 +43,7 @@ VertexOut VertexMain(VertexIn input)
     position += data[ret.idx].position;
 
     ret.position = float4(position, 0.0, 1.0);
+    ret.vert = input.position;
 
 
     return ret;
@@ -50,6 +52,12 @@ VertexOut VertexMain(VertexIn input)
 FragmentOut FragmentMain(VertexOut input)
 {
     FragmentOut ret;
+
+    float distance = length(input.vert);
+
+    if (distance > 1.0) {
+        discard;
+    }
 
     ret.color = data[input.idx].color;
 

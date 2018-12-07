@@ -77,6 +77,7 @@ impl Display {
         config.image_layers = 1;
 
         config.present_mode = gfx::PresentMode::Immediate;
+        // config.present_mode = gfx::PresentMode::Relaxed;
 
         let extent = config.extent.to_extent();
 
