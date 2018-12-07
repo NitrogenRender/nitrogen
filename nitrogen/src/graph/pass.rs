@@ -2,15 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use graph::builder;
-use graph::command;
+use crate::graph::builder;
+use crate::graph::command;
 
-use material::MaterialHandle;
-use pipeline::Primitive;
-use render_pass::BlendMode;
-use vertex_attrib::VertexAttribHandle;
+use crate::material::MaterialHandle;
+use crate::pipeline::Primitive;
+use crate::render_pass::BlendMode;
+use crate::vertex_attrib::VertexAttribHandle;
 
-use util::CowString;
+use crate::util::CowString;
 
 use std::borrow::Cow;
 

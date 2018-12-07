@@ -2,13 +2,14 @@
 name = "nitrogen"
 version = "0.1.0"
 authors = ["Thomas Herzog <thomas.herzog@simedis.com>"]
+edition = "2018"
 
 
 
 [features]
 default = ["winit_support"]
-winit_support = ["gfx-backend-vulkan/winit", "winit"]
-x11 = ["ash"]
+winit_support = ["back/winit", "winit"]
+x11 = []
 
 
 
@@ -21,16 +22,19 @@ bitflags = "1.0.4"
 smallvec = "0.6.5"
 winit = { version = "0.17.2", optional = true }
 
-[dependencies.gfx-hal]
+[dependencies.gfx]
+package = "gfx-hal"
 git = "https://github.com/gfx-rs/gfx"
 rev = "bd7f058efe78d7626a1cc6fbc0c1d3702fb6d2e7"
 default-features = false
 
-[dependencies.gfx-backend-vulkan]
+[dependencies.back]
+package = "gfx-backend-vulkan"
 git = "https://github.com/gfx-rs/gfx"
 rev = "bd7f058efe78d7626a1cc6fbc0c1d3702fb6d2e7"
 default-features = false
 
-[dependencies.gfx-memory]
+[dependencies.gfxm]
+package = "gfx-memory"
 git = "https://github.com/gfx-rs/gfx-memory"
 rev = "e9bba2f935fe7b6e1fd2ed2862a0c5dcba8af364"

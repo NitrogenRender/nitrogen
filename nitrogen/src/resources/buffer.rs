@@ -2,10 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use back;
-use gfx;
-use gfxm;
-
 use bitflags::bitflags;
 use failure_derive::Fail;
 
@@ -13,10 +9,10 @@ use std;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
-use device::DeviceContext;
-use transfer::TransferContext;
+use crate::device::DeviceContext;
+use crate::transfer::TransferContext;
 
-use util::storage::{Handle, Storage};
+use crate::util::storage::{Handle, Storage};
 
 use gfxm::Factory;
 use gfxm::SmartAllocator;
@@ -24,12 +20,12 @@ use gfxm::SmartAllocator;
 use smallvec::smallvec;
 use smallvec::SmallVec;
 
-use resources::MemoryProperties;
+use crate::resources::MemoryProperties;
 
-use resources::semaphore_pool::SemaphoreList;
-use resources::semaphore_pool::SemaphorePool;
-use submit_group::ResourceList;
-use types::CommandPool;
+use crate::resources::semaphore_pool::SemaphoreList;
+use crate::resources::semaphore_pool::SemaphorePool;
+use crate::submit_group::ResourceList;
+use crate::types::CommandPool;
 
 type BufferId = usize;
 pub type BufferTypeInternal = <SmartAllocator<back::Backend> as Factory<back::Backend>>::Buffer;
@@ -403,7 +399,7 @@ impl BufferStorage {
                     }
                 })
                 .map(|(data, buffer, staging)| {
-                    use transfer::BufferTransfer;
+                    use crate::transfer::BufferTransfer;
 
                     let upload_sice = unsafe { to_u8_slice(data.data) };
 

@@ -11,20 +11,18 @@ use super::ResourceId;
 use super::ResourceName;
 use super::{ResourceReadType, ResourceWriteType};
 
-use types;
-use types::CommandPool;
+use crate::types;
+use crate::types::CommandPool;
 
 use std::collections::HashMap;
 use std::collections::HashSet;
-
-use gfx;
 
 use gfx::Device;
 
 use smallvec::SmallVec;
 
-use device::DeviceContext;
-use resources::{
+use crate::device::DeviceContext;
+use crate::resources::{
     buffer::{BufferHandle, BufferStorage},
     image::{ImageHandle, ImageStorage},
     material::MaterialStorage,
@@ -34,7 +32,7 @@ use resources::{
     semaphore_pool::{SemaphoreList, SemaphorePool},
     vertex_attrib::VertexAttribStorage,
 };
-use submit_group::ResourceList;
+use crate::submit_group::ResourceList;
 
 #[derive(Debug, Clone)]
 pub struct ExecutionBatch {
@@ -613,8 +611,8 @@ pub(crate) fn execute(
                 use super::ResourceCreateInfo;
                 let info = &resolved_graph.infos[create];
 
-                use image;
-                use sampler;
+                use crate::image;
+                use crate::sampler;
 
                 match info {
                     ResourceCreateInfo::Image(img) => {
@@ -719,7 +717,7 @@ pub(crate) fn execute(
                 };
 
                 let extent = {
-                    use image;
+                    use crate::image;
                     dims.as_slice()
                         .iter()
                         .map(|img_dim| match img_dim {
@@ -1025,7 +1023,7 @@ fn create_render_pass_graphics(
                 | gfx::image::Access::COLOR_ATTACHMENT_WRITE),
     };
 
-    use render_pass::RenderPassCreateInfo;
+    use crate::render_pass::RenderPassCreateInfo;
 
     let create_info = RenderPassCreateInfo {
         attachments: attachments.as_slice(),
@@ -1065,7 +1063,7 @@ fn create_pipeline_graphics(
         _ => unreachable!(),
     };
 
-    use pipeline;
+    use crate::pipeline;
 
     let (layouts, pass_stuff) = {
         use super::{BufferReadType, ImageReadType, ResourceReadType};

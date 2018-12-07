@@ -4,9 +4,9 @@
 
 use std::sync::Arc;
 
-use device::DeviceContext;
-use types;
-use util::pool::{Pool, PoolElem, PoolImpl};
+use crate::device::DeviceContext;
+use crate::types;
+use crate::util::pool::{Pool, PoolElem, PoolImpl};
 
 use smallvec::SmallVec;
 

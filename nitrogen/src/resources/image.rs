@@ -2,10 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use back;
-use gfx;
-use gfxm;
-
 use failure_derive::Fail;
 
 use gfx::image;
@@ -20,15 +16,15 @@ use std::hash::{Hash, Hasher};
 use smallvec::smallvec;
 use smallvec::SmallVec;
 
-use util::storage::{Handle, Storage};
+use crate::util::storage::{Handle, Storage};
 
-use transfer::TransferContext;
+use crate::transfer::TransferContext;
 
-use device::DeviceContext;
-use resources::semaphore_pool::SemaphoreList;
-use resources::semaphore_pool::SemaphorePool;
-use submit_group::ResourceList;
-use types::CommandPool;
+use crate::device::DeviceContext;
+use crate::resources::semaphore_pool::SemaphoreList;
+use crate::resources::semaphore_pool::SemaphorePool;
+use crate::submit_group::ResourceList;
+use crate::types::CommandPool;
 
 #[derive(Copy, Clone, Debug)]
 pub enum ImageDimension {
@@ -561,7 +557,7 @@ impl ImageStorage {
 
                     // create image upload data
 
-                    use transfer::BufferImageTransfer;
+                    use crate::transfer::BufferImageTransfer;
 
                     let transfer_data = BufferImageTransfer {
                         src: staging,

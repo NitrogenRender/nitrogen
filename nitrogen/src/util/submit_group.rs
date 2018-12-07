@@ -2,16 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use gfx;
 use gfx::Device;
 
-use buffer::BufferTypeInternal;
-use image::ImageType;
+use crate::buffer::BufferTypeInternal;
+use crate::image::ImageType;
 
 use crate::*;
-use device::DeviceContext;
+use crate::device::DeviceContext;
 
-use resources::semaphore_pool::{SemaphoreList, SemaphorePool};
+use crate::resources::semaphore_pool::{SemaphoreList, SemaphorePool};
 
 use smallvec::SmallVec;
 

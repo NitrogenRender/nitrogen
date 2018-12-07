@@ -2,56 +2,37 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-extern crate gfx_backend_vulkan as back;
-pub extern crate gfx_hal as gfx;
-extern crate gfx_memory as gfxm;
-
-extern crate smallvec;
-
-extern crate failure;
-extern crate failure_derive;
-
-extern crate bitflags;
-
-extern crate ash;
-
-extern crate slab;
-
-#[cfg(feature = "winit_support")]
-extern crate winit;
-
 use smallvec::SmallVec;
+
+pub use gfx;
 
 pub mod types;
 
 pub mod display;
-use display::Display;
+use crate::display::Display;
 
 pub mod device;
-use device::DeviceContext;
+use crate::device::DeviceContext;
 
 pub mod util;
-pub use util::storage;
-pub use util::submit_group;
-pub use util::transfer;
+pub use crate::util::storage;
+pub use crate::util::submit_group;
+pub use crate::util::transfer;
 
-pub use util::CowString;
+pub use crate::util::CowString;
 
-use storage::{Handle, Storage};
+use crate::storage::{Handle, Storage};
 
 pub mod resources;
-pub use resources::buffer;
-pub use resources::image;
-pub use resources::material;
-pub use resources::pipeline;
-pub use resources::render_pass;
-pub use resources::sampler;
-pub use resources::vertex_attrib;
+pub use crate::resources::buffer;
+pub use crate::resources::image;
+pub use crate::resources::material;
+pub use crate::resources::pipeline;
+pub use crate::resources::render_pass;
+pub use crate::resources::sampler;
+pub use crate::resources::vertex_attrib;
 
 pub mod graph;
-
-#[cfg(feature = "x11")]
-use ash::vk;
 
 use std::sync::Arc;
 
@@ -118,12 +99,15 @@ impl Context {
     #[cfg(feature = "x11")]
     pub fn add_x11_display(
         &mut self,
-        display: *mut vk::Display,
-        window: vk::Window,
+        display: *mut std::os::raw::c_void,
+        window: std::os::raw::c_ulong,
     ) -> DisplayHandle {
         use gfx::Surface;
+        use std::mem::transmute;
 
-        let surface = self.instance.create_surface_from_xlib(display, window);
+        let surface = unsafe {
+            self.instance.create_surface_from_xlib(transmute(display), transmute(window))
+        };
 
         let _ = self
             .device_ctx
