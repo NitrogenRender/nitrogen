@@ -9,6 +9,8 @@ extern crate winit;
 extern crate env_logger;
 extern crate log;
 
+use std::time::Instant;
+
 use nitrogen::*;
 
 use nitrogen::submit_group::SubmitGroup;
@@ -34,7 +36,7 @@ const VERTEX_DATA: [VertexData; 4] = [
     VertexData { pos: [1.0, 1.0] },
 ];
 
-const NUM_THINGS: usize = 100_000;
+const NUM_THINGS: usize = 10_000;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::env::set_var("RUST_LOG", "debug");
@@ -153,6 +155,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut frame_num = 0;
     let mut frame_idx = 0;
 
+    let mut instant = Instant::now();
+
     while running {
         events_loop.poll_events(|ev| match ev {
             winit::Event::WindowEvent { event, .. } => match event {
@@ -183,6 +187,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             submits[last_idx].wait(&mut ctx);
         }
 
+        // update delta time
+
+        let delta = {
+            let new_instant = Instant::now();
+            let dur = new_instant.duration_since(instant);
+            instant = new_instant;
+
+            const NANOS_PER_SEC: u32 = 1_000_000_000;
+
+            let secs = dur.as_secs() as f64;
+            let subsecs = dur.subsec_nanos() as f64 / NANOS_PER_SEC as f64;
+
+            secs + subsecs
+        };
+
         {
             if resized {
                 submits[frame_idx].display_setup_swapchain(&mut ctx, display);
@@ -193,7 +212,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             submits[frame_idx].display_present(&mut ctx, display, &res);
 
-            update_instance_data(&mut instance_data, &mut instance_vel);
+            update_instance_data(&mut instance_data, &mut instance_vel, delta);
 
             write_to_instance_buffer(
                 &mut submits[frame_idx],
@@ -318,14 +337,16 @@ fn create_instance_data(num: u32) -> Vec<InstanceData> {
     for _i in 0..num {
         let size = [rng.gen_range(0.05, 0.1), rng.gen_range(0.05, 0.1)];
 
+        let size = [size[0], size[0]];
+
         let pos = [
             rng.gen_range(-1.0, 1.0 - size[0]),
             rng.gen_range(-1.0, 1.0 - size[1]),
         ];
 
         let color = [
-            rng.gen_range(0.3, 1.0),
-            rng.gen_range(0.5, 1.0),
+            rng.gen_range(0.4, 0.8),
+            rng.gen_range(0.0, 0.7),
             rng.gen_range(0.8, 1.0),
             1.0,
         ];
@@ -344,20 +365,20 @@ fn create_instance_velocity(num: u32) -> Vec<[f32; 2]> {
     let mut result = Vec::with_capacity(num as usize);
 
     for _ in 0..num {
-        let vel = [rng.gen_range(-0.05, 0.05), rng.gen_range(-0.05, 0.05)];
+        let vel = [rng.gen_range(-1.0, 1.0), rng.gen_range(-1.0, 1.0)];
         result.push(vel);
     }
 
     result
 }
 
-fn update_instance_data(data: &mut [InstanceData], velocities: &mut [[f32; 2]]) {
+fn update_instance_data(data: &mut [InstanceData], velocities: &mut [[f32; 2]], delta: f64) {
     assert_eq!(data.len(), velocities.len());
 
     for i in 0..data.len() {
         let mut new_pos = [
-            data[i].pos[0] + velocities[i][0],
-            data[i].pos[1] + velocities[i][1],
+            data[i].pos[0] + velocities[i][0] * delta as f32,
+            data[i].pos[1] + velocities[i][1] * delta as f32,
         ];
 
         if new_pos[0] < -1.0 || new_pos[0] > 1.0 {
