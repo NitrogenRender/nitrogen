@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use util::storage::{Handle, Storage};
-use util::CowString;
+use crate::util::storage::{Handle, Storage};
+use crate::util::CowString;
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -11,8 +11,8 @@ use std::collections::HashMap;
 
 use smallvec::SmallVec;
 
-use device::DeviceContext;
-use resources::{
+use crate::device::DeviceContext;
+use crate::resources::{
     buffer::BufferStorage,
     image::ImageStorage,
     material::MaterialStorage,
@@ -23,7 +23,7 @@ use resources::{
     vertex_attrib::VertexAttribStorage,
 };
 
-use types::CommandPool;
+use crate::types::CommandPool;
 
 pub mod pass;
 pub use self::pass::*;
@@ -37,7 +37,7 @@ pub use self::command::*;
 mod execution;
 pub use self::execution::ExecutionResources;
 use self::execution::*;
-use submit_group::ResourceList;
+use crate::submit_group::ResourceList;
 
 pub type GraphHandle = Handle<Graph>;
 

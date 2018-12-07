@@ -2,17 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use gfx;
 use std;
 
-use buffer::BufferTypeInternal;
+use crate::buffer::BufferTypeInternal;
 
-use image::ImageType;
+use crate::image::ImageType;
 
-use device::DeviceContext;
-use resources::semaphore_pool::SemaphoreList;
-use resources::semaphore_pool::SemaphorePool;
-use types::CommandPool;
+use crate::device::DeviceContext;
+use crate::resources::semaphore_pool::SemaphoreList;
+use crate::resources::semaphore_pool::SemaphorePool;
+use crate::types::CommandPool;
 
 pub struct BufferTransfer<'a> {
     pub src: &'a BufferTypeInternal,

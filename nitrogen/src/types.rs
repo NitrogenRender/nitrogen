@@ -2,9 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use back;
-use gfx;
-
 pub type Device = <back::Backend as gfx::Backend>::Device;
 pub type GraphicsPipeline = <back::Backend as gfx::Backend>::GraphicsPipeline;
 pub type PipelineLayout = <back::Backend as gfx::Backend>::PipelineLayout;

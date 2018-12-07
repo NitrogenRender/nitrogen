@@ -77,8 +77,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let vertex_buffer = {
-        use buffer::BufferUsage;
-        use resources::MemoryProperties;
+        use crate::buffer::BufferUsage;
+        use crate::resources::MemoryProperties;
 
         let create_info = buffer::BufferCreateInfo {
             size: ::std::mem::size_of_val(&VERTEX_DATA) as u64,
@@ -106,8 +106,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let instance_material = ctx.material_create_instance(&[material]).remove(0).unwrap();
 
     let instance_buffer = {
-        use buffer::BufferUsage;
-        use resources::MemoryProperties;
+        use crate::buffer::BufferUsage;
+        use crate::resources::MemoryProperties;
 
         let create_info = buffer::BufferCreateInfo {
             size: ::std::mem::size_of::<InstanceData>() as u64 * num_squares as u64,

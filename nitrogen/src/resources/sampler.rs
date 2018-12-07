@@ -5,15 +5,15 @@
 use gfx::image;
 use gfx::Device;
 
-use device::DeviceContext;
+use crate::device::DeviceContext;
 
-use util::storage;
-use util::storage::Storage;
+use crate::util::storage;
+use crate::util::storage::Storage;
 
 use smallvec::SmallVec;
 
-use submit_group::ResourceList;
-use types::Sampler;
+use crate::submit_group::ResourceList;
+use crate::types::Sampler;
 
 #[derive(Copy, Clone)]
 pub enum Filter {

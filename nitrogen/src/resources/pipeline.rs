@@ -2,22 +2,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use device::DeviceContext;
-use storage::{Handle, Storage};
+use crate::device::DeviceContext;
+use crate::storage::{Handle, Storage};
 
-use render_pass::{RenderPassHandle, RenderPassStorage};
-use vertex_attrib::{VertexAttribHandle, VertexAttribStorage};
+use crate::render_pass::{RenderPassHandle, RenderPassStorage};
+use crate::vertex_attrib::{VertexAttribHandle, VertexAttribStorage};
 
 use smallvec::SmallVec;
 
-use types;
-use types::*;
+use crate::types;
+use crate::types::*;
 
-use gfx;
 use gfx::pso;
 use gfx::Device;
-
-use back;
 
 use std::collections::BTreeMap;
 

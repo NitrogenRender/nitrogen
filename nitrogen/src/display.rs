@@ -2,18 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use gfx;
 use gfx::Device;
 
-use device::DeviceContext;
-use image;
+use crate::device::DeviceContext;
+use crate::image;
 
-use types::*;
+use crate::types::*;
 
-use resources::semaphore_pool::{SemaphoreList, SemaphorePool};
+use crate::resources::semaphore_pool::{SemaphoreList, SemaphorePool};
 
 use std;
-use submit_group::ResourceList;
+use crate::submit_group::ResourceList;
 
 pub struct Display {
     pub surface: Surface,
@@ -150,7 +149,7 @@ impl Display {
         };
 
         if let Some(ref mut swapchain) = self.swapchain {
-            let mut sem_acquire = sem_pool.alloc();
+            let sem_acquire = sem_pool.alloc();
 
             let index = match swapchain.acquire_image(!0, gfx::FrameSync::Semaphore(&*sem_acquire))
             {

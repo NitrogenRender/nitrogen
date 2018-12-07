@@ -2,17 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use util::storage::{Handle, Storage};
+use crate::util::storage::{Handle, Storage};
 
-use device::DeviceContext;
+use crate::device::DeviceContext;
 
-use resources::buffer::{BufferHandle, BufferStorage};
-use resources::image::{ImageHandle, ImageStorage};
-use resources::sampler::{SamplerHandle, SamplerStorage};
+use crate::resources::buffer::{BufferHandle, BufferStorage};
+use crate::resources::image::{ImageHandle, ImageStorage};
+use crate::resources::sampler::{SamplerHandle, SamplerStorage};
 
-use gfx;
-
-use types;
+use crate::types;
 
 use smallvec::{smallvec, SmallVec};
 

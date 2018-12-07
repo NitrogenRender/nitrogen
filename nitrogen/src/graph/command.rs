@@ -4,13 +4,11 @@
 
 use std::ops::Range;
 
-use back;
-use gfx;
-use types;
+use crate::types;
 
-use material::{MaterialInstanceHandle, MaterialStorage};
+use crate::material::{MaterialInstanceHandle, MaterialStorage};
 
-use buffer::{BufferHandle, BufferStorage};
+use crate::buffer::{BufferHandle, BufferStorage};
 
 pub(crate) struct ReadStorages<'a> {
     pub(crate) buffer: &'a BufferStorage,

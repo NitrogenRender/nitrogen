@@ -4,7 +4,7 @@
 
 use super::ResourceName;
 
-use image;
+use crate::image;
 
 use self::ResourceReadType as R;
 use self::ResourceWriteType as W;

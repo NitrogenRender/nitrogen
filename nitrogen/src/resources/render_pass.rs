@@ -2,14 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use storage::{Handle, Storage};
+use crate::storage::{Handle, Storage};
 
-use gfx;
 use gfx::Device;
 
 use smallvec::SmallVec;
 
-use device::DeviceContext;
+use crate::device::DeviceContext;
 
 pub enum BlendMode {
     Alpha,
@@ -31,7 +30,7 @@ impl From<gfx::device::OutOfMemory> for RenderPassError {
 pub type Result<T> = ::std::result::Result<T, RenderPassError>;
 
 pub struct RenderPass {
-    render_pass: ::types::RenderPass,
+    render_pass: crate::types::RenderPass,
 }
 
 pub type RenderPassHandle = Handle<RenderPass>;
@@ -79,7 +78,7 @@ impl RenderPassStorage {
             .collect()
     }
 
-    pub fn raw(&self, handle: RenderPassHandle) -> Option<&::types::RenderPass> {
+    pub fn raw(&self, handle: RenderPassHandle) -> Option<&crate::types::RenderPass> {
         if self.storage.is_alive(handle) {
             Some(&self.storage[handle].render_pass)
         } else {
