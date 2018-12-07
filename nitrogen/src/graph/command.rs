@@ -2,16 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::marker::PhantomData;
 use std::ops::Range;
 
 use back;
 use gfx;
 use types;
 
-use image::{ImageHandle, ImageStorage};
 use material::{MaterialInstanceHandle, MaterialStorage};
-use sampler::SamplerHandle;
 
 use buffer::{BufferHandle, BufferStorage};
 

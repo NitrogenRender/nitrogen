@@ -556,7 +556,7 @@ impl ImageStorage {
                             writer[dst_start..dst_end].copy_from_slice(row);
                         }
 
-                        device.device.release_mapping_writer(writer);
+                        device.device.release_mapping_writer(writer).unwrap();
                     }
 
                     // create image upload data

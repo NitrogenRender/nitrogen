@@ -1,10 +1,10 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 use nitrogen;
 
 use nitrogen::sampler;
-
-use smallvec::SmallVec;
-
-use std::slice;
 
 type SamplerId = usize;
 type SamplerGeneration = u64;
@@ -81,10 +81,10 @@ impl From<SamplerCreateInfo> for sampler::SamplerCreateInfo {
 
 #[no_mangle]
 pub unsafe extern "C" fn sampler_create(
-    context: *mut nitrogen::Context,
-    create_infos: *const SamplerCreateInfo,
-    handles: *mut SamplerHandle,
-    count: usize,
+    _context: *mut nitrogen::Context,
+    _create_infos: *const SamplerCreateInfo,
+    _handles: *mut SamplerHandle,
+    _count: usize,
 ) {
     /*
     let context = &mut *context;
@@ -112,9 +112,9 @@ pub unsafe extern "C" fn sampler_create(
 
 #[no_mangle]
 pub unsafe extern "C" fn sampler_destroy(
-    context: *mut nitrogen::Context,
-    samplers: *const SamplerHandle,
-    sampler_count: usize,
+    _context: *mut nitrogen::Context,
+    _samplers: *const SamplerHandle,
+    _sampler_count: usize,
 ) {
     /*
     let context = &mut *context;

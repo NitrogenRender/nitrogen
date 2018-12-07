@@ -5,18 +5,14 @@
 use gfx;
 use gfx::Device;
 
-use back;
-
 use device::DeviceContext;
 use image;
-use sampler;
 
 use types::*;
 
 use resources::semaphore_pool::{SemaphoreList, SemaphorePool};
 
 use std;
-use std::sync::Arc;
 use submit_group::ResourceList;
 
 pub struct Display {
@@ -33,8 +29,6 @@ pub struct Display {
 impl Display {
     /// Create a new `DisplayContext` which uses the provided surface.
     pub fn new(surface: Surface, device: &DeviceContext) -> Self {
-        use gfx::pso;
-        use gfx::DescriptorPool;
         use gfx::Surface;
 
         let (_, formats, _) = surface.compatibility(&device.adapter.physical_device);
@@ -142,22 +136,12 @@ impl Display {
         command_pool: &mut CommandPool<gfx::Graphics>,
         image_storage: &image::ImageStorage,
         image: image::ImageHandle,
-        sampler_storage: &sampler::SamplerStorage,
-        sampler: sampler::SamplerHandle,
     ) -> bool {
         use gfx::pso;
         use gfx::Swapchain;
 
         let image = {
             if let Some(raw) = image_storage.raw(image) {
-                raw
-            } else {
-                return false;
-            }
-        };
-
-        let sampler = {
-            if let Some(raw) = sampler_storage.raw(sampler) {
                 raw
             } else {
                 return false;
@@ -319,9 +303,7 @@ impl Display {
     }
 
     /// Release the display context, destroys all associated graphics resources.
-    pub fn release(mut self, device: &DeviceContext) {
-        use gfx::DescriptorPool;
-
+    pub fn release(self, device: &DeviceContext) {
         for (_, image_view) in self.images {
             device.device.destroy_image_view(image_view);
         }

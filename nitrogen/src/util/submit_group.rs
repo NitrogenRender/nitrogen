@@ -8,16 +8,13 @@ use gfx::Device;
 use buffer::BufferTypeInternal;
 use image::ImageType;
 
-use back;
-
 use crate::*;
 use device::DeviceContext;
 
-use resources::semaphore_pool::{Semaphore, SemaphoreList, SemaphorePool};
+use resources::semaphore_pool::{SemaphoreList, SemaphorePool};
 
 use smallvec::SmallVec;
 
-use std::ops::Drop;
 use std::sync::Arc;
 
 pub struct SubmitGroup {
@@ -88,8 +85,6 @@ impl SubmitGroup {
 
         let image = resources.images[&image_id];
 
-        let sampler = resources.samplers[&image_id];
-
         ctx.displays[display].present(
             &ctx.device_ctx,
             &mut self.sem_pool,
@@ -97,8 +92,6 @@ impl SubmitGroup {
             &mut self.pool_graphics,
             &ctx.image_storage,
             image,
-            &ctx.sampler_storage,
-            sampler,
         );
     }
 
@@ -198,7 +191,7 @@ impl SubmitGroup {
                 .transfer_queue()
                 .submit(submit, Some(&mut fence));
 
-            ctx.device_ctx.device.wait_for_fence(&fence, !0);
+            ctx.device_ctx.device.wait_for_fence(&fence, !0).unwrap();
         }
 
         self.sem_list.advance();

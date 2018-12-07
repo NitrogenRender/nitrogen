@@ -57,7 +57,7 @@ fn main() {
         let out_base = PathBuf::from(env::var("OUT_DIR").unwrap());
         let out_base = out_base.join(example.path().file_name().unwrap());
 
-        fs::create_dir_all(&out_base);
+        fs::create_dir_all(&out_base).unwrap();
 
         let mut compiler = Compiler::new().unwrap();
 
@@ -134,7 +134,7 @@ pub fn compile(compiler: &mut Compiler, path: PathBuf, out_base: &PathBuf, kind:
     };
 
     if let Some(data) = artifact {
-        fs::write(out_name, data);
+        fs::write(out_name, data).unwrap();
     };
 }
 

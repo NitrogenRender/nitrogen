@@ -266,7 +266,6 @@ impl MaterialStorage {
 
     pub fn destroy_instances(
         &mut self,
-        device: &DeviceContext,
         instances: &[MaterialInstanceHandle],
     ) {
         for (mat_handle, inst) in instances {
@@ -275,12 +274,12 @@ impl MaterialStorage {
                 None => continue,
             };
 
-            mat.free_instance(device, *inst);
+            mat.free_instance(*inst);
         }
     }
 
     pub fn release(self, device: &DeviceContext) {
-        for (id, mat) in self.storage {
+        for (_id, mat) in self.storage {
             mat.release(device);
         }
     }
@@ -359,7 +358,6 @@ impl Material {
 
     fn free_instance(
         &mut self,
-        device: &DeviceContext,
         handle: Handle<MaterialInstance>,
     ) -> Option<()> {
         use gfx::pso::DescriptorPool;
