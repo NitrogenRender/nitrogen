@@ -5,7 +5,6 @@
 use gfx;
 use std;
 
-
 use buffer::BufferTypeInternal;
 
 use image::ImageType;

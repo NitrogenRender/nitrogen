@@ -244,8 +244,7 @@ impl Context {
     }
 
     pub fn material_destroy_instance(&mut self, instances: &[material::MaterialInstanceHandle]) {
-        self.material_storage
-            .destroy_instances(instances)
+        self.material_storage.destroy_instances(instances)
     }
 
     pub fn material_write_instance<T>(

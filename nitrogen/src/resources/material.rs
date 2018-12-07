@@ -264,10 +264,7 @@ impl MaterialStorage {
         Some(())
     }
 
-    pub fn destroy_instances(
-        &mut self,
-        instances: &[MaterialInstanceHandle],
-    ) {
+    pub fn destroy_instances(&mut self, instances: &[MaterialInstanceHandle]) {
         for (mat_handle, inst) in instances {
             let mat = match self.storage.get_mut(*mat_handle) {
                 Some(mat) => mat,
@@ -356,10 +353,7 @@ impl Material {
         Ok(self.instances.insert(instance).0)
     }
 
-    fn free_instance(
-        &mut self,
-        handle: Handle<MaterialInstance>,
-    ) -> Option<()> {
+    fn free_instance(&mut self, handle: Handle<MaterialInstance>) -> Option<()> {
         use gfx::pso::DescriptorPool;
         use std;
 

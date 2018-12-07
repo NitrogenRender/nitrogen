@@ -235,7 +235,6 @@ pub unsafe extern "C" fn image_upload_data(
         successes[i] = result.is_ok();
     }
     */
-
     */
 }
 

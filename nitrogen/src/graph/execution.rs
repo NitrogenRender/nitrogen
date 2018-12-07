@@ -21,7 +21,7 @@ use gfx;
 
 use gfx::Device;
 
-use smallvec::{SmallVec};
+use smallvec::SmallVec;
 
 use device::DeviceContext;
 use resources::{
@@ -32,7 +32,7 @@ use resources::{
     render_pass::{RenderPassHandle, RenderPassStorage},
     sampler::{SamplerHandle, SamplerStorage},
     semaphore_pool::{SemaphoreList, SemaphorePool},
-    vertex_attrib::{VertexAttribStorage},
+    vertex_attrib::VertexAttribStorage,
 };
 use submit_group::ResourceList;
 
