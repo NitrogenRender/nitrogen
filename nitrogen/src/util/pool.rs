@@ -11,7 +11,7 @@ use std::ops::{Deref, DerefMut};
 /// of a [`Pool<T>`]
 pub trait PoolImpl<T> {
     fn new_elem(&mut self) -> T;
-    fn reset_elem(&mut self, elem: &mut T) {}
+    fn reset_elem(&mut self, _elem: &mut T) {}
     fn free_elem(&mut self, elem: T);
 }
 
@@ -92,8 +92,6 @@ impl<T, Impl: PoolImpl<T>> Pool<T, Impl> {
     }
 
     unsafe fn free(&self, idx: usize) {
-        use std::mem::transmute;
-
         let this = self.get();
 
         this.pool_impl.reset_elem(&mut this.values[idx]);
@@ -105,8 +103,6 @@ impl<T, Impl: PoolImpl<T>> Pool<T, Impl> {
     }
 
     pub fn clear(&mut self) {
-        use std::mem::transmute_copy;
-
         let this = unsafe { self.get() };
 
         this.size = 0;
@@ -252,7 +248,7 @@ mod test {
 
     #[test]
     fn alloc() {
-        let mut pool = Pool::with_intial_elems(NumImpl, 1);
+        let pool = Pool::with_intial_elems(NumImpl, 1);
         assert_eq!(pool.len(), 0);
 
         let mut entry = pool.alloc();
@@ -267,7 +263,7 @@ mod test {
 
     #[test]
     fn reuse() {
-        let mut pool = Pool::with_intial_elems(NumImpl, 1);
+        let pool = Pool::with_intial_elems(NumImpl, 1);
         assert_eq!(pool.len(), 0);
 
         {
@@ -291,7 +287,7 @@ mod test {
 
     #[test]
     fn new_alloc() {
-        let mut pool = Pool::new(NumImpl);
+        let pool = Pool::new(NumImpl);
 
         let mut entry = pool.alloc();
 
@@ -304,7 +300,7 @@ mod test {
     fn grow_a_lot_new() {
         use std::mem::forget;
 
-        let mut pool = Pool::new(NumImpl);
+        let pool = Pool::new(NumImpl);
 
         for _ in 0..1000 {
             let entry = pool.alloc();
@@ -318,7 +314,7 @@ mod test {
     fn grow_a_lot_cap() {
         use std::mem::forget;
 
-        let mut pool = Pool::with_intial_elems(NumImpl, 1000);
+        let pool = Pool::with_intial_elems(NumImpl, 1000);
 
         for _ in 0..1000 {
             let entry = pool.alloc();

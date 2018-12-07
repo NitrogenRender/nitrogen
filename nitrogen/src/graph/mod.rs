@@ -504,7 +504,7 @@ fn resolve_input_graph(
 
     for (pass, ress) in &input.resource_copies {
         let creates = pass_creates.entry(*pass).or_insert(BTreeSet::new());
-        for (new_name, old_name) in ress {
+        for (new_name, _old_name) in ress {
             if let Some(id) = resource_name_lookup.get(new_name) {
                 errors.push(GraphCompileError::ResourceRedefined {
                     pass: *pass,
@@ -525,7 +525,7 @@ fn resolve_input_graph(
 
     for (pass, ress) in &input.resource_moves {
         let creates = pass_creates.entry(*pass).or_insert(BTreeSet::new());
-        for (new_name, old_name) in ress {
+        for (new_name, _old_name) in ress {
             if let Some(id) = resource_name_lookup.get(new_name) {
                 errors.push(GraphCompileError::ResourceRedefined {
                     pass: *pass,

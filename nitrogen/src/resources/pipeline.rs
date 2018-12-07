@@ -111,7 +111,7 @@ pub struct GraphicsPipelineCreateInfo<'a> {
 
 pub struct PipelineStorage {
     graphic_pipelines: BTreeMap<usize, GraphicsPipeline>,
-    compute_pipelines: BTreeMap<usize, ComputePipeline>,
+    _compute_pipelines: BTreeMap<usize, ComputePipeline>,
     storage: Storage<Pipeline>,
 }
 
@@ -120,7 +120,7 @@ impl PipelineStorage {
         PipelineStorage {
             storage: Storage::new(),
             graphic_pipelines: BTreeMap::new(),
-            compute_pipelines: BTreeMap::new(),
+            _compute_pipelines: BTreeMap::new(),
         }
     }
 
@@ -293,7 +293,9 @@ impl PipelineStorage {
         Ok(handle)
     }
 
-    pub fn destroy(&mut self, device: &DeviceContext) {}
+    pub fn destroy(&mut self, _device: &DeviceContext) {
+        // TODO
+    }
 
     pub(crate) fn raw_graphics(&self, handle: PipelineHandle) -> Option<&GraphicsPipeline> {
         if self.storage.is_alive(handle) {

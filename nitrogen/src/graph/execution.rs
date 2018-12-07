@@ -18,11 +18,10 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use gfx;
-use gfxm;
 
 use gfx::Device;
 
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec};
 
 use device::DeviceContext;
 use resources::{
@@ -32,8 +31,8 @@ use resources::{
     pipeline::{PipelineHandle, PipelineStorage},
     render_pass::{RenderPassHandle, RenderPassStorage},
     sampler::{SamplerHandle, SamplerStorage},
-    semaphore_pool::{Semaphore, SemaphoreList, SemaphorePool},
-    vertex_attrib::{VertexAttribHandle, VertexAttribStorage},
+    semaphore_pool::{SemaphoreList, SemaphorePool},
+    vertex_attrib::{VertexAttribStorage},
 };
 use submit_group::ResourceList;
 
@@ -201,8 +200,6 @@ impl ExecutionGraph {
             pass_execs
                 .into_iter()
                 .map(|batch| {
-                    use std::collections::BTreeSet;
-
                     let (creates, copies, deletes) = {
                         let all_creates = batch
                             .iter()
@@ -348,13 +345,9 @@ pub(crate) fn derive_resource_usage(
     use gfx::image::Usage as IUsage;
     use gfx::memory::Properties;
 
-    use super::BufferCreateInfo;
-    use super::ImageCreateInfo;
     use super::ResourceCreateInfo;
 
     use super::BufferStorageType;
-
-    use image::ImageSizeMode;
 
     for batch in &exec_graph.pass_execution {
         for create in &batch.resource_create {
@@ -509,7 +502,7 @@ pub(crate) fn prepare(
     resolved_graph: &GraphResourcesResolved,
     passes: &[(PassName, PassInfo)],
     outputs: &[ResourceId],
-    context: &ExecutionContext,
+    _context: &ExecutionContext,
 ) -> ExecutionGraphResources {
     let mut res = ExecutionGraphResources {
         render_passes_graphic: HashMap::new(),
@@ -686,7 +679,7 @@ pub(crate) fn execute(
                             res.samplers.insert(*create, sampler);
                         }
                     }
-                    ResourceCreateInfo::Buffer(buf) => unimplemented!(),
+                    ResourceCreateInfo::Buffer(_buf) => unimplemented!(),
                 }
             }
         }
@@ -711,7 +704,7 @@ pub(crate) fn execute(
 
                     sorted_attachment
                         .into_iter()
-                        .map(|(res_id, ty, binding)| {
+                        .map(|(res_id, _ty, _binding)| {
                             let res_id = resolved_graph.moved_from(*res_id).unwrap();
 
                             // TODO use a
@@ -762,13 +755,13 @@ pub(crate) fn execute(
                 material: storages.material,
             };
 
-            for i in 0..batch.passes.len() {
+            for _ in 0..batch.passes.len() {
                 let sem = sem_pool.alloc();
                 sem_list.add_next_semaphore(sem);
             }
 
             // TODO FEARLESS CONCURRENCY!!!
-            for (i, pass) in batch.passes.iter().enumerate() {
+            for pass in &batch.passes {
                 let pipeline = {
                     let handle = resources.pipelines_graphic[pass];
                     storages.pipeline.raw_graphics(handle).unwrap()
@@ -779,7 +772,7 @@ pub(crate) fn execute(
                     storages.render_pass.raw(handle).unwrap()
                 };
 
-                let (set_layout, set) = &resources.pipelines_graphic_desc_sets[pass];
+                let (_set_layout, set) = &resources.pipelines_graphic_desc_sets[pass];
 
                 // TODO transition resource layouts
 
@@ -788,7 +781,6 @@ pub(crate) fn execute(
                     let writes = resolved_graph.pass_reads[pass]
                         .iter()
                         .map(|(rid, ty, binding, samp)| {
-                            use super::BufferReadType;
                             use super::ImageReadType;
 
                             match ty {
@@ -849,7 +841,7 @@ pub(crate) fn execute(
                                         }
                                     }
                                 }
-                                ResourceReadType::Buffer(buf) => unimplemented!(),
+                                ResourceReadType::Buffer(_buf) => unimplemented!(),
                             }
                         })
                         .flatten();
@@ -952,7 +944,7 @@ fn create_render_pass_graphics(
     storages: &mut ExecutionStorages,
     resolved_graph: &GraphResourcesResolved,
     pass: PassId,
-    info: &PassInfo,
+    _info: &PassInfo,
 ) -> Option<RenderPassHandle> {
     let attachments = {
         resolved_graph.pass_writes[&pass]
@@ -967,7 +959,7 @@ fn create_render_pass_graphics(
                     _ => false,
                 }
             })
-            .map(|(res, ty, binding)| {
+            .map(|(res, _ty, _binding)| {
                 let (origin, info) = resolved_graph.create_info(*res).unwrap();
 
                 use super::ResourceCreateInfo;
@@ -1075,7 +1067,7 @@ fn create_pipeline_graphics(
 
     use pipeline;
 
-    let (mut layouts, pass_stuff) = {
+    let (layouts, pass_stuff) = {
         use super::{BufferReadType, ImageReadType, ResourceReadType};
 
         let mut sets = BTreeMap::new();
@@ -1190,7 +1182,6 @@ fn create_pipeline_graphics(
 
         use gfx::DescriptorPool;
         use gfx::Device;
-        use std::iter::once;
 
         let pass_set_layout = device
             .device

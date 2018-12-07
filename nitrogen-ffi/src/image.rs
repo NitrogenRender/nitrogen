@@ -1,8 +1,8 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 use nitrogen;
-
-use smallvec::SmallVec;
-
-use std::slice;
 
 type ImageId = usize;
 type ImageGeneration = u64;
@@ -129,11 +129,11 @@ pub struct ImageUploadInfo {
 
 #[no_mangle]
 pub unsafe extern "C" fn image_create(
-    context: *mut nitrogen::Context,
-    create_infos: *const ImageCreateInfo,
-    handles: *mut ImageHandle,
-    successes: *mut bool,
-    count: usize,
+    _context: *mut nitrogen::Context,
+    _create_infos: *const ImageCreateInfo,
+    _handles: *mut ImageHandle,
+    _successes: *mut bool,
+    _count: usize,
 ) {
     /*
     let context = &mut *context;
@@ -191,11 +191,11 @@ pub unsafe extern "C" fn image_create(
 
 #[no_mangle]
 pub unsafe extern "C" fn image_upload_data(
-    context: *mut nitrogen::Context,
-    images: *const ImageHandle,
-    data: *const ImageUploadInfo,
-    successes: *mut bool,
-    count: usize,
+    _context: *mut nitrogen::Context,
+    _images: *const ImageHandle,
+    _data: *const ImageUploadInfo,
+    _successes: *mut bool,
+    _count: usize,
 ) {
     /*
     let context = &mut *context;
@@ -247,9 +247,9 @@ pub unsafe extern "C" fn image_destroy(
 ) {
     use std;
 
-    let context = &mut *context;
+    let _context = &mut *context;
 
-    let images = std::slice::from_raw_parts(images, images_count)
+    let _images = std::slice::from_raw_parts(images, images_count)
         .iter()
         .map(|image| (*image).into())
         .collect::<Vec<_>>();

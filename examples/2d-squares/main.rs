@@ -130,7 +130,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ctx.material_write_instance(instance_material, std::iter::once(write));
     }
 
-    let (graph) = create_graph(
+    let graph = create_graph(
         &mut ctx,
         vtx_def,
         material,

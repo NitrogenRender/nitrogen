@@ -29,7 +29,6 @@ use resources::MemoryProperties;
 use resources::semaphore_pool::SemaphoreList;
 use resources::semaphore_pool::SemaphorePool;
 use submit_group::ResourceList;
-use types;
 use types::CommandPool;
 
 type BufferId = usize;
@@ -45,8 +44,8 @@ pub enum BufferType {
 pub struct Buffer {
     buffer: BufferTypeInternal,
     size: u64,
-    usage: gfx::buffer::Usage,
-    properties: gfx::memory::Properties,
+    _usage: gfx::buffer::Usage,
+    _properties: gfx::memory::Properties,
 }
 
 pub type BufferHandle = Handle<BufferType>;
@@ -219,8 +218,8 @@ impl BufferStorage {
             let buffer = Buffer {
                 buffer: raw_buffer,
                 size: create_info.size,
-                properties,
-                usage,
+                _properties: properties,
+                _usage: usage,
             };
 
             let (handle, _) = self.storage.insert(ty);
@@ -256,7 +255,7 @@ impl BufferStorage {
     pub(crate) fn raw(&self, buffer: BufferHandle) -> Option<&BufferTypeInternal> {
         self.storage
             .get(buffer)
-            .map(|buf| &self.buffers[&buffer.id()].buffer)
+            .map(|_buf| &self.buffers[&buffer.id()].buffer)
     }
 
     pub fn upload_data<T>(
@@ -465,7 +464,7 @@ fn write_data_to_buffer(
 
     writer[offset..offset + data.len()].copy_from_slice(data);
 
-    device.device.release_mapping_writer(writer);
+    device.device.release_mapping_writer(writer).unwrap();
 
     Ok(())
 }
