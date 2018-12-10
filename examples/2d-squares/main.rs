@@ -29,7 +29,7 @@ const VERTEX_DATA: [VertexData; 4] = [
     VertexData { pos: [1.0, 1.0] },
 ];
 
-const NUM_THINGS: usize = 10_000;
+const NUM_THINGS: usize = 100_000;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::env::set_var("RUST_LOG", "debug");
@@ -56,8 +56,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let vtx_def = {
         let create_info = vertex_attrib::VertexAttribInfo {
-            buffer_stride: ::std::mem::size_of::<VertexData>(),
             buffer_infos: &[vertex_attrib::VertexAttribBufferInfo {
+                stride: ::std::mem::size_of::<VertexData>(),
                 index: 0,
                 elements: &[vertex_attrib::VertexAttribBufferElementInfo {
                     location: 0,
@@ -251,7 +251,7 @@ fn create_graph(
 
     {
         let info = graph::PassInfo::Graphics {
-            vertex_attrib: vec![(0, vertex_attrib)],
+            vertex_attrib: Some(vertex_attrib),
             shaders: graph::Shaders {
                 vertex: graph::ShaderInfo {
                     content: Cow::Borrowed(include_bytes!(concat!(
@@ -297,13 +297,10 @@ fn create_graph(
                 builder.enable();
             }
 
-            fn execute(
-                &self,
-                cmd: &mut graph::CommandBuffer,
-            ) {
+            fn execute(&self, cmd: &mut graph::CommandBuffer) {
                 let things = NUM_THINGS;
 
-                cmd.bind_vertex_array(0, self.buffer);
+                cmd.bind_vertex_buffers(&[(self.buffer, 0)]);
                 cmd.bind_graphics_descriptor_set(1, self.mat_instance);
 
                 cmd.draw(0..4, 0..things as u32);

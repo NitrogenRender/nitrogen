@@ -8,9 +8,17 @@ use smallvec::SmallVec;
 
 pub type VertexAttribHandle = Handle<VertexAttrib>;
 
+#[derive(Debug)]
 pub struct VertexAttrib {
-    pub(crate) buffer_stride: usize,
+    /// stride and attributes
+    pub(crate) buffers: Vec<VertexBufferDesc>,
     pub(crate) attribs: Vec<gfx::pso::AttributeDesc>,
+}
+
+#[derive(Debug)]
+pub(crate) struct VertexBufferDesc {
+    pub(crate) stride: usize,
+    pub(crate) binding: usize,
 }
 
 pub struct VertexAttribStorage {
@@ -18,11 +26,11 @@ pub struct VertexAttribStorage {
 }
 
 pub struct VertexAttribInfo<'a> {
-    pub buffer_stride: usize,
     pub buffer_infos: &'a [VertexAttribBufferInfo<'a>],
 }
 
 pub struct VertexAttribBufferInfo<'a> {
+    pub stride: usize,
     pub index: u32,
     pub elements: &'a [VertexAttribBufferElementInfo],
 }
@@ -56,6 +64,7 @@ impl VertexAttribStorage {
                 };
 
                 let mut attribs = Vec::with_capacity(num_attribs);
+                let mut bufs = Vec::with_capacity(create_info.buffer_infos.len());
 
                 let attrib_iter = create_info.buffer_infos.iter().flat_map(|buffer| {
                     let index = buffer.index;
@@ -75,9 +84,19 @@ impl VertexAttribStorage {
 
                 attribs.extend(attrib_iter);
 
+                let bufs_iter = create_info
+                    .buffer_infos
+                    .iter()
+                    .map(|buf_info| VertexBufferDesc {
+                        stride: buf_info.stride,
+                        binding: buf_info.index as _,
+                    });
+
+                bufs.extend(bufs_iter);
+
                 VertexAttrib {
+                    buffers: bufs,
                     attribs,
-                    buffer_stride: create_info.buffer_stride,
                 }
             })
             .map(|attrib| self.storage.insert(attrib).0)

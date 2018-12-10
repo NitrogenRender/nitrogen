@@ -36,10 +36,7 @@ FragmentOut FragmentMain(VertexOut input)
 
     float2 uv = input.uv;
 
-    // output.color = float4(input.uv, 1.0, 1.0);
-
     output.color = t.Sample(s, uv);
-    output.color.xyz = float3(1.0.xxx) - output.color.xyz;
 
     return output;
 }

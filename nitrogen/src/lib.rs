@@ -106,7 +106,8 @@ impl Context {
         use std::mem::transmute;
 
         let surface = unsafe {
-            self.instance.create_surface_from_xlib(transmute(display), transmute(window))
+            self.instance
+                .create_surface_from_xlib(transmute(display), transmute(window))
         };
 
         let _ = self

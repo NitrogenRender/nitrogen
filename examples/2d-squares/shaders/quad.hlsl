@@ -39,7 +39,7 @@ VertexOut VertexMain(VertexIn input)
     ret.idx = input.primitive_id;
 
     float2 position;
-    position = input.position * data[ret.idx].size;
+    position = input.position * data[ret.idx].size * 0.25 / 8.0;
     position += data[ret.idx].position;
 
     ret.position = float4(position, 0.0, 1.0);
