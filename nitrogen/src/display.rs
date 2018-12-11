@@ -11,8 +11,8 @@ use crate::types::*;
 
 use crate::resources::semaphore_pool::{SemaphoreList, SemaphorePool};
 
-use std;
 use crate::submit_group::ResourceList;
+use std;
 
 pub struct Display {
     pub surface: Surface,

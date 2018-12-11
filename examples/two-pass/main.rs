@@ -12,29 +12,18 @@ use log::debug;
 
 use std::borrow::Cow;
 
-#[derive(Debug, Clone, Copy)]
-struct Vertex {
-    pub pos: [f32; 2],
-    pub uv: [f32; 2],
-}
+const TRIANGLE_POS: [[f32; 2]; 4] = [
+    [-1.0, -1.0], // LEFT TOP
+    [-1.0, 1.0],  // LEFT BOTTOM
+    [1.0, -1.0],  // RIGHT TOP
+    [1.0, 1.0],   // RIGHT BOTTOM
+];
 
-const TRIANGLE: [Vertex; 4] = [
-    Vertex {
-        pos: [-1.0, -1.0],
-        uv: [0.0, 0.0],
-    }, // LEFT TOP
-    Vertex {
-        pos: [-1.0, 1.0],
-        uv: [0.0, 1.0],
-    }, // LEFT BOTTOM
-    Vertex {
-        pos: [1.0, -1.0],
-        uv: [1.0, 0.0],
-    }, // RIGHT TOP
-    Vertex {
-        pos: [1.0, 1.0],
-        uv: [1.0, 1.0],
-    }, // RIGHT BOTTOM
+const TRIANGLE_UV: [[f32; 2]; 4] = [
+    [0.0, 0.0], // LEFT TOP
+    [0.0, 1.0], // LEFT BOTTOM
+    [1.0, 0.0], // RIGHT TOP
+    [1.0, 1.0], // RIGHT BOTTOM
 ];
 
 fn main() {
@@ -130,9 +119,9 @@ fn main() {
 
     submit.display_setup_swapchain(&mut ntg, display);
 
-    let buffer = {
+    let buffer_pos = {
         let create_info = nitrogen::buffer::BufferCreateInfo {
-            size: std::mem::size_of_val(&TRIANGLE) as u64,
+            size: std::mem::size_of_val(&TRIANGLE_POS) as u64,
             is_transient: false,
             usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC
                 | nitrogen::buffer::BufferUsage::VERTEX,
@@ -143,36 +132,65 @@ fn main() {
 
         let upload_data = nitrogen::buffer::BufferUploadInfo {
             offset: 0,
-            data: &TRIANGLE,
+            data: &TRIANGLE_POS,
         };
 
-        let result = submit
+        submit
             .buffer_upload_data(&mut ntg, &[(buffer, upload_data)])
-            .remove(0);
+            .remove(0)
+            .unwrap();
 
-        println!("{:?}", result);
+        buffer
+    };
+
+    let buffer_uv = {
+        let create_info = nitrogen::buffer::BufferCreateInfo {
+            size: std::mem::size_of_val(&TRIANGLE_UV) as u64,
+            is_transient: false,
+            usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC
+                | nitrogen::buffer::BufferUsage::VERTEX,
+            properties: nitrogen::resources::MemoryProperties::CPU_VISIBLE
+                | nitrogen::resources::MemoryProperties::COHERENT,
+        };
+        let buffer = ntg.buffer_create(&[create_info]).remove(0).unwrap();
+
+        let upload_data = nitrogen::buffer::BufferUploadInfo {
+            offset: 0,
+            data: &TRIANGLE_UV,
+        };
+
+        submit
+            .buffer_upload_data(&mut ntg, &[(buffer, upload_data)])
+            .remove(0)
+            .unwrap();
 
         buffer
     };
 
     let vertex_attrib = {
         let info = nitrogen::vertex_attrib::VertexAttribInfo {
-            buffer_stride: std::mem::size_of::<Vertex>(),
-            buffer_infos: &[nitrogen::vertex_attrib::VertexAttribBufferInfo {
-                index: 0,
-                elements: &[
-                    nitrogen::vertex_attrib::VertexAttribBufferElementInfo {
+            buffer_infos: &[
+                // pos
+                nitrogen::vertex_attrib::VertexAttribBufferInfo {
+                    stride: std::mem::size_of::<[f32; 2]>(),
+                    index: 0,
+                    elements: &[nitrogen::vertex_attrib::VertexAttribBufferElementInfo {
                         location: 0,
                         format: nitrogen::gfx::format::Format::Rg32Float,
                         offset: 0,
-                    },
-                    nitrogen::vertex_attrib::VertexAttribBufferElementInfo {
+                    }],
+                },
+                // uv
+                nitrogen::vertex_attrib::VertexAttribBufferInfo {
+                    stride: std::mem::size_of::<[f32; 2]>(),
+                    index: 1,
+                    elements: &[nitrogen::vertex_attrib::VertexAttribBufferElementInfo {
                         location: 1,
                         format: nitrogen::gfx::format::Format::Rg32Float,
-                        offset: 8,
-                    },
-                ],
-            }],
+                        offset: 0,
+                    }],
+                },
+            ],
         };
 
         ntg.vertex_attribs_create(&[info]).remove(0)
@@ -180,8 +198,9 @@ fn main() {
 
     let graph = setup_graphs(
         &mut ntg,
-        vertex_attrib,
-        buffer,
+        Some(vertex_attrib),
+        buffer_pos,
+        buffer_uv,
         material,
         mat_example_instance,
     );
@@ -214,11 +233,10 @@ fn main() {
             data: &[uniform_data],
         };
 
-        let result = submit
+        submit
             .buffer_upload_data(&mut ntg, &[(buffer, upload_data)])
-            .remove(0);
-
-        println!("{:?}", result);
+            .remove(0)
+            .unwrap();
 
         buffer
     };
@@ -299,7 +317,7 @@ fn main() {
         frame_idx = frame_num % submits.len();
     }
 
-    submits[0].buffer_destroy(&mut ntg, &[buffer, uniform_buffer]);
+    submits[0].buffer_destroy(&mut ntg, &[buffer_pos, buffer_uv, uniform_buffer]);
     submits[0].image_destroy(&mut ntg, &[image]);
     submits[0].sampler_destroy(&mut ntg, &[sampler]);
 
@@ -317,8 +335,9 @@ fn main() {
 
 fn setup_graphs(
     ntg: &mut nitrogen::Context,
-    vertex_attrib: nitrogen::vertex_attrib::VertexAttribHandle,
-    buffer: nitrogen::buffer::BufferHandle,
+    vertex_attrib: Option<nitrogen::vertex_attrib::VertexAttribHandle>,
+    buffer_pos: nitrogen::buffer::BufferHandle,
+    buffer_uv: nitrogen::buffer::BufferHandle,
     material: nitrogen::material::MaterialHandle,
     material_instance: nitrogen::material::MaterialInstanceHandle,
 ) -> graph::GraphHandle {
@@ -363,13 +382,13 @@ fn setup_graphs(
                 builder.enable();
             },
             move |cmd| {
-                cmd.bind_vertex_array(0, buffer);
+                cmd.bind_vertex_buffers(&[(buffer_pos, 0), (buffer_uv, 0)]);
 
                 cmd.bind_graphics_descriptor_set(1, material_instance);
 
                 cmd.draw(0..4, 0..1);
             },
-            vec![(0, vertex_attrib)],
+            vertex_attrib.clone(),
             vec![(1, material)],
         );
 
@@ -407,11 +426,11 @@ fn setup_graphs(
                 builder.enable();
             },
             move |cmd| {
-                cmd.bind_vertex_array(0, buffer);
+                cmd.bind_vertex_buffers(&[(buffer_pos, 0), (buffer_uv, 0)]);
 
                 cmd.draw(0..4, 0..1);
             },
-            vec![(0, vertex_attrib)],
+            vertex_attrib,
             vec![],
         );
 
@@ -427,7 +446,7 @@ fn create_test_pass<FSetUp, FExec>(
     shaders: nitrogen::graph::Shaders,
     setup: FSetUp,
     execute: FExec,
-    vert: Vec<(usize, nitrogen::vertex_attrib::VertexAttribHandle)>,
+    vert: Option<nitrogen::vertex_attrib::VertexAttribHandle>,
     materials: Vec<(usize, nitrogen::material::MaterialHandle)>,
 ) -> (impl PassImpl, graph::PassInfo)
 where

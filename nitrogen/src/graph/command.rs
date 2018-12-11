@@ -10,6 +10,7 @@ use crate::material::{MaterialInstanceHandle, MaterialStorage};
 
 use crate::buffer::{BufferHandle, BufferStorage};
 
+#[derive(Clone)]
 pub(crate) struct ReadStorages<'a> {
     pub(crate) buffer: &'a BufferStorage,
     pub(crate) material: &'a MaterialStorage,
@@ -28,14 +29,26 @@ impl<'a> CommandBuffer<'a> {
         self.encoder.draw(vertices, instances);
     }
 
-    pub fn bind_vertex_array(&mut self, index: usize, buffer: BufferHandle) {
-        let buffer = if let Some(buf) = self.storages.buffer.raw(buffer) {
-            buf.raw()
-        } else {
-            return;
-        };
+    /// Bind vertex buffers for the next draw call.
+    /// The provided pairs of buffer and `usize` represent the buffer to bind
+    /// and the **offset into the buffer**.
+    /// The first pair will be bound to vertex buffer 0, the second to 1, etc...
+    pub fn bind_vertex_buffers<T, I>(&mut self, buffers: T)
+    where
+        T: IntoIterator<Item = I>,
+        T::Item: std::borrow::Borrow<(BufferHandle, usize)>,
+    {
+        let stores = self.storages.clone();
 
-        self.encoder.bind_vertex_buffers(0, Some((buffer, index as u64)));
+        let bufs = buffers.into_iter().filter_map(|i| {
+            let (buffer, index) = i.borrow();
+            stores
+                .buffer
+                .raw(*buffer)
+                .map(|buf| (buf.raw(), *index as u64))
+        });
+
+        self.encoder.bind_vertex_buffers(0, bufs);
     }
 
     pub fn bind_graphics_descriptor_set(

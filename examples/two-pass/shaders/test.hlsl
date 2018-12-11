@@ -48,7 +48,7 @@ FragmentOut FragmentMain(VertexOut input)
 
     output.color = t.Sample(s, input.uv);
 
-    // output.color *= modulate;
+    output.color *= modulate;
 
     return output;
 }

@@ -19,7 +19,7 @@ pub struct PassId(pub(crate) usize);
 
 pub enum PassInfo {
     Graphics {
-        vertex_attrib: Vec<(usize, VertexAttribHandle)>,
+        vertex_attrib: Option<VertexAttribHandle>,
         shaders: Shaders,
         primitive: Primitive,
         blend_mode: BlendMode,

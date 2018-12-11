@@ -7,8 +7,8 @@ use gfx::Device;
 use crate::buffer::BufferTypeInternal;
 use crate::image::ImageType;
 
-use crate::*;
 use crate::device::DeviceContext;
+use crate::*;
 
 use crate::resources::semaphore_pool::{SemaphoreList, SemaphorePool};
 
