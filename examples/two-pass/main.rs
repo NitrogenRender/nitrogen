@@ -306,11 +306,9 @@ fn main() {
                 resized = false;
             }
 
-            let res = submits[frame_idx].graph_render(&mut ntg, graph, &exec_context);
+            submits[frame_idx].graph_render(&mut ntg, graph, &exec_context);
 
-            submits[frame_idx].display_present(&mut ntg, display, &res);
-
-            submits[frame_idx].graph_resources_destroy(&mut ntg, res);
+            submits[frame_idx].display_present(&mut ntg, display, graph);
         }
 
         frame_num += 1;
@@ -320,13 +318,12 @@ fn main() {
     submits[0].buffer_destroy(&mut ntg, &[buffer_pos, buffer_uv, uniform_buffer]);
     submits[0].image_destroy(&mut ntg, &[image]);
     submits[0].sampler_destroy(&mut ntg, &[sampler]);
+    submits[0].graph_destroy(&mut ntg, &[graph]);
 
     for mut submit in submits {
         submit.wait(&mut ntg);
         submit.release(&mut ntg);
     }
-
-    ntg.graph_destroy(graph);
 
     ntg.material_destroy(&[material]);
 

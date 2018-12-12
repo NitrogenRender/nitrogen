@@ -74,24 +74,38 @@ impl SubmitGroup {
         &mut self,
         ctx: &mut Context,
         display: DisplayHandle,
-        resources: &graph::ExecutionResources,
-    ) {
-        let image_id = if resources.outputs.len() != 1 {
-            return;
-        } else {
-            resources.outputs[0]
-        };
+        graph: graph::GraphHandle,
+    ) -> bool {
+        if let Some(graph) = ctx.graph_storage.storage.get(graph) {
+            if let Some((_, res)) = graph.exec_resources.as_ref() {
+                let mut image = None;
+                for output in &res.outputs {
+                    if let Some(id) = res.images.get(output) {
+                        image = Some(*id);
+                        break;
+                    }
+                }
 
-        let image = resources.images[&image_id];
+                if image == None {
+                    return false;
+                }
 
-        ctx.displays[display].present(
-            &ctx.device_ctx,
-            &mut self.sem_pool,
-            &mut self.sem_list,
-            &mut self.pool_graphics,
-            &ctx.image_storage,
-            image,
-        );
+                let image = image.unwrap();
+
+                ctx.displays[display].present(
+                    &ctx.device_ctx,
+                    &mut self.sem_pool,
+                    &mut self.sem_list,
+                    &mut self.pool_graphics,
+                    &ctx.image_storage,
+                    image,
+                );
+
+                return true;
+            }
+        }
+
+        false
     }
 
     pub fn display_setup_swapchain(&mut self, ctx: &mut Context, display: DisplayHandle) {
@@ -103,32 +117,52 @@ impl SubmitGroup {
         ctx: &mut Context,
         graph: graph::GraphHandle,
         exec_context: &graph::ExecutionContext,
-    ) -> graph::ExecutionResources {
+    ) {
+        let mut storages = graph::Storages {
+            render_pass: &mut ctx.render_pass_storage,
+            pipeline: &mut ctx.pipeline_storage,
+            image: &mut ctx.image_storage,
+            buffer: &mut ctx.buffer_storage,
+            vertex_attrib: &ctx.vertex_attrib_storage,
+            sampler: &mut ctx.sampler_storage,
+            material: &ctx.material_storage,
+        };
+
         ctx.graph_storage.execute(
             &ctx.device_ctx,
             &mut self.sem_pool,
             &mut self.sem_list,
             &mut self.pool_graphics,
             &mut self.res_destroys,
-            &mut ctx.render_pass_storage,
-            &mut ctx.pipeline_storage,
-            &mut ctx.image_storage,
-            &mut ctx.buffer_storage,
-            &ctx.vertex_attrib_storage,
-            &mut ctx.sampler_storage,
-            &ctx.material_storage,
+            &mut storages,
             graph,
             exec_context,
         )
     }
 
-    pub fn graph_resources_destroy(&mut self, ctx: &mut Context, res: graph::ExecutionResources) {
-        res.release(
-            &mut self.res_destroys,
-            &mut ctx.image_storage,
-            &mut ctx.sampler_storage,
-            &mut ctx.buffer_storage,
-        );
+    pub fn graph_destroy<G>(&mut self, ctx: &mut Context, graph: G)
+    where
+        G: IntoIterator,
+        G::Item: std::borrow::Borrow<graph::GraphHandle>,
+    {
+        use std::borrow::Borrow;
+
+        let mut storages = graph::Storages {
+            render_pass: &mut ctx.render_pass_storage,
+            pipeline: &mut ctx.pipeline_storage,
+            image: &mut ctx.image_storage,
+            buffer: &mut ctx.buffer_storage,
+            vertex_attrib: &ctx.vertex_attrib_storage,
+            sampler: &mut ctx.sampler_storage,
+            material: &ctx.material_storage,
+        };
+
+        for handle in graph.into_iter() {
+            let handle = *handle.borrow();
+
+            ctx.graph_storage
+                .destroy(&mut self.res_destroys, &mut storages, handle);
+        }
     }
 
     pub fn image_upload_data(
@@ -229,6 +263,12 @@ pub struct ResourceList {
     images: SmallVec<[ImageType; 16]>,
     samplers: SmallVec<[types::Sampler; 16]>,
     image_views: SmallVec<[types::ImageView; 16]>,
+    render_passes: SmallVec<[types::RenderPass; 16]>,
+    pipelines_graphic: SmallVec<[types::GraphicsPipeline; 16]>,
+    pipelines_compute: SmallVec<[types::ComputePipeline; 16]>,
+    pipelines_layout: SmallVec<[types::PipelineLayout; 16]>,
+    desc_set_layouts: SmallVec<[types::DescriptorSetLayout; 16]>,
+    desc_pools: SmallVec<[types::DescriptorPool; 16]>,
 }
 
 impl ResourceList {
@@ -240,6 +280,12 @@ impl ResourceList {
             images: SmallVec::new(),
             samplers: SmallVec::new(),
             image_views: SmallVec::new(),
+            render_passes: SmallVec::new(),
+            pipelines_graphic: SmallVec::new(),
+            pipelines_compute: SmallVec::new(),
+            pipelines_layout: SmallVec::new(),
+            desc_set_layouts: SmallVec::new(),
+            desc_pools: SmallVec::new(),
         }
     }
 
@@ -263,37 +309,80 @@ impl ResourceList {
         self.image_views.push(image_view);
     }
 
+    pub fn queue_render_pass(&mut self, render_pass: types::RenderPass) {
+        self.render_passes.push(render_pass);
+    }
+
+    pub fn queue_pipeline_graphic(&mut self, pipe: types::GraphicsPipeline) {
+        self.pipelines_graphic.push(pipe);
+    }
+
+    pub fn queue_pipeline_compute(&mut self, pipe: types::ComputePipeline) {
+        self.pipelines_compute.push(pipe);
+    }
+
+    pub fn queue_pipeline_layout(&mut self, layout: types::PipelineLayout) {
+        self.pipelines_layout.push(layout);
+    }
+
+    pub fn queue_desc_set_layout(&mut self, layout: types::DescriptorSetLayout) {
+        self.desc_set_layouts.push(layout);
+    }
+
+    pub fn queue_desc_pool(&mut self, pool: types::DescriptorPool) {
+        self.desc_pools.push(pool);
+    }
+
     fn free_resources(&mut self) {
         use gfxm::Factory;
-        use std::mem::replace;
 
         let mut alloc = self.device.allocator();
 
         let device = &self.device.device;
 
-        let buffers = replace(&mut self.buffers, SmallVec::new());
-        for buffer in buffers {
+        for buffer in self.buffers.drain() {
             alloc.destroy_buffer(device, buffer);
         }
 
-        let images = replace(&mut self.images, SmallVec::new());
-        for image in images {
+        for image in self.images.drain() {
             alloc.destroy_image(device, image);
         }
 
-        let samplers = replace(&mut self.samplers, SmallVec::new());
-        for sampler in samplers {
+        for sampler in self.samplers.drain() {
             device.destroy_sampler(sampler);
         }
 
-        let image_views = replace(&mut self.image_views, SmallVec::new());
-        for image_view in image_views {
+        for image_view in self.image_views.drain() {
             device.destroy_image_view(image_view);
         }
 
-        let framebuffers = replace(&mut self.framebuffers, SmallVec::new());
-        for framebuffer in framebuffers {
+        for framebuffer in self.framebuffers.drain() {
             device.destroy_framebuffer(framebuffer);
+        }
+
+        for render_pass in self.render_passes.drain() {
+            device.destroy_render_pass(render_pass);
+        }
+
+        for pipe in self.pipelines_graphic.drain() {
+            device.destroy_graphics_pipeline(pipe);
+        }
+
+        for pipe in self.pipelines_compute.drain() {
+            device.destroy_compute_pipeline(pipe);
+        }
+
+        for layout in self.pipelines_layout.drain() {
+            device.destroy_pipeline_layout(layout);
+        }
+
+        for desc_pool in self.desc_pools.drain() {
+            // implicitly resets and frees all sets
+            device.destroy_descriptor_pool(desc_pool);
+        }
+
+        for desc_layout in self.desc_set_layouts.drain() {
+            device.destroy_descriptor_set_layout(desc_layout);
         }
     }
 }

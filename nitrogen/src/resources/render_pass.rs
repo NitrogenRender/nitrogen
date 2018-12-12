@@ -9,6 +9,7 @@ use gfx::Device;
 use smallvec::SmallVec;
 
 use crate::device::DeviceContext;
+use crate::submit_group::ResourceList;
 
 pub enum BlendMode {
     Alpha,
@@ -86,10 +87,17 @@ impl RenderPassStorage {
         }
     }
 
-    pub fn destroy(&mut self, device: &DeviceContext, handles: &[RenderPassHandle]) {
-        for handle in handles {
-            if let Some(render_pass) = self.storage.remove(*handle) {
-                device.device.destroy_render_pass(render_pass.render_pass);
+    pub fn destroy<P>(&mut self, res_list: &mut ResourceList, handles: P)
+    where
+        P: IntoIterator,
+        P::Item: std::borrow::Borrow<RenderPassHandle>,
+    {
+        use std::borrow::Borrow;
+
+        for handle in handles.into_iter() {
+            let handle = *handle.borrow();
+            if let Some(render_pass) = self.storage.remove(handle) {
+                res_list.queue_render_pass(render_pass.render_pass);
             }
         }
     }

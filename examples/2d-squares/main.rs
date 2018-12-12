@@ -175,7 +175,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // wait for prev frame
         {
-            let last_idx = (frame_num + (submits.len() - 1)) % submits.len();
+            let last_idx = frame_idx;
 
             submits[last_idx].wait(&mut ctx);
         }
@@ -201,9 +201,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 resized = false;
             }
 
-            let res = submits[frame_idx].graph_render(&mut ctx, graph, &exec_context);
+            submits[frame_idx].graph_render(&mut ctx, graph, &exec_context);
 
-            submits[frame_idx].display_present(&mut ctx, display, &res);
+            submits[frame_idx].display_present(&mut ctx, display, graph);
 
             update_instance_data(&mut instance_data, &mut instance_vel, delta);
 
@@ -213,8 +213,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &instance_data,
                 instance_buffer,
             );
-
-            submits[frame_idx].graph_resources_destroy(&mut ctx, res);
         }
 
         frame_num += 1;
@@ -222,13 +220,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     submits[0].buffer_destroy(&mut ctx, &[vertex_buffer, instance_buffer]);
+    submits[0].graph_destroy(&mut ctx, &[graph]);
 
     for mut submit in submits {
         submit.wait(&mut ctx);
         submit.release(&mut ctx);
     }
 
-    ctx.graph_destroy(graph);
     ctx.vertex_attribs_destroy(&[vtx_def]);
     ctx.material_destroy(&[material]);
     ctx.remove_display(display);
@@ -358,7 +356,7 @@ fn create_instance_velocity(num: u32) -> Vec<[f32; 2]> {
     let mut result = Vec::with_capacity(num as usize);
 
     for _ in 0..num {
-        let vel = [rng.gen_range(-1.0, 1.0), rng.gen_range(-1.0, 1.0)];
+        let vel = [rng.gen_range(-0.5, 0.5), rng.gen_range(-0.5, 0.5)];
         result.push(vel);
     }
 

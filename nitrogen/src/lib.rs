@@ -2,9 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use smallvec::SmallVec;
+extern crate gfx_backend_vulkan as back;
+pub extern crate gfx_hal as gfx;
+extern crate gfx_memory as gfxm;
 
-pub use gfx;
+use smallvec::SmallVec;
 
 pub mod types;
 
@@ -270,20 +272,6 @@ impl Context {
         name: T,
     ) {
         self.graph_storage.add_output(graph, name);
-    }
-
-    pub fn graph_destroy(&mut self, graph: graph::GraphHandle) {
-        self.graph_storage.destroy(
-            &self.device_ctx,
-            &mut self.render_pass_storage,
-            &mut self.pipeline_storage,
-            &mut self.image_storage,
-            &mut self.buffer_storage,
-            &self.vertex_attrib_storage,
-            &mut self.sampler_storage,
-            &self.material_storage,
-            graph,
-        );
     }
 
     pub fn graph_compile(

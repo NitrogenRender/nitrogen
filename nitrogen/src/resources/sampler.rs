@@ -15,6 +15,8 @@ use smallvec::SmallVec;
 use crate::submit_group::ResourceList;
 use crate::types::Sampler;
 
+use std::borrow::Borrow;
+
 #[derive(Copy, Clone)]
 pub enum Filter {
     Nearest,
@@ -123,9 +125,14 @@ impl SamplerStorage {
         }
     }
 
-    pub fn destroy(&mut self, res_list: &mut ResourceList, handles: &[SamplerHandle]) {
-        for handle in handles {
-            match self.storage.remove(*handle) {
+    pub fn destroy<S>(&mut self, res_list: &mut ResourceList, handles: S)
+    where
+        S: IntoIterator,
+        S::Item: std::borrow::Borrow<SamplerHandle>,
+    {
+        for handle in handles.into_iter() {
+            let handle = *handle.borrow();
+            match self.storage.remove(handle) {
                 Some(sampler) => {
                     res_list.queue_sampler(sampler);
                 }
