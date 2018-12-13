@@ -23,3 +23,7 @@ path = "two-pass/main.rs"
 [[example]]
 name = "2d-squares"
 path = "2d-squares/main.rs"
+
+[[example]]
+name = "multi-target"
+path = "multi-target/main.rs"

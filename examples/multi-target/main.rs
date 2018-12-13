@@ -351,19 +351,30 @@ fn setup_graphs(
         }
     }
 
+    fn image_create_info_r() -> graph::ImageCreateInfo {
+        graph::ImageCreateInfo {
+            format: image::ImageFormat::RUnorm,
+            size_mode: image::ImageSizeMode::ContextRelative {
+                width: 1.0,
+                height: 1.0,
+            },
+            clear_color: [0.0, 0.0, 0.0, 1.0],
+        }
+    }
+
     {
         let shaders = nitrogen::graph::Shaders {
             vertex: nitrogen::graph::ShaderInfo {
                 content: Cow::Borrowed(include_bytes!(concat!(
                     env!("OUT_DIR"),
-                    "/two-pass/test.hlsl.vert.spirv"
+                    "/multi-target/split.hlsl.vert.spirv"
                 ))),
                 entry: "VertexMain".into(),
             },
             fragment: Some(nitrogen::graph::ShaderInfo {
                 content: Cow::Borrowed(include_bytes!(concat!(
                     env!("OUT_DIR"),
-                    "/two-pass/test.hlsl.frag.spirv"
+                    "/multi-target/split.hlsl.frag.spirv"
                 ))),
                 entry: "FragmentMain".into(),
             }),
@@ -373,9 +384,13 @@ fn setup_graphs(
         let (pass_impl, info) = create_test_pass(
             shaders,
             |builder| {
-                builder.image_create("ITest", image_create_info());
+                builder.image_create("Red", image_create_info_r());
+                builder.image_create("Green", image_create_info_r());
+                builder.image_create("Blue", image_create_info_r());
 
-                builder.image_write_color("ITest", 0);
+                builder.image_write_color("Red", 0);
+                builder.image_write_color("Green", 1);
+                builder.image_write_color("Blue", 2);
 
                 builder.enable();
             },
@@ -390,7 +405,7 @@ fn setup_graphs(
             vec![(1, material)],
         );
 
-        ntg.graph_add_pass(graph, "TestPass", info, Box::new(pass_impl));
+        ntg.graph_add_pass(graph, "Split", info, Box::new(pass_impl));
     }
 
     {
@@ -398,14 +413,14 @@ fn setup_graphs(
             vertex: nitrogen::graph::ShaderInfo {
                 content: Cow::Borrowed(include_bytes!(concat!(
                     env!("OUT_DIR"),
-                    "/two-pass/read.hlsl.vert.spirv"
+                    "/multi-target/read.hlsl.vert.spirv"
                 ))),
                 entry: "VertexMain".into(),
             },
             fragment: Some(nitrogen::graph::ShaderInfo {
                 content: Cow::Borrowed(include_bytes!(concat!(
                     env!("OUT_DIR"),
-                    "/two-pass/read.hlsl.frag.spirv"
+                    "/multi-target/read.hlsl.frag.spirv"
                 ))),
                 entry: "FragmentMain".into(),
             }),
@@ -415,27 +430,29 @@ fn setup_graphs(
         let (pass_impl, info) = create_test_pass(
             shaders,
             |builder| {
-                builder.image_create("IOutput", image_create_info());
+                builder.image_create("Output", image_create_info());
 
-                builder.image_write_color("IOutput", 0);
+                builder.image_write_color("Output", 0);
 
-                builder.image_read_color("ITest", 0, 1);
+                builder.image_read_color("Red", 0, 1);
+                builder.image_read_color("Green", 2, 3);
+                builder.image_read_color("Blue", 4, 5);
 
                 builder.enable();
             },
             move |cmd| {
                 cmd.bind_vertex_buffers(&[(buffer_pos, 0), (buffer_uv, 0)]);
 
-                cmd.draw(0..4, 0..1);
+                cmd.draw(0..4, 0..4);
             },
             vertex_attrib,
             vec![],
         );
 
-        ntg.graph_add_pass(graph, "ReadPass", info, Box::new(pass_impl));
+        ntg.graph_add_pass(graph, "Read", info, Box::new(pass_impl));
     }
 
-    ntg.graph_add_output(graph, "IOutput");
+    ntg.graph_add_output(graph, "Output");
 
     graph
 }
@@ -455,7 +472,7 @@ where
         vertex_attrib: vert,
         shaders,
         primitive: nitrogen::pipeline::Primitive::TriangleStrip,
-        blend_modes: vec![nitrogen::render_pass::BlendMode::Alpha],
+        blend_modes: vec![nitrogen::render_pass::BlendMode::Alpha; 3],
         materials,
     };
 

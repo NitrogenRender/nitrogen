@@ -5,7 +5,7 @@
 use crate::device::DeviceContext;
 use crate::storage::{Handle, Storage};
 
-use crate::render_pass::{RenderPassHandle, RenderPassStorage};
+use crate::render_pass::{BlendMode, RenderPassHandle, RenderPassStorage};
 use crate::vertex_attrib::{VertexAttribHandle, VertexAttribStorage};
 
 use smallvec::SmallVec;
@@ -102,6 +102,7 @@ pub struct GraphicsPipelineCreateInfo<'a> {
     pub vertex_attribs: Option<VertexAttribHandle>,
 
     pub descriptor_set_layout: &'a [&'a types::DescriptorSetLayout],
+    pub blend_modes: &'a [BlendMode],
 
     pub shader_vertex: ShaderInfo<'a>,
     pub shader_fragment: Option<ShaderInfo<'a>>,
@@ -263,10 +264,18 @@ impl PipelineStorage {
             }
 
             // TODO respect blend modes
-            desc.blender.targets.push(pso::ColorBlendDesc(
-                pso::ColorMask::ALL,
-                pso::BlendState::ALPHA,
-            ));
+            desc.blender
+                .targets
+                .extend(create_info.blend_modes.iter().map(|mode| {
+                    pso::ColorBlendDesc(
+                        pso::ColorMask::ALL,
+                        match mode {
+                            BlendMode::Add => pso::BlendState::ADD,
+                            BlendMode::Alpha => pso::BlendState::ALPHA,
+                            BlendMode::Mul => pso::BlendState::MULTIPLY,
+                        },
+                    )
+                }));
 
             device.device.create_graphics_pipeline(&desc, None)?
         };
