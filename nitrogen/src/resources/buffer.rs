@@ -6,6 +6,7 @@ use bitflags::bitflags;
 use failure_derive::Fail;
 
 use std;
+use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
@@ -240,8 +241,13 @@ impl BufferStorage {
         results
     }
 
-    pub fn destroy(&mut self, res_list: &mut ResourceList, buffers: &[BufferHandle]) {
-        for handle in buffers {
+    pub fn destroy<B>(&mut self, res_list: &mut ResourceList, buffers: B)
+    where
+        B: IntoIterator,
+        B::Item: std::borrow::Borrow<BufferHandle>,
+    {
+        for handle in buffers.into_iter() {
+            let handle = *handle.borrow();
             let id = handle.id();
             let buffer = self.buffers.remove(&id).unwrap();
             res_list.queue_buffer(buffer.buffer);

@@ -4,6 +4,7 @@
 
 pub type Device = <back::Backend as gfx::Backend>::Device;
 pub type GraphicsPipeline = <back::Backend as gfx::Backend>::GraphicsPipeline;
+pub type ComputePipeline = <back::Backend as gfx::Backend>::ComputePipeline;
 pub type PipelineLayout = <back::Backend as gfx::Backend>::PipelineLayout;
 pub type DescriptorSetLayout = <back::Backend as gfx::Backend>::DescriptorSetLayout;
 pub type DescriptorSet = <back::Backend as gfx::Backend>::DescriptorSet;

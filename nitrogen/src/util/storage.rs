@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use slab::Slab;
+use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
@@ -10,7 +11,6 @@ use std::ops::{Index, IndexMut};
 pub type Generation = u64;
 pub type Id = usize;
 
-#[derive(Debug)]
 pub struct Handle<T>(pub Id, pub Generation, PhantomData<T>);
 
 // huh. Derive doesn't work here because Rust can't prove that `T` is Copy.
@@ -33,6 +33,12 @@ impl<T> PartialEq for Handle<T> {
     }
 }
 impl<T> Eq for Handle<T> {}
+
+impl<T> Debug for Handle<T> {
+    fn fmt(&self, fmt: &mut Formatter) -> Result<(), std::fmt::Error> {
+        fmt.write_fmt(format_args!("Handle({}, {})", self.0, self.1))
+    }
+}
 
 impl<T> Handle<T> {
     pub fn new(id: Id, gen: Generation) -> Self {

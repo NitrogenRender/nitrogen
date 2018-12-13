@@ -13,6 +13,8 @@ use smallvec::SmallVec;
 use crate::types;
 use crate::types::*;
 
+use crate::submit_group::ResourceList;
+
 use gfx::pso;
 use gfx::Device;
 
@@ -108,7 +110,7 @@ pub struct GraphicsPipelineCreateInfo<'a> {
 
 pub struct PipelineStorage {
     graphic_pipelines: BTreeMap<usize, GraphicsPipeline>,
-    _compute_pipelines: BTreeMap<usize, ComputePipeline>,
+    compute_pipelines: BTreeMap<usize, ComputePipeline>,
     storage: Storage<Pipeline>,
 }
 
@@ -117,7 +119,7 @@ impl PipelineStorage {
         PipelineStorage {
             storage: Storage::new(),
             graphic_pipelines: BTreeMap::new(),
-            _compute_pipelines: BTreeMap::new(),
+            compute_pipelines: BTreeMap::new(),
         }
     }
 
@@ -292,8 +294,26 @@ impl PipelineStorage {
         Ok(handle)
     }
 
-    pub fn destroy(&mut self, _device: &DeviceContext) {
-        // TODO
+    pub fn destroy<P>(&mut self, res_list: &mut ResourceList, pipelines: P)
+    where
+        P: IntoIterator,
+        P::Item: std::borrow::Borrow<PipelineHandle>,
+    {
+        use std::borrow::Borrow;
+
+        for handle in pipelines.into_iter() {
+            let handle = *handle.borrow();
+
+            if self.storage.remove(handle).is_some() {
+                if let Some(gfx) = self.graphic_pipelines.remove(&handle.0) {
+                    res_list.queue_pipeline_graphic(gfx.pipeline);
+                    res_list.queue_pipeline_layout(gfx.layout);
+                }
+                if let Some(_cmpt) = self.compute_pipelines.remove(&handle.0) {
+                    unimplemented!()
+                }
+            }
+        }
     }
 
     pub(crate) fn raw_graphics(&self, handle: PipelineHandle) -> Option<&GraphicsPipeline> {

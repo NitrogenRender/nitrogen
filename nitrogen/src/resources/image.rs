@@ -10,6 +10,7 @@ use gfxm::Factory;
 use gfxm::SmartAllocator;
 
 use std;
+use std::borrow::Borrow;
 use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 
@@ -54,6 +55,18 @@ impl ImageDimension {
 pub enum ImageSizeMode {
     ContextRelative { width: f32, height: f32 },
     Absolute { width: u32, height: u32 },
+}
+
+impl ImageSizeMode {
+    pub fn absolute(&self, reference: (u32, u32)) -> (u32, u32) {
+        match self {
+            ImageSizeMode::ContextRelative { width, height } => (
+                (*width as f64 * reference.0 as f64) as u32,
+                (*height as f64 * reference.1 as f64) as u32,
+            ),
+            ImageSizeMode::Absolute { width, height } => (*width, *height),
+        }
+    }
 }
 
 impl Hash for ImageSizeMode {
@@ -619,9 +632,14 @@ impl ImageStorage {
         }
     }
 
-    pub fn destroy(&mut self, res_list: &mut ResourceList, handles: &[ImageHandle]) {
-        for handle in handles {
-            match self.storage.remove(*handle) {
+    pub fn destroy<I>(&mut self, res_list: &mut ResourceList, handles: I)
+    where
+        I: IntoIterator,
+        I::Item: std::borrow::Borrow<ImageHandle>,
+    {
+        for handle in handles.into_iter() {
+            let handle = *handle.borrow();
+            match self.storage.remove(handle) {
                 Some(image) => {
                     res_list.queue_image(image.image);
                     res_list.queue_image_view(image.view);
