@@ -9,6 +9,8 @@ use crate::image;
 use self::ResourceReadType as R;
 use self::ResourceWriteType as W;
 
+use std::hash::{Hash, Hasher};
+
 #[derive(Hash, Debug, Clone, Copy)]
 pub enum ResourceType {
     Image,
@@ -157,10 +159,20 @@ impl GraphBuilder {
     }
 }
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone)]
 pub struct ImageCreateInfo {
     pub format: image::ImageFormat,
     pub size_mode: image::ImageSizeMode,
+    pub clear_color: [f32; 4],
+}
+
+// impl to ignore clear color.
+// The clear color should not cause a new version of the graph to be created.
+impl Hash for ImageCreateInfo {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.format.hash(state);
+        self.size_mode.hash(state);
+    }
 }
 
 #[derive(Debug, Clone, Hash)]

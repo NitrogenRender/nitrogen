@@ -7,7 +7,9 @@ use super::*;
 use crate::graph::resolve::GraphResourcesResolved;
 use crate::graph::ExecutionContext;
 
-use crate::graph::{ImageReadType, ResourceReadType};
+use crate::graph::{
+    ImageReadType, ImageWriteType, ResourceCreateInfo, ResourceReadType, ResourceWriteType,
+};
 
 use crate::types::CommandPool;
 
@@ -145,10 +147,39 @@ pub(crate) fn execute(
                     },
                 };
 
-                // TODO custom clear values (and multiple targets)
-                let clear_values = &[gfx::command::ClearValue::Color(
-                    gfx::command::ClearColor::Float([0.0, 0.0, 0.0, 0.0]),
-                )];
+                // clear values for image targets
+                // TODO handle depth and storage clears
+                let mut clear_values = SmallVec::<[_; 16]>::new();
+
+                'clear_loop: for (id, ty, binding) in &resolved_graph.pass_writes[pass] {
+                    if !batch.resource_create.contains(id) {
+                        continue 'clear_loop;
+                    }
+
+                    // only clear if image
+                    match ty {
+                        ResourceWriteType::Image(img) => match img {
+                            ImageWriteType::Color => {
+                                let info = &resolved_graph.infos[id];
+                                let image_info = match info {
+                                    ResourceCreateInfo::Image(info) => info,
+                                    _ => unreachable!(),
+                                };
+                                clear_values.push((binding, image_info.clear_color));
+                            }
+                            _ => unimplemented!(),
+                        },
+                        ResourceWriteType::Buffer(_) => continue 'clear_loop,
+                    }
+                }
+
+                clear_values
+                    .as_mut_slice()
+                    .sort_by_key(|(binding, _)| *binding);
+
+                let clear_values = clear_values.into_iter().map(|(_, color)| {
+                    gfx::command::ClearValue::Color(gfx::command::ClearColor::Float(color))
+                });
 
                 let submit = {
                     let mut raw_cmd = cmd_pool.acquire_command_buffer(false);
