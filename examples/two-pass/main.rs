@@ -347,6 +347,7 @@ fn setup_graphs(
                 width: 1.0,
                 height: 1.0,
             },
+            clear_color: [0.0, 0.0, 0.0, 1.0],
         }
     }
 

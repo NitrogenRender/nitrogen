@@ -287,6 +287,7 @@ fn create_graph(
                             height: 1.0,
                         },
                         format: image::ImageFormat::RgbaUnorm,
+                        clear_color: [0.2, 0.2, 0.0, 1.0],
                     },
                 );
 
