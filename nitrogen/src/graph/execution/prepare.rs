@@ -288,14 +288,15 @@ fn create_pipeline_graphics(
 )> {
     use std::collections::BTreeMap;
 
-    let (primitive, shaders, vertex_attribs, materials) = match info {
+    let (primitive, shaders, vertex_attribs, materials, blend_modes) = match info {
         PassInfo::Graphics {
             primitive,
             shaders,
             vertex_attrib,
             materials,
+            blend_modes,
             ..
-        } => (*primitive, shaders, vertex_attrib, materials),
+        } => (*primitive, shaders, vertex_attrib, materials, blend_modes),
         _ => unreachable!(),
     };
 
@@ -466,6 +467,7 @@ fn create_pipeline_graphics(
             // TODO add support for geometry shaders
             shader_geometry: None,
             descriptor_set_layout: &layouts[..],
+            blend_modes: &blend_modes[..],
         };
 
         storages

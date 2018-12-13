@@ -11,11 +11,11 @@ use smallvec::SmallVec;
 use crate::device::DeviceContext;
 use crate::submit_group::ResourceList;
 
+#[derive(Clone, Copy, Debug)]
 pub enum BlendMode {
     Alpha,
     Add,
     Mul,
-    Sub,
 }
 
 pub enum RenderPassError {

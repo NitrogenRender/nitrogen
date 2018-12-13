@@ -3,20 +3,37 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 struct VertexIn {
+    int vertex_id : SV_VertexID;
+
     [[vk::location(0)]]
     float2 position;
+
     [[vk::location(1)]]
     float2 uv;
 };
 
 struct VertexOut {
-    float2 uv;
     float4 position : SV_Position;
+    float2 uv;
 };
 
 struct FragmentOut {
     [[vk::location(0)]]
-    float4 color;
+    float color_red;
+    [[vk::location(1)]]
+    float color_green;
+    [[vk::location(2)]]
+    float color_blue;
+};
+
+[[vk::binding(0, 1)]]
+Texture2D t;
+[[vk::binding(1, 1)]]
+SamplerState s;
+
+[[vk::binding(2, 1)]]
+cbuffer {
+    float4 modulate;
 };
 
 VertexOut VertexMain(VertexIn input)
@@ -29,18 +46,15 @@ VertexOut VertexMain(VertexIn input)
     return output;
 }
 
-[[vk::binding(0, 0)]]
-Texture2D t;
-[[vk::binding(1, 0)]]
-SamplerState s;
-
 FragmentOut FragmentMain(VertexOut input)
 {
     FragmentOut output;
 
-    float2 uv = input.uv;
+    float4 combined = t.Sample(s, input.uv);
 
-    output.color = t.Sample(s, uv);
+    output.color_red = combined.r;
+    output.color_green = combined.g;
+    output.color_blue = combined.b;
 
     return output;
 }

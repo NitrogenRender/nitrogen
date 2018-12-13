@@ -268,7 +268,7 @@ fn create_graph(
                 geometry: None,
             },
             primitive: pipeline::Primitive::TriangleStrip,
-            blend_mode: render_pass::BlendMode::Alpha,
+            blend_modes: vec![render_pass::BlendMode::Alpha],
             materials: vec![(1, material)],
         };
 

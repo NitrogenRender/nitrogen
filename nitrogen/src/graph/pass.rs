@@ -22,7 +22,7 @@ pub enum PassInfo {
         vertex_attrib: Option<VertexAttribHandle>,
         shaders: Shaders,
         primitive: Primitive,
-        blend_mode: BlendMode,
+        blend_modes: Vec<BlendMode>,
         materials: Vec<(usize, MaterialHandle)>,
     },
     Compute {},
