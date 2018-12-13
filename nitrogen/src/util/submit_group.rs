@@ -112,7 +112,7 @@ impl SubmitGroup {
         ctx.displays[display].setup_swapchain(&ctx.device_ctx, &mut self.res_destroys);
     }
 
-    pub fn graph_render(
+    pub fn graph_execute(
         &mut self,
         ctx: &mut Context,
         graph: graph::GraphHandle,
@@ -133,6 +133,7 @@ impl SubmitGroup {
             &mut self.sem_pool,
             &mut self.sem_list,
             &mut self.pool_graphics,
+            &mut self.pool_compute,
             &mut self.res_destroys,
             &mut storages,
             graph,
@@ -199,6 +200,24 @@ impl SubmitGroup {
             &ctx.transfer,
             data,
         )
+    }
+
+    pub fn buffer_read_data<T>(
+        &mut self,
+        ctx: &Context,
+        buffer: buffer::BufferHandle,
+        data: &mut [T],
+    ) {
+        ctx.buffer_storage.read_data(
+            &ctx.device_ctx,
+            &self.sem_pool,
+            &mut self.sem_list,
+            &mut self.pool_transfer,
+            &mut self.res_destroys,
+            &ctx.transfer,
+            buffer,
+            data,
+        );
     }
 
     pub fn buffer_destroy(&mut self, ctx: &mut Context, buffers: &[buffer::BufferHandle]) {

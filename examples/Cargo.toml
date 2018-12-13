@@ -27,3 +27,7 @@ path = "2d-squares/main.rs"
 [[example]]
 name = "multi-target"
 path = "multi-target/main.rs"
+
+[[example]]
+name = "compute"
+path = "compute/main.rs"

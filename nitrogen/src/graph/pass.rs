@@ -17,15 +17,22 @@ use std::borrow::Cow;
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct PassId(pub(crate) usize);
 
+pub struct GraphicsPassInfo {
+    pub vertex_attrib: Option<VertexAttribHandle>,
+    pub shaders: Shaders,
+    pub primitive: Primitive,
+    pub blend_modes: Vec<BlendMode>,
+    pub materials: Vec<(usize, MaterialHandle)>,
+}
+
+pub struct ComputePassInfo {
+    pub materials: Vec<(usize, MaterialHandle)>,
+    pub shader: ShaderInfo,
+}
+
 pub enum PassInfo {
-    Graphics {
-        vertex_attrib: Option<VertexAttribHandle>,
-        shaders: Shaders,
-        primitive: Primitive,
-        blend_modes: Vec<BlendMode>,
-        materials: Vec<(usize, MaterialHandle)>,
-    },
-    Compute {},
+    Graphics(GraphicsPassInfo),
+    Compute(ComputePassInfo),
 }
 
 pub struct Shaders {
@@ -39,7 +46,12 @@ pub struct ShaderInfo {
     pub entry: CowString,
 }
 
-pub trait PassImpl {
+pub trait GraphicsPassImpl {
     fn setup(&mut self, builder: &mut builder::GraphBuilder);
-    fn execute(&self, command_buffer: &mut command::CommandBuffer);
+    fn execute(&self, command_buffer: &mut command::GraphicsCommandBuffer);
+}
+
+pub trait ComputePassImpl {
+    fn setup(&mut self, builder: &mut builder::GraphBuilder);
+    fn execute(&self, command_buffer: &mut command::ComputeCommandBuffer);
 }

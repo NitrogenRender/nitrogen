@@ -155,7 +155,7 @@ impl Context {
     }
 
     pub fn release(self) {
-        self.buffer_storage.release();
+        self.buffer_storage.release(&self.device_ctx);
         self.image_storage.release(&self.device_ctx);
 
         self.material_storage.release(&self.device_ctx);
@@ -189,10 +189,14 @@ impl Context {
 
     // buffer
 
-    pub fn buffer_create(
+    pub fn buffer_create<M, U>(
         &mut self,
-        create_infos: &[buffer::BufferCreateInfo],
-    ) -> SmallVec<[buffer::Result<buffer::BufferHandle>; 16]> {
+        create_infos: &[buffer::BufferCreateInfo<M, U>],
+    ) -> SmallVec<[buffer::Result<buffer::BufferHandle>; 16]>
+    where
+        M: Into<gfx::memory::Properties> + Clone,
+        U: Into<gfx::buffer::Usage> + Clone,
+    {
         self.buffer_storage.create(&self.device_ctx, create_infos)
     }
 
@@ -256,14 +260,26 @@ impl Context {
         self.graph_storage.create()
     }
 
-    pub fn graph_add_pass<T: Into<graph::PassName>>(
+    pub fn graph_add_graphics_pass<T: Into<graph::PassName>>(
         &mut self,
         graph: graph::GraphHandle,
         name: T,
-        info: graph::PassInfo,
-        pass_impl: Box<dyn graph::PassImpl>,
+        info: graph::GraphicsPassInfo,
+        pass_impl: Box<dyn graph::GraphicsPassImpl>,
     ) {
-        self.graph_storage.add_pass(graph, name, info, pass_impl);
+        self.graph_storage
+            .add_graphics_pass(graph, name, info, pass_impl);
+    }
+
+    pub fn graph_add_compute_pass<T: Into<graph::PassName>>(
+        &mut self,
+        graph: graph::GraphHandle,
+        name: T,
+        info: graph::ComputePassInfo,
+        pass_impl: impl graph::ComputePassImpl + 'static,
+    ) {
+        self.graph_storage
+            .add_compute_pass(graph, name, info, Box::new(pass_impl));
     }
 
     pub fn graph_add_output<T: Into<graph::ResourceName>>(
@@ -279,6 +295,14 @@ impl Context {
         graph: graph::GraphHandle,
     ) -> Result<(), Vec<graph::GraphCompileError>> {
         self.graph_storage.compile(graph)
+    }
+
+    pub fn graph_get_output_buffer<T: Into<graph::ResourceName>>(
+        &self,
+        graph: graph::GraphHandle,
+        buffer: T,
+    ) -> Option<buffer::BufferHandle> {
+        self.graph_storage.output_buffer(graph, buffer)
     }
 
     // submit group

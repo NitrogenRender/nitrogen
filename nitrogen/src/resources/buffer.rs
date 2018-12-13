@@ -21,8 +21,6 @@ use gfxm::SmartAllocator;
 use smallvec::smallvec;
 use smallvec::SmallVec;
 
-use crate::resources::MemoryProperties;
-
 use crate::resources::semaphore_pool::SemaphoreList;
 use crate::resources::semaphore_pool::SemaphorePool;
 use crate::submit_group::ResourceList;
@@ -31,7 +29,7 @@ use crate::types::CommandPool;
 type BufferId = usize;
 pub type BufferTypeInternal = <SmartAllocator<back::Backend> as Factory<back::Backend>>::Buffer;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub enum BufferType {
     DeviceAccessible,
     HostAccessible,
@@ -132,13 +130,17 @@ impl From<BufferUsage> for gfx::buffer::Usage {
     }
 }
 
-pub struct BufferCreateInfo {
+pub struct BufferCreateInfo<M, U>
+where
+    M: Into<gfx::memory::Properties> + Clone,
+    U: Into<gfx::buffer::Usage> + Clone,
+{
     pub size: u64,
 
     pub is_transient: bool,
 
-    pub properties: MemoryProperties,
-    pub usage: BufferUsage,
+    pub properties: M,
+    pub usage: U,
 }
 
 #[derive(Copy, Clone)]
@@ -166,13 +168,23 @@ impl BufferStorage {
         }
     }
 
-    pub fn release(self) {}
+    pub fn release(self, device: &DeviceContext) {
+        let mut alloc = device.allocator();
 
-    pub fn create(
+        for (_, buffer) in self.buffers.into_iter() {
+            alloc.destroy_buffer(&device.device, buffer.buffer);
+        }
+    }
+
+    pub fn create<M, U>(
         &mut self,
         device: &DeviceContext,
-        create_infos: &[BufferCreateInfo],
-    ) -> SmallVec<[Result<BufferHandle>; 16]> {
+        create_infos: &[BufferCreateInfo<M, U>],
+    ) -> SmallVec<[Result<BufferHandle>; 16]>
+    where
+        M: Into<gfx::memory::Properties> + Clone,
+        U: Into<gfx::buffer::Usage> + Clone,
+    {
         let mut results = SmallVec::with_capacity(create_infos.len());
 
         // TODO This is a big critical section, need to check if it's better to do
@@ -181,18 +193,14 @@ impl BufferStorage {
 
         for create_info in create_infos {
             let (raw_buffer, properties, usage) = {
-                let (ty, props) = {
-                    let ty = match create_info.is_transient {
-                        true => gfxm::Type::ShortLived,
-                        false => gfxm::Type::General,
-                    };
-
-                    let properties = create_info.properties.into();
-
-                    (ty, properties)
+                let ty = match create_info.is_transient {
+                    true => gfxm::Type::ShortLived,
+                    false => gfxm::Type::General,
                 };
 
-                let usage = create_info.usage.into();
+                let props = create_info.properties.clone().into();
+
+                let usage = create_info.usage.clone().into();
 
                 let buf = match allocator.create_buffer(
                     &device.device,
@@ -433,6 +441,29 @@ impl BufferStorage {
 
         results
     }
+
+    pub fn read_data<T: Sized>(
+        &self,
+        device: &DeviceContext,
+        _sem_pool: &SemaphorePool,
+        _sem_list: &mut SemaphoreList,
+        _cmd_pool: &mut CommandPool<gfx::Transfer>,
+        _res_list: &mut ResourceList,
+        _transfer: &TransferContext,
+        buffer: BufferHandle,
+        out: &mut [T],
+    ) -> Option<()> {
+        let ty = self.storage.get(buffer)?;
+        if *ty != BufferType::HostAccessible {
+            unimplemented!();
+        }
+
+        let raw = self.raw(buffer)?;
+
+        read_data_from_buffer(device, raw, 0, unsafe { to_u8_mut_slice(out) }).ok()?;
+
+        Some(())
+    }
 }
 
 unsafe fn to_u8_slice<T>(slice: &[T]) -> &[u8] {
@@ -445,6 +476,18 @@ unsafe fn to_u8_slice<T>(slice: &[T]) -> &[u8] {
     let b_len = t_len * mem::size_of::<T>();
 
     std::slice::from_raw_parts(b_ptr, b_len)
+}
+
+unsafe fn to_u8_mut_slice<T>(slice: &mut [T]) -> &mut [u8] {
+    use std::mem;
+
+    let t_ptr = slice.as_ptr();
+    let t_len = slice.len();
+
+    let b_ptr = mem::transmute(t_ptr);
+    let b_len = t_len * mem::size_of::<T>();
+
+    std::slice::from_raw_parts_mut(b_ptr, b_len)
 }
 
 fn write_data_to_buffer(
@@ -467,6 +510,30 @@ fn write_data_to_buffer(
     writer[offset..offset + data.len()].copy_from_slice(data);
 
     device.device.release_mapping_writer(writer).unwrap();
+
+    Ok(())
+}
+
+fn read_data_from_buffer(
+    device: &DeviceContext,
+    buffer: &BufferTypeInternal,
+    offset: u64,
+    data: &mut [u8],
+) -> Result<()> {
+    use gfx::Device;
+    use gfxm::Block;
+
+    let offset = offset as usize;
+
+    let range = buffer.range();
+
+    let reader = device
+        .device
+        .acquire_mapping_reader(buffer.memory(), range)?;
+
+    data.copy_from_slice(&reader[offset..offset + data.len()]);
+
+    device.device.release_mapping_reader(reader);
 
     Ok(())
 }

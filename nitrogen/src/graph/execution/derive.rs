@@ -56,7 +56,9 @@ fn derive_batch(
             ResourceCreateInfo::Buffer(buf) => {
                 let usage = BUsage::empty();
                 let properties = match buf.storage {
-                    BufferStorageType::HostVisible => Properties::CPU_VISIBLE,
+                    BufferStorageType::HostVisible => {
+                        Properties::CPU_VISIBLE | Properties::COHERENT
+                    }
                     BufferStorageType::DeviceLocal => Properties::DEVICE_LOCAL,
                 };
 

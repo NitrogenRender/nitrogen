@@ -5,7 +5,7 @@
 extern crate image as img;
 
 use nitrogen::graph;
-use nitrogen::graph::PassImpl;
+use nitrogen::graph::GraphicsPassImpl;
 use nitrogen::image;
 
 use log::debug;
@@ -306,7 +306,7 @@ fn main() {
                 resized = false;
             }
 
-            submits[frame_idx].graph_render(&mut ntg, graph, &exec_context);
+            submits[frame_idx].graph_execute(&mut ntg, graph, &exec_context);
 
             submits[frame_idx].display_present(&mut ntg, display, graph);
         }
@@ -397,7 +397,7 @@ fn setup_graphs(
             move |cmd| {
                 cmd.bind_vertex_buffers(&[(buffer_pos, 0), (buffer_uv, 0)]);
 
-                cmd.bind_graphics_descriptor_set(1, material_instance);
+                cmd.bind_material(1, material_instance);
 
                 cmd.draw(0..4, 0..1);
             },
@@ -405,7 +405,7 @@ fn setup_graphs(
             vec![(1, material)],
         );
 
-        ntg.graph_add_pass(graph, "Split", info, Box::new(pass_impl));
+        ntg.graph_add_graphics_pass(graph, "Split", info, Box::new(pass_impl));
     }
 
     {
@@ -449,7 +449,7 @@ fn setup_graphs(
             vec![],
         );
 
-        ntg.graph_add_pass(graph, "Read", info, Box::new(pass_impl));
+        ntg.graph_add_graphics_pass(graph, "Read", info, Box::new(pass_impl));
     }
 
     ntg.graph_add_output(graph, "Output");
@@ -463,12 +463,12 @@ fn create_test_pass<FSetUp, FExec>(
     execute: FExec,
     vert: Option<nitrogen::vertex_attrib::VertexAttribHandle>,
     materials: Vec<(usize, nitrogen::material::MaterialHandle)>,
-) -> (impl PassImpl, graph::PassInfo)
+) -> (impl GraphicsPassImpl, graph::GraphicsPassInfo)
 where
     FSetUp: FnMut(&mut graph::GraphBuilder),
-    FExec: Fn(&mut graph::CommandBuffer),
+    FExec: Fn(&mut graph::GraphicsCommandBuffer),
 {
-    let pass_info = nitrogen::graph::PassInfo::Graphics {
+    let pass_info = nitrogen::graph::GraphicsPassInfo {
         vertex_attrib: vert,
         shaders,
         primitive: nitrogen::pipeline::Primitive::TriangleStrip,
@@ -481,16 +481,16 @@ where
         exec: FExec,
     }
 
-    impl<FSetUp, FExec> PassImpl for TestPass<FSetUp, FExec>
+    impl<FSetUp, FExec> GraphicsPassImpl for TestPass<FSetUp, FExec>
     where
         FSetUp: FnMut(&mut graph::GraphBuilder),
-        FExec: Fn(&mut graph::CommandBuffer),
+        FExec: Fn(&mut graph::GraphicsCommandBuffer),
     {
         fn setup(&mut self, builder: &mut graph::GraphBuilder) {
             (self.setup)(builder);
         }
 
-        fn execute(&self, command_buffer: &mut graph::CommandBuffer) {
+        fn execute(&self, command_buffer: &mut graph::GraphicsCommandBuffer) {
             (self.exec)(command_buffer);
         }
     }

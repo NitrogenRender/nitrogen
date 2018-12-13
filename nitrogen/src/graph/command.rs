@@ -4,6 +4,9 @@
 
 use std::ops::Range;
 
+use gfx;
+use gfx::command;
+
 use crate::types;
 
 use crate::material::{MaterialInstanceHandle, MaterialStorage};
@@ -16,7 +19,7 @@ pub(crate) struct ReadStorages<'a> {
     pub(crate) material: &'a MaterialStorage,
 }
 
-pub struct CommandBuffer<'a> {
+pub struct GraphicsCommandBuffer<'a> {
     pub(crate) encoder:
         gfx::command::RenderPassInlineEncoder<'a, back::Backend, gfx::command::Primary>,
     pub(crate) storages: &'a ReadStorages<'a>,
@@ -24,7 +27,7 @@ pub struct CommandBuffer<'a> {
     pub(crate) pipeline_layout: &'a types::PipelineLayout,
 }
 
-impl<'a> CommandBuffer<'a> {
+impl<'a> GraphicsCommandBuffer<'a> {
     pub fn draw(&mut self, vertices: Range<u32>, instances: Range<u32>) {
         self.encoder.draw(vertices, instances);
     }
@@ -51,20 +54,52 @@ impl<'a> CommandBuffer<'a> {
         self.encoder.bind_vertex_buffers(0, bufs);
     }
 
-    pub fn bind_graphics_descriptor_set(
+    pub fn bind_material(
         &mut self,
         binding: usize,
-        descriptor_set: MaterialInstanceHandle,
+        material: MaterialInstanceHandle,
     ) -> Option<()> {
         let layout = self.pipeline_layout;
 
-        let mat = self.storages.material.raw(descriptor_set.0)?;
-        let instance = mat.intance_raw(descriptor_set.1)?;
+        let mat = self.storages.material.raw(material.0)?;
+        let instance = mat.intance_raw(material.1)?;
 
         let set = &instance.set;
 
         self.encoder
             .bind_graphics_descriptor_sets(layout, binding, Some(set), &[]);
+
+        Some(())
+    }
+}
+
+pub struct ComputeCommandBuffer<'a> {
+    pub(crate) buf:
+        command::CommandBuffer<'a, back::Backend, gfx::Compute, command::OneShot, command::Primary>,
+    pub(crate) storages: &'a ReadStorages<'a>,
+
+    pub(crate) pipeline_layout: &'a types::PipelineLayout,
+}
+
+impl<'a> ComputeCommandBuffer<'a> {
+    pub fn dispatch(&mut self, workgroup_count: [u32; 3]) {
+        self.buf.dispatch(workgroup_count)
+    }
+
+    pub fn bind_material(
+        &mut self,
+        binding: usize,
+        material: MaterialInstanceHandle,
+    ) -> Option<()> {
+        let layout = self.pipeline_layout;
+
+        let mat = self.storages.material.raw(material.0)?;
+        let instance = mat.intance_raw(material.1)?;
+
+        let set = &instance.set;
+
+        self.buf
+            .bind_compute_descriptor_sets(layout, binding, Some(set), &[]);
 
         Some(())
     }

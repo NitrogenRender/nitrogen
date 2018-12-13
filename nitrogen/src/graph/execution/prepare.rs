@@ -8,15 +8,20 @@ use crate::types;
 use gfx;
 
 use crate::graph::{
-    BufferReadType, ExecutionContext, GraphResourcesResolved, ImageReadType, ImageWriteType,
-    PassInfo, ResourceCreateInfo, ResourceReadType, ResourceWriteType,
+    BufferReadType, BufferWriteType, ComputePassInfo, ExecutionContext, GraphResourcesResolved,
+    GraphicsPassInfo, ImageReadType, ImageWriteType, PassInfo, ResourceCreateInfo,
+    ResourceReadType, ResourceWriteType,
 };
 
 use crate::resources::{image, sampler};
 
 use crate::device::DeviceContext;
 
+use crate::resources::material::MaterialHandle;
 use smallvec::SmallVec;
+
+use crate::resources::material::MaterialStorage;
+use std::collections::BTreeMap;
 
 pub(crate) fn prepare_base(
     device: &DeviceContext,
@@ -48,9 +53,9 @@ pub(crate) fn prepare_pass_base(
 ) -> Option<()> {
     // TODO compute
     match info {
-        PassInfo::Graphics { .. } => {
+        PassInfo::Graphics(info) => {
             // Create render pass
-            let render_pass = create_render_pass(device, storages, resolved, pass, info)?;
+            let render_pass = create_render_pass(device, storages, resolved, pass)?;
 
             // insert into resources
             res.render_passes.insert(pass, render_pass);
@@ -64,7 +69,15 @@ pub(crate) fn prepare_pass_base(
 
             Some(())
         }
-        PassInfo::Compute { .. } => unimplemented!(),
+        PassInfo::Compute(info) => {
+            let (pipeline, layout, pool, set) =
+                create_pipeline_compute(device, storages, resolved, pass, info)?;
+
+            res.pipelines_compute.insert(pass, pipeline);
+            res.pipelines_desc_set.insert(pass, (layout, pool, set));
+
+            Some(())
+        }
     }
 }
 
@@ -174,7 +187,10 @@ pub(crate) fn prepare_pass(
 
             Some(())
         }
-        PassInfo::Compute { .. } => unimplemented!(),
+        PassInfo::Compute(_) => {
+            // nothing to prepare for compute passes
+            Some(())
+        }
     }
 }
 
@@ -183,7 +199,6 @@ fn create_render_pass(
     storages: &mut Storages,
     resolved_graph: &GraphResourcesResolved,
     pass: PassId,
-    _info: &PassInfo,
 ) -> Option<RenderPassHandle> {
     let attachments = {
         resolved_graph.pass_writes[&pass]
@@ -273,215 +288,114 @@ fn create_render_pass(
         .ok()
 }
 
-fn create_pipeline_graphics(
+fn create_pipeline_compute(
     device: &DeviceContext,
     storages: &mut Storages,
-    resolved_graph: &GraphResourcesResolved,
-    render_pass: RenderPassHandle,
+    resolved: &GraphResourcesResolved,
     pass: PassId,
-    info: &PassInfo,
+    info: &ComputePassInfo,
 ) -> Option<(
     PipelineHandle,
     types::DescriptorSetLayout,
     types::DescriptorPool,
     types::DescriptorSet,
 )> {
-    use std::collections::BTreeMap;
+    let (mut layouts, pass_stuff) = create_pipeline_base(
+        device,
+        resolved,
+        storages.material,
+        pass,
+        &info.materials[..],
+    )?;
 
-    let (primitive, shaders, vertex_attribs, materials, blend_modes) = match info {
-        PassInfo::Graphics {
-            primitive,
-            shaders,
-            vertex_attrib,
-            materials,
-            blend_modes,
-            ..
-        } => (*primitive, shaders, vertex_attrib, materials, blend_modes),
-        _ => unreachable!(),
+    // insert the pass set layout
+    layouts.insert(0, &pass_stuff.0);
+
+    let layouts = layouts
+        .into_iter()
+        .map(|(_, data)| data)
+        .collect::<Vec<_>>();
+
+    let create_info = crate::pipeline::ComputePipelineCreateInfo {
+        shader: crate::pipeline::ShaderInfo {
+            entry: &info.shader.entry,
+            content: &info.shader.content,
+        },
+        descriptor_set_layout: &layouts[..],
     };
 
+    let pipeline_handle = storages
+        .pipeline
+        .create_compute_pipelines(device, &[create_info])
+        .remove(0)
+        .ok();
+
+    pipeline_handle.map(move |handle| (handle, pass_stuff.0, pass_stuff.1, pass_stuff.2))
+}
+
+fn create_pipeline_graphics(
+    device: &DeviceContext,
+    storages: &mut Storages,
+    resolved_graph: &GraphResourcesResolved,
+    render_pass: RenderPassHandle,
+    pass: PassId,
+    info: &GraphicsPassInfo,
+) -> Option<(
+    PipelineHandle,
+    types::DescriptorSetLayout,
+    types::DescriptorPool,
+    types::DescriptorSet,
+)> {
     use crate::pipeline;
 
-    let (layouts, pass_stuff) = {
-        let mut sets = BTreeMap::new();
+    let (mut layouts, pass_stuff) = create_pipeline_base(
+        device,
+        resolved_graph,
+        storages.material,
+        pass,
+        &info.materials[..],
+    )?;
 
-        let (core_desc, core_range) = {
-            let reads = resolved_graph.pass_reads[&pass].iter();
+    // insert the pass set layout
+    layouts.insert(0, &pass_stuff.0);
 
-            let samplers = reads.clone().filter(|(_, _, _, sampler)| sampler.is_some());
+    let layouts = layouts
+        .into_iter()
+        .map(|(_, data)| data)
+        .collect::<Vec<_>>();
 
-            let sampler_descriptors =
-                samplers
-                    .clone()
-                    .map(|(_, _, _, binding)| gfx::pso::DescriptorSetLayoutBinding {
-                        binding: binding.unwrap() as u32,
-                        ty: gfx::pso::DescriptorType::Sampler,
-                        count: 1,
-                        stage_flags: gfx::pso::ShaderStageFlags::ALL,
-                        immutable_samplers: false,
-                    });
-
-            let descriptors = reads
-                .clone()
-                .map(|(_res, ty, binding, _)| {
-                    gfx::pso::DescriptorSetLayoutBinding {
-                        binding: (*binding as u32),
-                        ty: match ty {
-                            ResourceReadType::Image(img) => match img {
-                                ImageReadType::Color => gfx::pso::DescriptorType::SampledImage,
-                                ImageReadType::Storage => gfx::pso::DescriptorType::StorageImage,
-                            },
-                            ResourceReadType::Buffer(buf) => {
-                                match buf {
-                                    BufferReadType::Uniform => {
-                                        gfx::pso::DescriptorType::UniformBuffer
-                                    }
-                                    BufferReadType::UniformTexel => {
-                                        // TODO test this
-                                        // does this need samplers? I think so. Let's find out!
-                                        gfx::pso::DescriptorType::UniformTexelBuffer
-                                    }
-                                    BufferReadType::Storage => {
-                                        gfx::pso::DescriptorType::StorageBuffer
-                                    }
-                                    BufferReadType::StorageTexel => {
-                                        //  TODO test this
-                                        // does this need samplers? I think so. Let's find out!
-                                        gfx::pso::DescriptorType::StorageTexelBuffer
-                                    }
-                                }
-                            }
-                        },
-                        count: 1,
-                        stage_flags: gfx::pso::ShaderStageFlags::ALL,
-                        immutable_samplers: false,
-                    }
-                })
-                .chain(sampler_descriptors);
-
-            let range = reads
-                .map(|(_, ty, _, _)| {
-                    gfx::pso::DescriptorRangeDesc {
-                        ty: match ty {
-                            ResourceReadType::Image(img) => match img {
-                                ImageReadType::Color => gfx::pso::DescriptorType::SampledImage,
-                                ImageReadType::Storage => gfx::pso::DescriptorType::StorageImage,
-                            },
-                            ResourceReadType::Buffer(buf) => {
-                                match buf {
-                                    BufferReadType::Uniform => {
-                                        gfx::pso::DescriptorType::UniformBuffer
-                                    }
-                                    BufferReadType::UniformTexel => {
-                                        // TODO test this
-                                        // does this need samplers? I think so. Let's find out!
-                                        gfx::pso::DescriptorType::UniformTexelBuffer
-                                    }
-                                    BufferReadType::Storage => {
-                                        gfx::pso::DescriptorType::StorageBuffer
-                                    }
-                                    BufferReadType::StorageTexel => {
-                                        //  TODO test this
-                                        // does this need samplers? I think so. Let's find out!
-                                        gfx::pso::DescriptorType::StorageTexelBuffer
-                                    }
-                                }
-                            }
-                        },
-                        count: 1,
-                    }
-                })
-                .chain(samplers.map(|_| gfx::pso::DescriptorRangeDesc {
-                    ty: gfx::pso::DescriptorType::Sampler,
-                    count: 1,
-                }));
-
-            (descriptors, range)
-        };
-
-        // material sets
-        {
-            for (set, material) in materials {
-                let mat = match storages.material.raw(*material) {
-                    Some(mat) => mat,
-                    None => continue,
-                };
-
-                let layout = &mat.desc_set_layout;
-
-                sets.insert(*set, layout);
-            }
-        }
-
-        use gfx::DescriptorPool;
-        use gfx::Device;
-
-        let pass_set_layout = device
-            .device
-            .create_descriptor_set_layout(core_desc, &[])
-            .ok()?;
-
-        let mut pass_set_pool = device.device.create_descriptor_pool(1, core_range).ok()?;
-
-        let pass_set = pass_set_pool.allocate_set(&pass_set_layout).ok()?;
-
-        (sets, (pass_set_layout, pass_set_pool, pass_set))
-    };
-
-    let pipeline_handle = {
-        let mut layouts = layouts;
-
-        // insert the pass set layout
-        layouts.insert(0, &pass_stuff.0);
-
-        let layouts = layouts
-            .into_iter()
-            .map(|(_, data)| {
-                // TODO warning, this is super duper unsafe
-                // Currently gfx doesn't let us clone descriptor set layouts.
-                // This is the only way around it right now. Argh.
-                // use std::mem;
-
-                data
-                // unsafe {
-                //     mem::transmute_copy(data)
-                // }
+    let create_info = pipeline::GraphicsPipelineCreateInfo {
+        vertex_attribs: info.vertex_attrib.clone(),
+        primitive: info.primitive,
+        shader_vertex: pipeline::ShaderInfo {
+            content: &info.shaders.vertex.content,
+            entry: &info.shaders.vertex.entry,
+        },
+        shader_fragment: if info.shaders.fragment.is_some() {
+            Some(pipeline::ShaderInfo {
+                content: &info.shaders.fragment.as_ref().unwrap().content,
+                entry: &info.shaders.fragment.as_ref().unwrap().entry,
             })
-            .collect::<Vec<_>>();
-
-        let create_info = pipeline::GraphicsPipelineCreateInfo {
-            vertex_attribs: vertex_attribs.clone(),
-            primitive,
-            shader_vertex: pipeline::ShaderInfo {
-                content: &shaders.vertex.content,
-                entry: &shaders.vertex.entry,
-            },
-            shader_fragment: if shaders.fragment.is_some() {
-                Some(pipeline::ShaderInfo {
-                    content: &shaders.fragment.as_ref().unwrap().content,
-                    entry: &shaders.fragment.as_ref().unwrap().entry,
-                })
-            } else {
-                None
-            },
-            // TODO add support for geometry shaders
-            shader_geometry: None,
-            descriptor_set_layout: &layouts[..],
-            blend_modes: &blend_modes[..],
-        };
-
-        storages
-            .pipeline
-            .create_graphics_pipelines(
-                device,
-                storages.render_pass,
-                storages.vertex_attrib,
-                render_pass,
-                &[create_info],
-            )
-            .remove(0)
-            .ok()
+        } else {
+            None
+        },
+        // TODO add support for geometry shaders
+        shader_geometry: None,
+        descriptor_set_layout: &layouts[..],
+        blend_modes: &info.blend_modes[..],
     };
+
+    let pipeline_handle = storages
+        .pipeline
+        .create_graphics_pipelines(
+            device,
+            storages.render_pass,
+            storages.vertex_attrib,
+            render_pass,
+            &[create_info],
+        )
+        .remove(0)
+        .ok();
 
     pipeline_handle.map(move |handle| (handle, pass_stuff.0, pass_stuff.1, pass_stuff.2))
 }
@@ -556,6 +470,209 @@ fn create_resource(
 
             Some(())
         }
-        ResourceCreateInfo::Buffer(_buf) => unimplemented!(),
+        ResourceCreateInfo::Buffer(buf) => {
+            let (usage, properties) = usages.buffer[&id];
+
+            let create_info = crate::buffer::BufferCreateInfo {
+                size: buf.size,
+                is_transient: false,
+                usage,
+                properties,
+            };
+
+            let buffer = storages
+                .buffer
+                .create(device, &[create_info])
+                .remove(0)
+                .ok()?;
+
+            res.buffers.insert(id, buffer);
+
+            Some(())
+        }
     }
+}
+
+fn create_pipeline_base<'a>(
+    device: &DeviceContext,
+    resolved: &GraphResourcesResolved,
+    material_storage: &'a MaterialStorage,
+    pass: PassId,
+    materials: &[(usize, MaterialHandle)],
+) -> Option<(
+    BTreeMap<usize, &'a types::DescriptorSetLayout>,
+    (
+        types::DescriptorSetLayout,
+        types::DescriptorPool,
+        types::DescriptorSet,
+    ),
+)> {
+    let mut sets = BTreeMap::new();
+
+    let (core_desc, core_range) = {
+        let reads = resolved.pass_reads[&pass].iter();
+
+        let samplers = reads.clone().filter(|(_, _, _, sampler)| sampler.is_some());
+
+        let sampler_descriptors =
+            samplers
+                .clone()
+                .map(|(_, _, _, binding)| gfx::pso::DescriptorSetLayoutBinding {
+                    binding: binding.unwrap() as u32,
+                    ty: gfx::pso::DescriptorType::Sampler,
+                    count: 1,
+                    stage_flags: gfx::pso::ShaderStageFlags::ALL,
+                    immutable_samplers: false,
+                });
+
+        // writing to resources that are not color or depth images happens via descriptors as well
+        let writes = resolved.pass_writes[&pass]
+            .iter()
+            .filter(|(_res, ty, _binding)| {
+                match ty {
+                    ResourceWriteType::Buffer(buf) => {
+                        match buf {
+                            BufferWriteType::Storage => true,
+                            // TODO storage texel
+                            _ => false,
+                        }
+                    }
+                    ResourceWriteType::Image(img) => match img {
+                        ImageWriteType::Storage => true,
+                        _ => false,
+                    },
+                }
+            });
+
+        let write_descriptors =
+            writes
+                .clone()
+                .map(|(_res, ty, binding)| gfx::pso::DescriptorSetLayoutBinding {
+                    binding: *binding as u32,
+                    ty: match ty {
+                        ResourceWriteType::Image(img) => match img {
+                            ImageWriteType::Storage => gfx::pso::DescriptorType::StorageImage,
+                            _ => unreachable!(),
+                        },
+                        ResourceWriteType::Buffer(buf) => match buf {
+                            BufferWriteType::Storage => gfx::pso::DescriptorType::StorageBuffer,
+                            _ => unimplemented!(),
+                        },
+                    },
+                    count: 1,
+                    stage_flags: gfx::pso::ShaderStageFlags::ALL,
+                    immutable_samplers: false,
+                });
+
+        let descriptors = reads
+            .clone()
+            .map(|(_res, ty, binding, _)| {
+                gfx::pso::DescriptorSetLayoutBinding {
+                    binding: (*binding as u32),
+                    ty: match ty {
+                        ResourceReadType::Image(img) => match img {
+                            ImageReadType::Color => gfx::pso::DescriptorType::SampledImage,
+                            ImageReadType::Storage => gfx::pso::DescriptorType::StorageImage,
+                        },
+                        ResourceReadType::Buffer(buf) => {
+                            match buf {
+                                BufferReadType::Uniform => gfx::pso::DescriptorType::UniformBuffer,
+                                BufferReadType::UniformTexel => {
+                                    // TODO test this
+                                    // does this need samplers? I think so. Let's find out!
+                                    gfx::pso::DescriptorType::UniformTexelBuffer
+                                }
+                                BufferReadType::Storage => gfx::pso::DescriptorType::StorageBuffer,
+                                BufferReadType::StorageTexel => {
+                                    //  TODO test this
+                                    // does this need samplers? I think so. Let's find out!
+                                    gfx::pso::DescriptorType::StorageTexelBuffer
+                                }
+                            }
+                        }
+                    },
+                    count: 1,
+                    stage_flags: gfx::pso::ShaderStageFlags::ALL,
+                    immutable_samplers: false,
+                }
+            })
+            .chain(sampler_descriptors)
+            .chain(write_descriptors);
+
+        let range = reads
+            .map(|(_, ty, _, _)| {
+                gfx::pso::DescriptorRangeDesc {
+                    ty: match ty {
+                        ResourceReadType::Image(img) => match img {
+                            ImageReadType::Color => gfx::pso::DescriptorType::SampledImage,
+                            ImageReadType::Storage => gfx::pso::DescriptorType::StorageImage,
+                        },
+                        ResourceReadType::Buffer(buf) => {
+                            match buf {
+                                BufferReadType::Uniform => gfx::pso::DescriptorType::UniformBuffer,
+                                BufferReadType::UniformTexel => {
+                                    // TODO test this
+                                    // does this need samplers? I think so. Let's find out!
+                                    gfx::pso::DescriptorType::UniformTexelBuffer
+                                }
+                                BufferReadType::Storage => gfx::pso::DescriptorType::StorageBuffer,
+                                BufferReadType::StorageTexel => {
+                                    //  TODO test this
+                                    // does this need samplers? I think so. Let's find out!
+                                    gfx::pso::DescriptorType::StorageTexelBuffer
+                                }
+                            }
+                        }
+                    },
+                    count: 1,
+                }
+            })
+            .chain(samplers.map(|_| gfx::pso::DescriptorRangeDesc {
+                ty: gfx::pso::DescriptorType::Sampler,
+                count: 1,
+            }))
+            .chain(writes.map(|(_, ty, _)| gfx::pso::DescriptorRangeDesc {
+                ty: match ty {
+                    ResourceWriteType::Image(img) => match img {
+                        ImageWriteType::Storage => gfx::pso::DescriptorType::StorageImage,
+                        _ => unreachable!(),
+                    },
+                    ResourceWriteType::Buffer(buf) => match buf {
+                        BufferWriteType::Storage => gfx::pso::DescriptorType::StorageBuffer,
+                        _ => unimplemented!(),
+                    },
+                },
+                count: 1,
+            }));
+
+        (descriptors, range)
+    };
+
+    // material sets
+    {
+        for (set, material) in materials {
+            let mat = match material_storage.raw(*material) {
+                Some(mat) => mat,
+                None => continue,
+            };
+
+            let layout = &mat.desc_set_layout;
+
+            sets.insert(*set, layout);
+        }
+    }
+
+    use gfx::DescriptorPool;
+    use gfx::Device;
+
+    let pass_set_layout = device
+        .device
+        .create_descriptor_set_layout(core_desc, &[])
+        .ok()?;
+
+    let mut pass_set_pool = device.device.create_descriptor_pool(1, core_range).ok()?;
+
+    let pass_set = pass_set_pool.allocate_set(&pass_set_layout).ok()?;
+
+    Some((sets, (pass_set_layout, pass_set_pool, pass_set)))
 }
