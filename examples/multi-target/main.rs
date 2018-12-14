@@ -474,6 +474,7 @@ where
         primitive: nitrogen::pipeline::Primitive::TriangleStrip,
         blend_modes: vec![nitrogen::render_pass::BlendMode::Alpha; 3],
         materials,
+        push_constants: vec![],
     };
 
     struct TestPass<FSetUp, FExec> {

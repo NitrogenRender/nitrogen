@@ -103,4 +103,52 @@ impl<'a> ComputeCommandBuffer<'a> {
 
         Some(())
     }
+
+    pub fn push_constant_raw(&mut self, offset: u32, data: &[u32]) {
+        self.buf
+            .push_compute_constants(self.pipeline_layout, offset, data);
+    }
+
+    pub fn push_constant<T: Sized>(&mut self, offset: u32, data: T) {
+        use smallvec::SmallVec;
+        use std::mem::size_of;
+        use std::mem::transmute;
+        use std::ptr::copy_nonoverlapping;
+        use std::slice::from_raw_parts;
+
+        let mut buf = SmallVec::<[u8; 1024]>::new();
+
+        let data_size = size_of::<T>();
+        let u32_size = size_of::<u32>();
+
+        let rest = data_size % u32_size;
+        let needs_padding = rest != 0;
+        let padding = u32_size - rest;
+
+        let buf_size = if needs_padding {
+            data_size + padding
+        } else {
+            data_size
+        };
+
+        unsafe {
+            buf.set_len(data_size);
+        }
+
+        unsafe {
+            let data_ptr: *const u8 = transmute(&data as *const _);
+            let buf_ptr = &mut buf[0] as *mut _;
+
+            copy_nonoverlapping(data_ptr, buf_ptr, data_size);
+        }
+
+        let u32_slice = unsafe {
+            let buf_ptr: *const u32 = transmute(&buf[0] as *const _);
+            let slice_len = buf_size / u32_size;
+
+            from_raw_parts(buf_ptr, slice_len)
+        };
+
+        self.push_constant_raw(offset, u32_slice);
+    }
 }

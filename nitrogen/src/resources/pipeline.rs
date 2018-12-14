@@ -105,6 +105,8 @@ pub struct GraphicsPipelineCreateInfo<'a> {
     pub vertex_attribs: Option<VertexAttribHandle>,
 
     pub descriptor_set_layout: &'a [&'a types::DescriptorSetLayout],
+    // TODO shader stage flags
+    pub push_constants: &'a [std::ops::Range<u32>],
     pub blend_modes: &'a [BlendMode],
 
     pub shader_vertex: ShaderInfo<'a>,
@@ -116,6 +118,8 @@ pub struct GraphicsPipelineCreateInfo<'a> {
 pub struct ComputePipelineCreateInfo<'a> {
     pub descriptor_set_layout: &'a [&'a types::DescriptorSetLayout],
     pub shader: ShaderInfo<'a>,
+    // TODO shader stage flags
+    pub push_constants: &'a [std::ops::Range<u32>],
 }
 
 pub struct PipelineStorage {
@@ -190,9 +194,13 @@ impl PipelineStorage {
         };
 
         // TODO push constants
-        let layout = device
-            .device
-            .create_pipeline_layout(create_info.descriptor_set_layout.iter().map(|d| *d), &[])?;
+        let layout = device.device.create_pipeline_layout(
+            create_info.descriptor_set_layout.iter().map(|d| *d),
+            create_info
+                .push_constants
+                .iter()
+                .map(|range| (pso::ShaderStageFlags::ALL, range.clone())),
+        )?;
 
         let pipeline = {
             struct ShaderEntries<'a> {
@@ -333,10 +341,13 @@ impl PipelineStorage {
             .device
             .create_shader_module(create_info.shader.content)?;
 
-        // TODO push constants
-        let layout = device
-            .device
-            .create_pipeline_layout(create_info.descriptor_set_layout.iter().map(|d| *d), &[])?;
+        let layout = device.device.create_pipeline_layout(
+            create_info.descriptor_set_layout.iter().map(|d| *d),
+            create_info
+                .push_constants
+                .iter()
+                .map(|range| (pso::ShaderStageFlags::COMPUTE, range.clone())),
+        )?;
 
         let pipeline = {
             let shader_entry = pso::EntryPoint {

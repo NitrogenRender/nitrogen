@@ -270,6 +270,7 @@ fn create_graph(
             primitive: pipeline::Primitive::TriangleStrip,
             blend_modes: vec![render_pass::BlendMode::Alpha],
             materials: vec![(1, material)],
+            push_constants: vec![],
         };
 
         struct Pass2D {

@@ -322,6 +322,7 @@ fn create_pipeline_compute(
             content: &info.shader.content,
         },
         descriptor_set_layout: &layouts[..],
+        push_constants: &info.push_constants[..],
     };
 
     let pipeline_handle = storages
@@ -382,6 +383,7 @@ fn create_pipeline_graphics(
         // TODO add support for geometry shaders
         shader_geometry: None,
         descriptor_set_layout: &layouts[..],
+        push_constants: &info.push_constants[..],
         blend_modes: &info.blend_modes[..],
     };
 

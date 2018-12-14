@@ -2,6 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+struct PushData {
+    float x;
+    float y;
+};
+
+[[vk::push_constant]]
+PushData push_data;
+
+
 [[vk::binding(0, 0)]]
 RWStructuredBuffer<float> output;
 
@@ -14,5 +23,7 @@ struct Input {
 
 void ComputeMain(Input input)
 {
-    output[input.idx] = data[input.idx] * 2.0;
+    output[input.idx] = data[input.idx] + push_data.x;
+
+    // output[input.idx] = a;
 }

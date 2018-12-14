@@ -1,0 +1,26 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#version 450
+
+layout(push_constant) uniform PushData {
+    float x;
+    float y;
+} push_data;
+
+layout(binding = 0, set = 0) buffer Output {
+    vec4 out_data[];
+} Out;
+
+layout(binding = 0, set = 1, std140) uniform Input {
+    vec4 in_data[1];
+} In;
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+
+    float data = In.in_data[index / 4][index % 4];
+
+    Out.out_data[index / 4][index % 4] = data + push_data.x + push_data.y;
+}
