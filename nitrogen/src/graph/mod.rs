@@ -57,7 +57,8 @@ pub type ResourceName = CowString;
 #[derive(Default)]
 pub struct Graph {
     passes: Vec<(PassName, PassInfo)>,
-    passes_impl: Vec<Box<dyn PassImpl>>,
+    passes_gfx_impl: Vec<Box<dyn GraphicsPassImpl>>,
+    passes_cmpt_impl: Vec<Box<dyn ComputePassImpl>>,
     pub(crate) output_resources: Vec<ResourceName>,
 
     resolve_cache: HashMap<u64, (GraphResourcesResolved, usize)>,
@@ -99,19 +100,40 @@ impl GraphStorage {
             for (_, res) in graph.exec_base_resources {
                 res.release(res_list, storages);
             }
+
+            if let Some((_, res)) = graph.exec_resources {
+                res.release(res_list, storages);
+            }
         }
     }
 
-    pub fn add_pass<T: Into<PassName>>(
+    pub fn add_graphics_pass<T: Into<PassName>>(
         &mut self,
         handle: GraphHandle,
         name: T,
-        pass_info: PassInfo,
-        pass_impl: Box<dyn PassImpl>,
+        pass_info: GraphicsPassInfo,
+        pass_impl: Box<dyn GraphicsPassImpl>,
     ) {
         self.storage.get_mut(handle).map(|graph| {
-            graph.passes.push((name.into(), pass_info));
-            graph.passes_impl.push(pass_impl);
+            graph
+                .passes
+                .push((name.into(), PassInfo::Graphics(pass_info)));
+            graph.passes_gfx_impl.push(pass_impl);
+        });
+    }
+
+    pub fn add_compute_pass<T: Into<PassName>>(
+        &mut self,
+        handle: GraphHandle,
+        name: T,
+        pass_info: ComputePassInfo,
+        pass_impl: Box<dyn ComputePassImpl>,
+    ) {
+        self.storage.get_mut(handle).map(|graph| {
+            graph
+                .passes
+                .push((name.into(), PassInfo::Compute(pass_info)));
+            graph.passes_cmpt_impl.push(pass_impl);
         });
     }
 
@@ -135,7 +157,18 @@ impl GraphStorage {
 
         let mut input = GraphInput::default();
 
-        for (i, pass) in graph.passes_impl.iter_mut().enumerate() {
+        for (i, pass) in graph.passes_gfx_impl.iter_mut().enumerate() {
+            let mut builder = GraphBuilder::new();
+            pass.setup(&mut builder);
+
+            let id = PassId(i);
+
+            if builder.enabled {
+                input.add_builder(id, builder);
+            }
+        }
+
+        for (i, pass) in graph.passes_cmpt_impl.iter_mut().enumerate() {
             let mut builder = GraphBuilder::new();
             pass.setup(&mut builder);
 
@@ -216,7 +249,8 @@ impl GraphStorage {
         device: &DeviceContext,
         sem_pool: &mut SemaphorePool,
         sem_list: &mut SemaphoreList,
-        cmd_pool: &mut CommandPool<gfx::Graphics>,
+        cmd_pool_gfx: &mut CommandPool<gfx::Graphics>,
+        cmd_pool_cmpt: &mut CommandPool<gfx::Compute>,
         res_list: &mut ResourceList,
         storages: &mut Storages,
         graph: GraphHandle,
@@ -302,7 +336,8 @@ impl GraphStorage {
             device,
             sem_pool,
             sem_list,
-            cmd_pool,
+            cmd_pool_gfx,
+            cmd_pool_cmpt,
             storages,
             exec,
             resolved,
@@ -317,6 +352,20 @@ impl GraphStorage {
         self.storage.get_mut(handle).map(|graph| {
             graph.output_resources.push(image.into());
         });
+    }
+
+    pub fn output_buffer<T: Into<ResourceName>>(
+        &self,
+        handle: GraphHandle,
+        buffer: T,
+    ) -> Option<crate::buffer::BufferHandle> {
+        let graph = self.storage.get(handle)?;
+        let in_num = graph.last_input?;
+        let (resolve, _exec_num) = graph.resolve_cache.get(&in_num)?;
+        let id = *resolve.name_lookup.get(&buffer.into())?;
+        let (_, res) = graph.exec_resources.as_ref()?;
+
+        res.buffers.get(&id).map(|x| *x)
     }
 }
 

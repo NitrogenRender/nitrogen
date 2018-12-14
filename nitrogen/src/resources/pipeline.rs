@@ -66,7 +66,10 @@ pub(crate) struct GraphicsPipeline {
     pub(crate) layout: types::PipelineLayout,
 }
 
-struct ComputePipeline {}
+pub(crate) struct ComputePipeline {
+    pub(crate) pipeline: types::ComputePipeline,
+    pub(crate) layout: types::PipelineLayout,
+}
 
 #[derive(Clone)]
 pub struct ShaderInfo<'a> {
@@ -107,6 +110,12 @@ pub struct GraphicsPipelineCreateInfo<'a> {
     pub shader_vertex: ShaderInfo<'a>,
     pub shader_fragment: Option<ShaderInfo<'a>>,
     pub shader_geometry: Option<ShaderInfo<'a>>,
+}
+
+#[derive(Clone)]
+pub struct ComputePipelineCreateInfo<'a> {
+    pub descriptor_set_layout: &'a [&'a types::DescriptorSetLayout],
+    pub shader: ShaderInfo<'a>,
 }
 
 pub struct PipelineStorage {
@@ -180,6 +189,7 @@ impl PipelineStorage {
             },
         };
 
+        // TODO push constants
         let layout = device
             .device
             .create_pipeline_layout(create_info.descriptor_set_layout.iter().map(|d| *d), &[])?;
@@ -303,6 +313,56 @@ impl PipelineStorage {
         Ok(handle)
     }
 
+    pub fn create_compute_pipelines(
+        &mut self,
+        device: &DeviceContext,
+        create_infos: &[ComputePipelineCreateInfo],
+    ) -> SmallVec<[Result<PipelineHandle>; 16]> {
+        create_infos
+            .iter()
+            .map(|create_info| self.create_compute_pipeline(device, create_info))
+            .collect()
+    }
+
+    pub fn create_compute_pipeline(
+        &mut self,
+        device: &DeviceContext,
+        create_info: &ComputePipelineCreateInfo,
+    ) -> Result<PipelineHandle> {
+        let shader_module = device
+            .device
+            .create_shader_module(create_info.shader.content)?;
+
+        // TODO push constants
+        let layout = device
+            .device
+            .create_pipeline_layout(create_info.descriptor_set_layout.iter().map(|d| *d), &[])?;
+
+        let pipeline = {
+            let shader_entry = pso::EntryPoint {
+                entry: create_info.shader.entry,
+                module: &shader_module,
+                specialization: pso::Specialization {
+                    constants: &[],
+                    data: &[],
+                },
+            };
+
+            let desc = pso::ComputePipelineDesc::new(shader_entry, &layout);
+
+            device.device.create_compute_pipeline(&desc, None)?
+        };
+
+        device.device.destroy_shader_module(shader_module);
+
+        let (handle, _) = self.storage.insert(Pipeline::Compute);
+
+        self.compute_pipelines
+            .insert(handle.id(), ComputePipeline { pipeline, layout });
+
+        Ok(handle)
+    }
+
     pub fn destroy<P>(&mut self, res_list: &mut ResourceList, pipelines: P)
     where
         P: IntoIterator,
@@ -318,8 +378,9 @@ impl PipelineStorage {
                     res_list.queue_pipeline_graphic(gfx.pipeline);
                     res_list.queue_pipeline_layout(gfx.layout);
                 }
-                if let Some(_cmpt) = self.compute_pipelines.remove(&handle.0) {
-                    unimplemented!()
+                if let Some(cmpt) = self.compute_pipelines.remove(&handle.0) {
+                    res_list.queue_pipeline_compute(cmpt.pipeline);
+                    res_list.queue_pipeline_layout(cmpt.layout);
                 }
             }
         }
@@ -330,6 +391,19 @@ impl PipelineStorage {
             let ty = self.storage[handle];
             if ty == Pipeline::Graphics {
                 Some(&self.graphic_pipelines[&handle.0])
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn raw_compute(&self, handle: PipelineHandle) -> Option<&ComputePipeline> {
+        if self.storage.is_alive(handle) {
+            let ty = self.storage[handle];
+            if ty == Pipeline::Compute {
+                Some(&self.compute_pipelines[&handle.0])
             } else {
                 None
             }

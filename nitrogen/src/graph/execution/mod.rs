@@ -38,6 +38,7 @@ pub(crate) struct GraphBaseResources {
     render_passes: HashMap<PassId, RenderPassHandle>,
 
     pipelines_graphic: HashMap<PassId, PipelineHandle>,
+    pipelines_compute: HashMap<PassId, PipelineHandle>,
     pipelines_desc_set: HashMap<
         PassId,
         (
@@ -58,6 +59,10 @@ impl GraphBaseResources {
             .pipeline
             .destroy(res_list, self.pipelines_graphic.values());
 
+        storages
+            .pipeline
+            .destroy(res_list, self.pipelines_compute.values());
+
         for (_, (layout, pool, _)) in self.pipelines_desc_set {
             res_list.queue_desc_set_layout(layout);
             // implicitly frees all descriptors allocated from pool
@@ -70,7 +75,7 @@ impl GraphBaseResources {
 pub(crate) struct GraphResources {
     pub(crate) images: HashMap<ResourceId, ImageHandle>,
     samplers: HashMap<ResourceId, SamplerHandle>,
-    buffers: HashMap<ResourceId, BufferHandle>,
+    pub(crate) buffers: HashMap<ResourceId, BufferHandle>,
 
     framebuffers: HashMap<PassId, (types::Framebuffer, gfx::image::Extent)>,
 

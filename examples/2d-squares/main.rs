@@ -201,7 +201,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 resized = false;
             }
 
-            submits[frame_idx].graph_render(&mut ctx, graph, &exec_context);
+            submits[frame_idx].graph_execute(&mut ctx, graph, &exec_context);
 
             submits[frame_idx].display_present(&mut ctx, display, graph);
 
@@ -248,7 +248,7 @@ fn create_graph(
     let graph = ctx.graph_create();
 
     {
-        let info = graph::PassInfo::Graphics {
+        let info = graph::GraphicsPassInfo {
             vertex_attrib: Some(vertex_attrib),
             shaders: graph::Shaders {
                 vertex: graph::ShaderInfo {
@@ -277,7 +277,7 @@ fn create_graph(
             mat_instance: material::MaterialInstanceHandle,
         }
 
-        impl graph::PassImpl for Pass2D {
+        impl graph::GraphicsPassImpl for Pass2D {
             fn setup(&mut self, builder: &mut graph::GraphBuilder) {
                 builder.image_create(
                     "Canvas",
@@ -296,11 +296,11 @@ fn create_graph(
                 builder.enable();
             }
 
-            fn execute(&self, cmd: &mut graph::CommandBuffer) {
+            fn execute(&self, cmd: &mut graph::GraphicsCommandBuffer<'_>) {
                 let things = NUM_THINGS;
 
                 cmd.bind_vertex_buffers(&[(self.buffer, 0)]);
-                cmd.bind_graphics_descriptor_set(1, self.mat_instance);
+                cmd.bind_material(1, self.mat_instance);
 
                 cmd.draw(0..4, 0..things as u32);
             }
@@ -311,7 +311,7 @@ fn create_graph(
             mat_instance,
         };
 
-        ctx.graph_add_pass(graph, "2D Pass", info, Box::new(pass));
+        ctx.graph_add_graphics_pass(graph, "2D Pass", info, Box::new(pass));
     }
 
     ctx.graph_add_output(graph, "Canvas");

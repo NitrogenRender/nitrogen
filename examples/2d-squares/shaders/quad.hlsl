@@ -29,9 +29,7 @@ struct InstanceData {
 };
 
 [[vk::binding(0, 1)]]
-cbuffer {
-    InstanceData data[];
-};
+StructuredBuffer<InstanceData> data;
 
 VertexOut VertexMain(VertexIn input)
 {
