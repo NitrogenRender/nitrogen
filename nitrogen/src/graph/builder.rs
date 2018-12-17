@@ -169,6 +169,11 @@ impl GraphBuilder {
         self.resource_moves.push((to.into(), from.into()));
     }
 
+    pub fn extern_read<T: Into<ResourceName>>(&mut self, name: T) {
+        self.resource_reads
+            .push((name.into(), R::External, 0, None));
+    }
+
     // control flow control
 
     pub fn enable(&mut self) {
@@ -208,6 +213,7 @@ pub enum BufferStorageType {
 pub enum ResourceReadType {
     Image(ImageReadType),
     Buffer(BufferReadType),
+    External,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
@@ -257,6 +263,7 @@ impl From<ResourceReadType> for ResourceType {
         match ty {
             ResourceReadType::Image(..) => ResourceType::Image,
             ResourceReadType::Buffer(..) => ResourceType::Buffer,
+            ResourceReadType::External => ResourceType::Extern,
         }
     }
 }

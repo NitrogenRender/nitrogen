@@ -37,6 +37,9 @@ pub use self::compilation::*;
 pub mod execution;
 pub(crate) use self::execution::*;
 
+pub mod store;
+pub use self::store::*;
+
 use crate::submit_group::ResourceList;
 
 pub(crate) struct Storages<'a> {
@@ -57,8 +60,8 @@ pub type ResourceName = CowString;
 #[derive(Default)]
 pub struct Graph {
     passes: Vec<(PassName, PassInfo)>,
-    passes_gfx_impl: Vec<Box<dyn GraphicsPassImpl>>,
-    passes_cmpt_impl: Vec<Box<dyn ComputePassImpl>>,
+    passes_gfx_impl: HashMap<usize, Box<dyn GraphicsPassImpl>>,
+    passes_cmpt_impl: HashMap<usize, Box<dyn ComputePassImpl>>,
     pub(crate) output_resources: Vec<ResourceName>,
 
     resolve_cache: HashMap<u64, (GraphResourcesResolved, usize)>,
@@ -115,10 +118,11 @@ impl GraphStorage {
         pass_impl: Box<dyn GraphicsPassImpl>,
     ) {
         self.storage.get_mut(handle).map(|graph| {
+            let id = graph.passes.len();
             graph
                 .passes
                 .push((name.into(), PassInfo::Graphics(pass_info)));
-            graph.passes_gfx_impl.push(pass_impl);
+            graph.passes_gfx_impl.insert(id, pass_impl);
         });
     }
 
@@ -130,10 +134,11 @@ impl GraphStorage {
         pass_impl: Box<dyn ComputePassImpl>,
     ) {
         self.storage.get_mut(handle).map(|graph| {
+            let id = graph.passes.len();
             graph
                 .passes
                 .push((name.into(), PassInfo::Compute(pass_info)));
-            graph.passes_cmpt_impl.push(pass_impl);
+            graph.passes_cmpt_impl.insert(id, pass_impl);
         });
     }
 
@@ -157,22 +162,22 @@ impl GraphStorage {
 
         let mut input = GraphInput::default();
 
-        for (i, pass) in graph.passes_gfx_impl.iter_mut().enumerate() {
+        for (i, pass) in graph.passes_gfx_impl.iter_mut() {
             let mut builder = GraphBuilder::new();
             pass.setup(&mut builder);
 
-            let id = PassId(i);
+            let id = PassId(*i);
 
             if builder.enabled {
                 input.add_builder(id, builder);
             }
         }
 
-        for (i, pass) in graph.passes_cmpt_impl.iter_mut().enumerate() {
+        for (i, pass) in graph.passes_cmpt_impl.iter_mut() {
             let mut builder = GraphBuilder::new();
             pass.setup(&mut builder);
 
-            let id = PassId(i);
+            let id = PassId(*i);
 
             if builder.enabled {
                 input.add_builder(id, builder);
@@ -253,6 +258,7 @@ impl GraphStorage {
         cmd_pool_cmpt: &mut CommandPool<gfx::Compute>,
         res_list: &mut ResourceList,
         storages: &mut Storages,
+        store: &Store,
         graph: GraphHandle,
         context: &ExecutionContext,
     ) {
@@ -339,6 +345,7 @@ impl GraphStorage {
             cmd_pool_gfx,
             cmd_pool_cmpt,
             storages,
+            store,
             exec,
             resolved,
             graph,

@@ -77,11 +77,14 @@ fn main() {
 
     let graph = create_graph(&mut ctx, material_instance);
 
+    let store = Store::new();
+
     let _res = ctx.graph_compile(graph);
 
     submit.graph_execute(
         &mut ctx,
         graph,
+        &store,
         &ExecutionContext {
             reference_size: (1, 1),
         },
@@ -140,7 +143,7 @@ fn create_graph(
                 builder.enable();
             }
 
-            fn execute(&self, command_buffer: &mut ComputeCommandBuffer<'_>) {
+            fn execute(&self, _: &Store, command_buffer: &mut ComputeCommandBuffer<'_>) {
                 command_buffer.bind_material(1, self.mat);
                 command_buffer.push_constant(0, 1_f32);
 
@@ -179,7 +182,7 @@ fn create_graph(
                 builder.enable();
             }
 
-            fn execute(&self, command_buffer: &mut ComputeCommandBuffer<'_>) {
+            fn execute(&self, _: &Store, command_buffer: &mut ComputeCommandBuffer<'_>) {
                 command_buffer.bind_material(1, self.mat);
                 command_buffer.push_constant(0, 10.0_f32);
 

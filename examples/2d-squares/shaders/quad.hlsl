@@ -2,6 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+struct PushData {
+    float4 color_mask;
+    float size_mul;
+};
+
+[[vk::push_constant]]
+ConstantBuffer<PushData> push_data;
+
+
 struct VertexIn {
     [[vk::location(0)]]
     float2 position;
@@ -29,9 +38,7 @@ struct InstanceData {
 };
 
 [[vk::binding(0, 1)]]
-cbuffer {
-    InstanceData data[];
-};
+StructuredBuffer<InstanceData> data;
 
 VertexOut VertexMain(VertexIn input)
 {
@@ -39,7 +46,7 @@ VertexOut VertexMain(VertexIn input)
     ret.idx = input.primitive_id;
 
     float2 position;
-    position = input.position * data[ret.idx].size * 0.25 / 8.0;
+    position = input.position * data[ret.idx].size * push_data.size_mul;
     position += data[ret.idx].position;
 
     ret.position = float4(position, 0.0, 1.0);
@@ -49,24 +56,17 @@ VertexOut VertexMain(VertexIn input)
     return ret;
 }
 
-struct PushData {
-    float4 amount;
-};
-
-[[vk::push_constant]]
-ConstantBuffer<PushData> push_data;
-
 FragmentOut FragmentMain(VertexOut input)
 {
     FragmentOut ret;
 
     float distance = length(input.vert);
 
-    if (distance > 1.0) {
-        discard;
-    }
+    // if (distance > 1.0) {
+    //     discard;
+    // }
 
-    ret.color = data[input.idx].color * push_data.amount;
+    ret.color = data[input.idx].color * push_data.color_mask;
 
     return ret;
 }

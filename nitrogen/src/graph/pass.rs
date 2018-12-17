@@ -50,10 +50,10 @@ pub struct ShaderInfo {
 
 pub trait GraphicsPassImpl {
     fn setup(&mut self, builder: &mut builder::GraphBuilder);
-    fn execute(&self, command_buffer: &mut command::GraphicsCommandBuffer);
+    fn execute(&self, store: &super::Store, command_buffer: &mut command::GraphicsCommandBuffer);
 }
 
 pub trait ComputePassImpl {
     fn setup(&mut self, builder: &mut builder::GraphBuilder);
-    fn execute(&self, command_buffer: &mut command::ComputeCommandBuffer);
+    fn execute(&self, store: &super::Store, command_buffer: &mut command::ComputeCommandBuffer);
 }

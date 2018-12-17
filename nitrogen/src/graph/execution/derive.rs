@@ -170,6 +170,9 @@ fn derive_pass(
 
                 usages.image.insert(origin, (usage, format));
             }
+            ResourceReadType::External => {
+                // Nothing to do ...
+            }
         }
     }
 

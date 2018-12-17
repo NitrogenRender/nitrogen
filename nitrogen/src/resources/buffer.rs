@@ -353,9 +353,11 @@ impl BufferStorage {
                 .as_slice()
                 .iter()
                 .map(|(idx, handle, data)| {
+                    let data_slice = unsafe { to_u8_slice(data.data) };
+
                     let buffer = self.buffers.get(&handle.id()).unwrap();
 
-                    let upload_fits = data.offset + data.data.len() as u64 <= buffer.size;
+                    let upload_fits = data.offset + data_slice.len() as u64 <= buffer.size;
 
                     if !upload_fits {
                         (*idx, None)
@@ -372,6 +374,8 @@ impl BufferStorage {
                         Some((data, buffer)) => (data, buffer),
                     };
 
+                    let data_slice = unsafe { to_u8_slice(data.data) };
+
                     use gfx::buffer::Usage;
                     use gfx::memory::Properties;
 
@@ -381,7 +385,7 @@ impl BufferStorage {
                             gfxm::Type::ShortLived,
                             Properties::CPU_VISIBLE | Properties::COHERENT,
                         ),
-                        data.data.len() as u64,
+                        data_slice.len() as u64,
                         Usage::TRANSFER_SRC | Usage::TRANSFER_DST,
                     );
 

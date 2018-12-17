@@ -516,7 +516,13 @@ fn create_pipeline_base<'a>(
     let mut sets = BTreeMap::new();
 
     let (core_desc, core_range) = {
-        let reads = resolved.pass_reads[&pass].iter();
+        let reads = resolved.pass_reads[&pass]
+            .iter()
+            .filter(|(_id, _ty, _, _)| match _ty {
+                ResourceReadType::External => false,
+                ResourceReadType::Image(_) => true,
+                ResourceReadType::Buffer(_) => true,
+            });
 
         let samplers = reads.clone().filter(|(_, _, _, sampler)| sampler.is_some());
 
@@ -596,6 +602,7 @@ fn create_pipeline_base<'a>(
                                 }
                             }
                         }
+                        ResourceReadType::External => unreachable!(),
                     },
                     count: 1,
                     stage_flags: gfx::pso::ShaderStageFlags::ALL,
@@ -629,6 +636,7 @@ fn create_pipeline_base<'a>(
                                 }
                             }
                         }
+                        ResourceReadType::External => unreachable!(),
                     },
                     count: 1,
                 }

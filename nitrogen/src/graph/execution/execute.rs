@@ -28,6 +28,7 @@ pub(crate) fn execute(
     cmd_pool_gfx: &mut CommandPool<gfx::Graphics>,
     cmd_pool_cmpt: &mut CommandPool<gfx::Compute>,
     storages: &mut Storages,
+    store: &crate::graph::Store,
     exec_graph: &ExecutionGraph,
     resolved_graph: &GraphResourcesResolved,
     graph: &crate::graph::Graph,
@@ -117,6 +118,10 @@ pub(crate) fn execute(
                                 }
                             }
                             ResourceReadType::Buffer(_buf) => unimplemented!(),
+                            ResourceReadType::External => {
+                                // Nothing to do...
+                                SmallVec::new()
+                            }
                         })
                         .flatten();
 
@@ -228,7 +233,7 @@ pub(crate) fn execute(
 
                         raw_cmd.bind_graphics_descriptor_sets(&pipeline.layout, 0, Some(set), &[]);
 
-                        let pass_impl = &graph.passes_gfx_impl[pass.0];
+                        let pass_impl = &graph.passes_gfx_impl[&pass.0];
 
                         {
                             let encoder = raw_cmd.begin_render_pass_inline(
@@ -244,7 +249,7 @@ pub(crate) fn execute(
                                 pipeline_layout: &pipeline.layout,
                             };
 
-                            pass_impl.execute(&mut command);
+                            pass_impl.execute(store, &mut command);
                         }
 
                         raw_cmd.finish()
@@ -274,7 +279,7 @@ pub(crate) fn execute(
 
                         raw_cmd.bind_compute_descriptor_sets(&pipeline.layout, 0, Some(set), &[]);
 
-                        let pass_impl = &graph.passes_cmpt_impl[pass.0];
+                        let pass_impl = &graph.passes_cmpt_impl[&pass.0];
 
                         let raw_cmd = {
                             let mut cmd_buffer = crate::graph::command::ComputeCommandBuffer {
@@ -283,7 +288,7 @@ pub(crate) fn execute(
                                 pipeline_layout: &pipeline.layout,
                             };
 
-                            pass_impl.execute(&mut cmd_buffer);
+                            pass_impl.execute(store, &mut cmd_buffer);
 
                             cmd_buffer.buf
                         };

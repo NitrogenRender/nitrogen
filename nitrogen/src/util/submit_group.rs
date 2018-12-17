@@ -116,6 +116,7 @@ impl SubmitGroup {
         &mut self,
         ctx: &mut Context,
         graph: graph::GraphHandle,
+        store: &graph::Store,
         exec_context: &graph::ExecutionContext,
     ) {
         let mut storages = graph::Storages {
@@ -136,6 +137,7 @@ impl SubmitGroup {
             &mut self.pool_compute,
             &mut self.res_destroys,
             &mut storages,
+            store,
             graph,
             exec_context,
         )

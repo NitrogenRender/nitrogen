@@ -8,6 +8,9 @@ use nitrogen::*;
 
 use nitrogen::submit_group::SubmitGroup;
 
+struct Delta(pub f64);
+struct Scale(pub f32);
+
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
 struct InstanceData {
@@ -29,7 +32,7 @@ const VERTEX_DATA: [VertexData; 4] = [
     VertexData { pos: [1.0, 1.0] },
 ];
 
-const NUM_THINGS: usize = 100_000;
+const NUM_THINGS: usize = 1_024 * 1_024;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::env::set_var("RUST_LOG", "debug");
@@ -49,7 +52,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let material = {
         let create_info = material::MaterialCreateInfo {
-            parameters: &[(0, material::MaterialParameterType::UniformBuffer)],
+            parameters: &[
+                // positions
+                (0, material::MaterialParameterType::StorageBuffer),
+                // velocities
+                (1, material::MaterialParameterType::StorageBuffer),
+            ],
         };
         ctx.material_create(&[create_info]).remove(0).unwrap()
     };
@@ -73,28 +81,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         use crate::buffer::BufferUsage;
         use crate::resources::MemoryProperties;
 
-        let create_info = buffer::BufferCreateInfo {
-            size: ::std::mem::size_of_val(&VERTEX_DATA) as u64,
-            is_transient: false,
-            properties: MemoryProperties::CPU_VISIBLE | MemoryProperties::COHERENT,
-            usage: BufferUsage::TRANSFER_DST | BufferUsage::VERTEX,
-        };
-        let buffer = ctx.buffer_create(&[create_info]).remove(0).unwrap();
-
-        let upload_info = buffer::BufferUploadInfo {
-            offset: 0,
-            data: &VERTEX_DATA,
-        };
-
-        submit.buffer_upload_data(&mut ctx, &[(buffer, upload_info)]);
-
-        buffer
+        create_buffer(
+            &mut ctx,
+            &mut submit,
+            &VERTEX_DATA[..],
+            MemoryProperties::CPU_VISIBLE | MemoryProperties::COHERENT,
+            BufferUsage::TRANSFER_DST | BufferUsage::VERTEX,
+        )
     };
 
     let num_squares = NUM_THINGS as _;
 
-    let mut instance_data = create_instance_data(num_squares);
-    let mut instance_vel = create_instance_velocity(num_squares);
+    let instance_data = create_instance_data(num_squares);
+    let instance_vel = create_instance_velocity(num_squares);
 
     let instance_material = ctx.material_create_instance(&[material]).remove(0).unwrap();
 
@@ -102,27 +101,52 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         use crate::buffer::BufferUsage;
         use crate::resources::MemoryProperties;
 
-        let create_info = buffer::BufferCreateInfo {
-            size: ::std::mem::size_of::<InstanceData>() as u64 * num_squares as u64,
-            is_transient: false,
-            properties: MemoryProperties::CPU_VISIBLE | MemoryProperties::COHERENT,
-            usage: BufferUsage::TRANSFER_DST | BufferUsage::UNIFORM,
-        };
-        ctx.buffer_create(&[create_info]).remove(0).unwrap()
+        create_buffer(
+            &mut ctx,
+            &mut submit,
+            &instance_data[..],
+            MemoryProperties::DEVICE_LOCAL,
+            BufferUsage::TRANSFER_DST | BufferUsage::UNIFORM | BufferUsage::STORAGE,
+        )
     };
 
-    write_to_instance_buffer(&mut submit, &mut ctx, &instance_data, instance_buffer);
+    let velocity_buffer = {
+        use crate::buffer::BufferUsage;
+        use crate::resources::MemoryProperties;
+
+        create_buffer(
+            &mut ctx,
+            &mut submit,
+            &instance_vel[..],
+            MemoryProperties::DEVICE_LOCAL,
+            BufferUsage::TRANSFER_DST | BufferUsage::STORAGE,
+        )
+    };
+
+    submit.wait(&mut ctx);
+
+    drop(instance_data);
+    drop(instance_vel);
 
     {
-        let write = material::InstanceWrite {
-            binding: 0,
-            data: material::InstanceWriteData::Buffer {
-                buffer: instance_buffer,
-                region: None..None,
+        let writes = &[
+            material::InstanceWrite {
+                binding: 0,
+                data: material::InstanceWriteData::Buffer {
+                    buffer: instance_buffer,
+                    region: None..None,
+                },
             },
-        };
+            material::InstanceWrite {
+                binding: 1,
+                data: material::InstanceWriteData::Buffer {
+                    buffer: velocity_buffer,
+                    region: None..None,
+                },
+            },
+        ];
 
-        ctx.material_write_instance(instance_material, std::iter::once(write));
+        ctx.material_write_instance(instance_material, writes);
     }
 
     let graph = create_graph(
@@ -149,6 +173,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut frame_idx = 0;
 
     let mut instant = Instant::now();
+
+    let mut store = graph::Store::new();
+
+    {
+        let scale = 0.25 / 8.0;
+        store.insert(Scale(scale));
+    }
 
     while running {
         events_loop.poll_events(|ev| match ev {
@@ -195,31 +226,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             secs + subsecs
         };
 
+        store.insert(Delta(delta));
+
         {
             if resized {
                 submits[frame_idx].display_setup_swapchain(&mut ctx, display);
                 resized = false;
             }
 
-            submits[frame_idx].graph_execute(&mut ctx, graph, &exec_context);
+            submits[frame_idx].graph_execute(&mut ctx, graph, &store, &exec_context);
 
             submits[frame_idx].display_present(&mut ctx, display, graph);
-
-            update_instance_data(&mut instance_data, &mut instance_vel, delta);
-
-            write_to_instance_buffer(
-                &mut submits[frame_idx],
-                &mut ctx,
-                &instance_data,
-                instance_buffer,
-            );
         }
 
         frame_num += 1;
         frame_idx = frame_num % submits.len();
     }
 
-    submits[0].buffer_destroy(&mut ctx, &[vertex_buffer, instance_buffer]);
+    submits[0].buffer_destroy(&mut ctx, &[vertex_buffer, instance_buffer, velocity_buffer]);
     submits[0].graph_destroy(&mut ctx, &[graph]);
 
     for mut submit in submits {
@@ -248,6 +272,59 @@ fn create_graph(
     let graph = ctx.graph_create();
 
     {
+        let info = graph::ComputePassInfo {
+            shader: graph::ShaderInfo {
+                content: Cow::Borrowed(include_bytes!(concat!(
+                    env!("OUT_DIR"),
+                    "/2d-squares/move.hlsl.comp.spirv"
+                ),)),
+                entry: "ComputeMain".into(),
+            },
+            materials: vec![(1, material)],
+            push_constants: vec![(0..3)],
+        };
+
+        struct MovePass {
+            mat_instance: material::MaterialInstanceHandle,
+        }
+
+        impl graph::ComputePassImpl for MovePass {
+            fn setup(&mut self, builder: &mut graph::GraphBuilder) {
+                builder.extern_create("Positions");
+
+                builder.enable();
+            }
+
+            fn execute(&self, store: &graph::Store, cmd: &mut graph::ComputeCommandBuffer<'_>) {
+                let mut batch_size = 1024;
+                let mut wide = NUM_THINGS as u32 / batch_size;
+
+                if (NUM_THINGS as u32 % batch_size) != 0 {
+                    batch_size += 1;
+
+                    if wide == 0 {
+                        wide = 1;
+                    }
+                }
+
+                cmd.push_constant(0, wide);
+
+                let Delta(delta) = store.get::<Delta>().unwrap();
+
+                cmd.push_constant(1, *delta as f32);
+
+                cmd.bind_material(1, self.mat_instance);
+
+                cmd.dispatch([wide, batch_size, 1]);
+            }
+        }
+
+        let pass = MovePass { mat_instance };
+
+        ctx.graph_add_compute_pass(graph, "MovePass", info, pass);
+    }
+
+    {
         let info = graph::GraphicsPassInfo {
             vertex_attrib: Some(vertex_attrib),
             shaders: graph::Shaders {
@@ -270,7 +347,7 @@ fn create_graph(
             primitive: pipeline::Primitive::TriangleStrip,
             blend_modes: vec![render_pass::BlendMode::Alpha],
             materials: vec![(1, material)],
-            push_constants: vec![(0..4)],
+            push_constants: vec![(0..5)],
         };
 
         struct Pass2D {
@@ -280,6 +357,8 @@ fn create_graph(
 
         impl graph::GraphicsPassImpl for Pass2D {
             fn setup(&mut self, builder: &mut graph::GraphBuilder) {
+                builder.extern_read("Positions");
+
                 builder.image_create(
                     "Canvas",
                     graph::ImageCreateInfo {
@@ -288,7 +367,7 @@ fn create_graph(
                             height: 1.0,
                         },
                         format: image::ImageFormat::RgbaUnorm,
-                        clear_color: [0.2, 0.2, 0.0, 1.0],
+                        clear_color: [0.1, 0.1, 0.2, 1.0],
                     },
                 );
 
@@ -297,10 +376,13 @@ fn create_graph(
                 builder.enable();
             }
 
-            fn execute(&self, cmd: &mut graph::GraphicsCommandBuffer<'_>) {
+            fn execute(&self, store: &graph::Store, cmd: &mut graph::GraphicsCommandBuffer<'_>) {
                 let things = NUM_THINGS;
 
-                cmd.push_constant(0, [1.0, 0.3, 0.4, 1.0f32]);
+                cmd.push_constant::<[f32; 4]>(0, [1.0, 1.0, 1.0, 1.0]);
+
+                let Scale(s) = store.get().unwrap();
+                cmd.push_constant(4, *s);
 
                 cmd.bind_vertex_buffers(&[(self.buffer, 0)]);
                 cmd.bind_material(1, self.mat_instance);
@@ -314,7 +396,7 @@ fn create_graph(
             mat_instance,
         };
 
-        ctx.graph_add_graphics_pass(graph, "2D Pass", info, Box::new(pass));
+        ctx.graph_add_graphics_pass(graph, "2D Pass", info, pass);
     }
 
     ctx.graph_add_output(graph, "Canvas");
@@ -367,34 +449,24 @@ fn create_instance_velocity(num: u32) -> Vec<[f32; 2]> {
     result
 }
 
-fn update_instance_data(data: &mut [InstanceData], velocities: &mut [[f32; 2]], delta: f64) {
-    assert_eq!(data.len(), velocities.len());
-
-    for i in 0..data.len() {
-        let mut new_pos = [
-            data[i].pos[0] + velocities[i][0] * delta as f32,
-            data[i].pos[1] + velocities[i][1] * delta as f32,
-        ];
-
-        if new_pos[0] < -1.0 || new_pos[0] > 1.0 {
-            new_pos[0] = new_pos[0].max(-1.0).min(1.0);
-            velocities[i][0] *= -1.0;
-        }
-        if new_pos[1] < -1.0 || new_pos[1] > 1.0 {
-            new_pos[1] = new_pos[1].max(-1.0).min(1.0);
-            velocities[i][1] *= -1.0;
-        }
-
-        data[i].pos = new_pos;
-    }
-}
-
-fn write_to_instance_buffer(
-    submit: &mut SubmitGroup,
+fn create_buffer<T>(
     ctx: &mut Context,
-    data: &[InstanceData],
-    buffer: buffer::BufferHandle,
-) {
+    submit: &mut SubmitGroup,
+    data: &[T],
+    props: resources::MemoryProperties,
+    usages: buffer::BufferUsage,
+) -> buffer::BufferHandle {
+    let create_info = buffer::BufferCreateInfo {
+        size: ::std::mem::size_of::<T>() as u64 * (data.len() as u64),
+        is_transient: false,
+        properties: props,
+        usage: usages,
+    };
+    let buffer = ctx.buffer_create(&[create_info]).remove(0).unwrap();
+
     let upload_info = buffer::BufferUploadInfo { offset: 0, data };
+
     submit.buffer_upload_data(ctx, &[(buffer, upload_info)]);
+
+    buffer
 }

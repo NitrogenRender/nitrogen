@@ -273,6 +273,8 @@ fn main() {
         reference_size: (1920, 1080),
     };
 
+    let store = graph::Store::new();
+
     while running {
         events.poll_events(|event| match event {
             winit::Event::WindowEvent { event, .. } => match event {
@@ -306,7 +308,7 @@ fn main() {
                 resized = false;
             }
 
-            submits[frame_idx].graph_execute(&mut ntg, graph, &exec_context);
+            submits[frame_idx].graph_execute(&mut ntg, graph, &store, &exec_context);
 
             submits[frame_idx].display_present(&mut ntg, display, graph);
         }
@@ -405,7 +407,7 @@ fn setup_graphs(
             vec![(1, material)],
         );
 
-        ntg.graph_add_graphics_pass(graph, "Split", info, Box::new(pass_impl));
+        ntg.graph_add_graphics_pass(graph, "Split", info, pass_impl);
     }
 
     {
@@ -449,7 +451,7 @@ fn setup_graphs(
             vec![],
         );
 
-        ntg.graph_add_graphics_pass(graph, "Read", info, Box::new(pass_impl));
+        ntg.graph_add_graphics_pass(graph, "Read", info, pass_impl);
     }
 
     ntg.graph_add_output(graph, "Output");
@@ -491,7 +493,7 @@ where
             (self.setup)(builder);
         }
 
-        fn execute(&self, command_buffer: &mut graph::GraphicsCommandBuffer) {
+        fn execute(&self, _: &graph::Store, command_buffer: &mut graph::GraphicsCommandBuffer) {
             (self.exec)(command_buffer);
         }
     }

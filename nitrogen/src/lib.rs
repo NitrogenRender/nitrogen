@@ -265,10 +265,10 @@ impl Context {
         graph: graph::GraphHandle,
         name: T,
         info: graph::GraphicsPassInfo,
-        pass_impl: Box<dyn graph::GraphicsPassImpl>,
+        pass_impl: impl graph::GraphicsPassImpl + 'static,
     ) {
         self.graph_storage
-            .add_graphics_pass(graph, name, info, pass_impl);
+            .add_graphics_pass(graph, name, info, Box::new(pass_impl));
     }
 
     pub fn graph_add_compute_pass<T: Into<graph::PassName>>(
