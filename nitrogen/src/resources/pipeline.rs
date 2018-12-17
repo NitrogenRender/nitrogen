@@ -193,7 +193,6 @@ impl PipelineStorage {
             },
         };
 
-        // TODO push constants
         let layout = device.device.create_pipeline_layout(
             create_info.descriptor_set_layout.iter().map(|d| *d),
             create_info
@@ -281,7 +280,7 @@ impl PipelineStorage {
                 }
             }
 
-            // TODO respect blend modes
+            // TODO allow for finer control over blend modes?
             desc.blender
                 .targets
                 .extend(create_info.blend_modes.iter().map(|mode| {

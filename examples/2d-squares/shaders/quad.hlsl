@@ -29,7 +29,9 @@ struct InstanceData {
 };
 
 [[vk::binding(0, 1)]]
-StructuredBuffer<InstanceData> data;
+cbuffer {
+    InstanceData data[];
+};
 
 VertexOut VertexMain(VertexIn input)
 {
@@ -47,6 +49,13 @@ VertexOut VertexMain(VertexIn input)
     return ret;
 }
 
+struct PushData {
+    float4 amount;
+};
+
+[[vk::push_constant]]
+ConstantBuffer<PushData> push_data;
+
 FragmentOut FragmentMain(VertexOut input)
 {
     FragmentOut ret;
@@ -57,7 +66,7 @@ FragmentOut FragmentMain(VertexOut input)
         discard;
     }
 
-    ret.color = data[input.idx].color;
+    ret.color = data[input.idx].color * push_data.amount;
 
     return ret;
 }

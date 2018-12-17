@@ -270,7 +270,7 @@ fn create_graph(
             primitive: pipeline::Primitive::TriangleStrip,
             blend_modes: vec![render_pass::BlendMode::Alpha],
             materials: vec![(1, material)],
-            push_constants: vec![],
+            push_constants: vec![(0..4)],
         };
 
         struct Pass2D {
@@ -299,6 +299,8 @@ fn create_graph(
 
             fn execute(&self, cmd: &mut graph::GraphicsCommandBuffer<'_>) {
                 let things = NUM_THINGS;
+
+                cmd.push_constant(0, [1.0, 0.3, 0.4, 1.0f32]);
 
                 cmd.bind_vertex_buffers(&[(self.buffer, 0)]);
                 cmd.bind_material(1, self.mat_instance);

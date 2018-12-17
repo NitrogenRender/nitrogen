@@ -121,12 +121,10 @@ fn create_graph(
     {
         let info = ComputePassInfo {
             shader: ShaderInfo {
-                // entry: "ComputeMain".into(),
-                entry: "main".into(),
+                entry: "ComputeMain".into(),
                 content: Cow::Borrowed(include_bytes!(concat!(
                     env!("OUT_DIR"),
-                    // "/compute/add.hlsl.comp.spirv"
-                    "/compute/push_add.comp.spirv"
+                    "/compute/add.hlsl.comp.spirv"
                 ),)),
             },
             materials: vec![(1, material_instance.0)],

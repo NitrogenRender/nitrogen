@@ -8,22 +8,22 @@ struct PushData {
 };
 
 [[vk::push_constant]]
-PushData push_data;
+ConstantBuffer<PushData> push_data;
 
 
 [[vk::binding(0, 0)]]
 RWStructuredBuffer<float> output;
 
 [[vk::binding(0, 1)]]
-StructuredBuffer<float> data;
+cbuffer {
+    float4 data[];
+}
 
-struct Input {
+struct DispatchInput {
     uint idx : SV_DispatchThreadID;
 };
 
-void ComputeMain(Input input)
+void ComputeMain(DispatchInput input)
 {
-    output[input.idx] = data[input.idx] + push_data.x;
-
-    // output[input.idx] = a;
+    output[input.idx] = data[input.idx / 4][input.idx % 4] + push_data.x + push_data.y;
 }
