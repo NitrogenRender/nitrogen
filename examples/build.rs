@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 extern crate shaderc;
 
 use shaderc::*;
@@ -70,6 +74,7 @@ fn main() {
         for shader in geometry_shaders {
             compile(&mut compiler, shader, &out_base, ShaderKind::Geometry);
         }
+
         for shader in compute_shaders {
             compile(&mut compiler, shader, &out_base, ShaderKind::Compute);
         }
@@ -97,13 +102,13 @@ pub fn compile(compiler: &mut Compiler, path: PathBuf, out_base: &PathBuf, kind:
         _ => return,
     };
 
-    eprintln!("entry point: {}", entry);
-
     if lang == SourceLanguage::HLSL {
         if !contents.contains(entry) {
             return;
         }
     }
+
+    eprintln!("compiling {:?}", path);
 
     let artifact = compile_to_spirv(
         compiler,
@@ -150,7 +155,7 @@ pub fn compile_to_spirv(
 
     options.set_source_language(lang);
 
-    //options.set_optimization_level(OptimizationLevel::Performance);
+    // options.set_optimization_level(OptimizationLevel::Performance);
 
     options.set_warnings_as_errors();
 
@@ -158,18 +163,17 @@ pub fn compile_to_spirv(
 
     match artifact {
         Ok(data) => {
-            // SPIR-V assembly output. In case something gets weird...
-            /*
-            let text = compiler.compile_into_spirv_assembly(
-                source,
-                kind,
-                file_name,
-                entry,
-                Some(&options),
-            ).unwrap().as_text();
+            let print_assembly = false;
 
-            eprintln!("{}", text);
-            */
+            // SPIR-V assembly output. In case something gets weird...
+            if print_assembly {
+                let text = compiler
+                    .compile_into_spirv_assembly(source, kind, file_name, entry, Some(&options))
+                    .unwrap()
+                    .as_text();
+
+                eprintln!("{}", text);
+            }
 
             Some(data.as_binary_u8().to_owned())
         }

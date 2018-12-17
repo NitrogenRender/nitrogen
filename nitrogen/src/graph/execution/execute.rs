@@ -122,27 +122,40 @@ pub(crate) fn execute(
 
                     device.device.write_descriptor_sets(reads);
 
-                    let writes = resolved_graph.pass_writes[pass].iter().map(
-                        |(rid, ty, binding)| match ty {
-                            ResourceWriteType::Buffer(buf) => {
-                                let buf_handle = &res.buffers[rid];
-                                let buffer = storages.buffer.raw(*buf_handle).unwrap();
-                                match buf {
-                                    BufferWriteType::Storage => gfx::pso::DescriptorSetWrite {
-                                        set,
-                                        binding: (*binding) as u32,
-                                        array_offset: 0,
-                                        descriptors: std::iter::once(gfx::pso::Descriptor::Buffer(
-                                            buffer.raw(),
-                                            None..None,
-                                        )),
-                                    },
-                                    _ => unimplemented!(),
+                    let writes =
+                        resolved_graph.pass_writes[pass]
+                            .iter()
+                            .filter_map(|(rid, ty, binding)| match ty {
+                                ResourceWriteType::Buffer(buf) => {
+                                    let buf_handle = &res.buffers[rid];
+                                    let buffer = storages.buffer.raw(*buf_handle).unwrap();
+                                    match buf {
+                                        BufferWriteType::Storage => {
+                                            Some(gfx::pso::DescriptorSetWrite {
+                                                set,
+                                                binding: (*binding) as u32,
+                                                array_offset: 0,
+                                                descriptors: std::iter::once(
+                                                    gfx::pso::Descriptor::Buffer(
+                                                        buffer.raw(),
+                                                        None..None,
+                                                    ),
+                                                ),
+                                            })
+                                        }
+                                        _ => unimplemented!(),
+                                    }
                                 }
-                            }
-                            _ => unimplemented!(),
-                        },
-                    );
+                                ResourceWriteType::Image(img) => {
+                                    match img {
+                                        // those two use render pass attachments, not descriptor sets
+                                        ImageWriteType::Color | ImageWriteType::DepthStencil => {
+                                            None
+                                        }
+                                        ImageWriteType::Storage => unimplemented!(),
+                                    }
+                                }
+                            });
 
                     device.device.write_descriptor_sets(writes);
                 }

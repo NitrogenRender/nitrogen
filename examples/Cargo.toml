@@ -14,7 +14,7 @@ rand = "0.6.0"
 env_logger = "0.5.13"
 
 [build-dependencies]
-shaderc = "0.3.11"
+shaderc = "0.3.12"
 
 [[example]]
 name = "two-pass"

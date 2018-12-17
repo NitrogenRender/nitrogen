@@ -128,7 +128,7 @@ fn create_graph(
                 ),)),
             },
             materials: vec![(1, material_instance.0)],
-            // materials: vec![],
+            push_constants: vec![0..2],
         };
 
         struct Adder {
@@ -151,6 +151,7 @@ fn create_graph(
 
             fn execute(&self, command_buffer: &mut ComputeCommandBuffer<'_>) {
                 command_buffer.bind_material(1, self.mat);
+                command_buffer.push_constant(0, (1_f32, 10.0_f32));
 
                 command_buffer.dispatch([NUM_ELEMS as _, 1, 1]);
             }

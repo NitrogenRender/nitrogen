@@ -23,11 +23,13 @@ pub struct GraphicsPassInfo {
     pub primitive: Primitive,
     pub blend_modes: Vec<BlendMode>,
     pub materials: Vec<(usize, MaterialHandle)>,
+    pub push_constants: Vec<std::ops::Range<u32>>,
 }
 
 pub struct ComputePassInfo {
     pub materials: Vec<(usize, MaterialHandle)>,
     pub shader: ShaderInfo,
+    pub push_constants: Vec<std::ops::Range<u32>>,
 }
 
 pub enum PassInfo {
