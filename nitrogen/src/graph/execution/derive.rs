@@ -70,6 +70,10 @@ fn derive_batch(
 
                 usages.image.insert(*create, (usage, format));
             }
+            ResourceCreateInfo::Extern => {
+                // nothing to do here as we are not concerned with how external resources are
+                // constructed
+            }
         }
     }
 

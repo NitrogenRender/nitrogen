@@ -492,6 +492,10 @@ fn create_resource(
 
             Some(())
         }
+        ResourceCreateInfo::Extern => {
+            // External resources don't really "exist", they are just markers, so nothing to do here
+            Some(())
+        }
     }
 }
 

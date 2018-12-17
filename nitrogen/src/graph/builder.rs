@@ -15,12 +15,14 @@ use std::hash::{Hash, Hasher};
 pub enum ResourceType {
     Image,
     Buffer,
+    Extern,
 }
 
 #[derive(Hash, Debug, Clone)]
 pub(crate) enum ResourceCreateInfo {
     Image(ImageCreateInfo),
     Buffer(BufferCreateInfo),
+    Extern,
 }
 
 #[derive(Hash, Default)]
@@ -152,6 +154,21 @@ impl GraphBuilder {
         self.resource_backbuffer.push(name.into());
     }
 
+    // extern
+
+    pub fn extern_create<T: Into<ResourceName>>(&mut self, name: T) {
+        self.resource_creates
+            .push((name.into(), ResourceCreateInfo::Extern));
+    }
+
+    pub fn extern_move<T0: Into<ResourceName>, T1: Into<ResourceName>>(
+        &mut self,
+        from: T0,
+        to: T1,
+    ) {
+        self.resource_moves.push((to.into(), from.into()));
+    }
+
     // control flow control
 
     pub fn enable(&mut self) {
@@ -249,6 +266,7 @@ impl From<ResourceCreateInfo> for ResourceType {
         match inf {
             ResourceCreateInfo::Image(..) => ResourceType::Image,
             ResourceCreateInfo::Buffer(..) => ResourceType::Buffer,
+            ResourceCreateInfo::Extern => ResourceType::Extern,
         }
     }
 }
