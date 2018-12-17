@@ -30,6 +30,8 @@ pub struct ExecutionGraph {
 
 impl ExecutionGraph {
     pub(crate) fn new(resolved: &GraphResourcesResolved, outputs: &[ResourceName]) -> Self {
+        println!("{:?}", resolved);
+
         let mut pass_execs: Vec<Vec<PassId>> = vec![];
 
         let mut needed_resources = HashSet::with_capacity(outputs.len());
