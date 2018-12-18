@@ -21,10 +21,6 @@ pub(crate) struct VertexBufferDesc {
     pub(crate) binding: usize,
 }
 
-pub struct VertexAttribStorage {
-    storage: Storage<VertexAttrib>,
-}
-
 pub struct VertexAttribInfo<'a> {
     pub buffer_infos: &'a [VertexAttribBufferInfo<'a>],
 }
@@ -41,14 +37,18 @@ pub struct VertexAttribBufferElementInfo {
     pub offset: u32,
 }
 
+pub(crate) struct VertexAttribStorage {
+    storage: Storage<VertexAttrib>,
+}
+
 impl VertexAttribStorage {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         VertexAttribStorage {
             storage: Storage::new(),
         }
     }
 
-    pub fn create(
+    pub(crate) fn create(
         &mut self,
         create_infos: &[VertexAttribInfo],
     ) -> SmallVec<[VertexAttribHandle; 16]> {
@@ -103,7 +103,7 @@ impl VertexAttribStorage {
             .collect()
     }
 
-    pub fn raw(&self, handle: VertexAttribHandle) -> Option<&VertexAttrib> {
+    pub(crate) fn raw(&self, handle: VertexAttribHandle) -> Option<&VertexAttrib> {
         if self.storage.is_alive(handle) {
             Some(&self.storage[handle])
         } else {
@@ -111,7 +111,7 @@ impl VertexAttribStorage {
         }
     }
 
-    pub fn destroy(&mut self, handles: &[VertexAttribHandle]) {
+    pub(crate) fn destroy(&mut self, handles: &[VertexAttribHandle]) {
         for handle in handles {
             self.storage.remove(*handle);
         }

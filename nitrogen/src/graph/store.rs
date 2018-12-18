@@ -223,10 +223,9 @@ impl<'a, T: Any + Send> Entry<'a, T> {
     /// assert_eq!(store.get::<u8>(), Some(&13));
     /// ```
     pub fn and_modify<F: FnOnce(&mut T)>(self, f: F) -> Self {
-
-        let entry = self.entry.and_modify(|data| {
-            f(data.downcast_mut().unwrap())
-        });
+        let entry = self
+            .entry
+            .and_modify(|data| f(data.downcast_mut().unwrap()));
 
         Entry {
             entry,
@@ -330,13 +329,17 @@ mod tests {
         {
             let mut store = Store::new();
 
-            let len = store.entry::<String>().or_insert_with(|| "Hello".into()).len();
+            let len = store
+                .entry::<String>()
+                .or_insert_with(|| "Hello".into())
+                .len();
             assert_eq!(len, "Hello".len());
 
             // entry already exists, so no override should happen
             let len = store
                 .entry::<String>()
-                .or_insert_with(|| "AnotherHello".into()).len();
+                .or_insert_with(|| "AnotherHello".into())
+                .len();
             assert_eq!(len, "Hello".len());
         }
 
@@ -377,20 +380,19 @@ mod tests {
             let elem = store.entry::<String>().or_insert_with(|| "World!".into());
 
             assert_eq!(elem, "World!");
-
         }
 
         {
             let mut store = Store::new();
 
-            store.entry::<u8>()
-                .and_modify(|x| *x = 12);
+            store.entry::<u8>().and_modify(|x| *x = 12);
 
             assert_eq!(store.get::<u8>(), None);
 
             store.insert::<u8>(0);
 
-            store.entry::<u8>()
+            store
+                .entry::<u8>()
                 .and_modify(|x| *x += 1)
                 .and_modify(|x| *x *= 2);
 

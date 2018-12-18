@@ -97,7 +97,6 @@ impl SubmitGroup {
         display: DisplayHandle,
         image: image::ImageHandle,
     ) -> bool {
-
         ctx.displays[display].present(
             &ctx.device_ctx,
             &mut self.sem_pool,
@@ -276,7 +275,7 @@ impl SubmitGroup {
     }
 }
 
-pub struct ResourceList {
+pub(crate) struct ResourceList {
     device: Arc<DeviceContext>,
 
     framebuffers: SmallVec<[types::Framebuffer; 16]>,
@@ -310,47 +309,47 @@ impl ResourceList {
         }
     }
 
-    pub fn queue_framebuffer(&mut self, fb: types::Framebuffer) {
+    pub(crate) fn queue_framebuffer(&mut self, fb: types::Framebuffer) {
         self.framebuffers.push(fb);
     }
 
-    pub fn queue_buffer(&mut self, buffer: BufferTypeInternal) {
+    pub(crate) fn queue_buffer(&mut self, buffer: BufferTypeInternal) {
         self.buffers.push(buffer);
     }
 
-    pub fn queue_image(&mut self, image: ImageType) {
+    pub(crate) fn queue_image(&mut self, image: ImageType) {
         self.images.push(image);
     }
 
-    pub fn queue_sampler(&mut self, sampler: types::Sampler) {
+    pub(crate) fn queue_sampler(&mut self, sampler: types::Sampler) {
         self.samplers.push(sampler);
     }
 
-    pub fn queue_image_view(&mut self, image_view: types::ImageView) {
+    pub(crate) fn queue_image_view(&mut self, image_view: types::ImageView) {
         self.image_views.push(image_view);
     }
 
-    pub fn queue_render_pass(&mut self, render_pass: types::RenderPass) {
+    pub(crate) fn queue_render_pass(&mut self, render_pass: types::RenderPass) {
         self.render_passes.push(render_pass);
     }
 
-    pub fn queue_pipeline_graphic(&mut self, pipe: types::GraphicsPipeline) {
+    pub(crate) fn queue_pipeline_graphic(&mut self, pipe: types::GraphicsPipeline) {
         self.pipelines_graphic.push(pipe);
     }
 
-    pub fn queue_pipeline_compute(&mut self, pipe: types::ComputePipeline) {
+    pub(crate) fn queue_pipeline_compute(&mut self, pipe: types::ComputePipeline) {
         self.pipelines_compute.push(pipe);
     }
 
-    pub fn queue_pipeline_layout(&mut self, layout: types::PipelineLayout) {
+    pub(crate) fn queue_pipeline_layout(&mut self, layout: types::PipelineLayout) {
         self.pipelines_layout.push(layout);
     }
 
-    pub fn queue_desc_set_layout(&mut self, layout: types::DescriptorSetLayout) {
+    pub(crate) fn queue_desc_set_layout(&mut self, layout: types::DescriptorSetLayout) {
         self.desc_set_layouts.push(layout);
     }
 
-    pub fn queue_desc_pool(&mut self, pool: types::DescriptorPool) {
+    pub(crate) fn queue_desc_pool(&mut self, pool: types::DescriptorPool) {
         self.desc_pools.push(pool);
     }
 

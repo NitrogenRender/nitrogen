@@ -28,16 +28,16 @@ pub struct BufferImageTransfer<'a> {
     pub copy_information: gfx::command::BufferImageCopy,
 }
 
-pub struct TransferContext;
+pub(crate) struct TransferContext;
 
 impl TransferContext {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         TransferContext
     }
 
-    pub fn release(self) {}
+    pub(crate) fn release(self) {}
 
-    pub fn copy_buffers(
+    pub(crate) fn copy_buffers(
         &self,
         device: &DeviceContext,
         sem_pool: &SemaphorePool,
@@ -107,7 +107,7 @@ impl TransferContext {
         sem_list.advance();
     }
 
-    pub fn copy_buffers_to_images(
+    pub(crate) fn copy_buffers_to_images(
         &self,
         device: &DeviceContext,
         sem_pool: &SemaphorePool,

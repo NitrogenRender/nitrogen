@@ -32,7 +32,7 @@ pub struct ComputePassInfo {
     pub push_constants: Vec<std::ops::Range<u32>>,
 }
 
-pub enum PassInfo {
+pub(crate) enum PassInfo {
     Graphics(GraphicsPassInfo),
     Compute(ComputePassInfo),
 }

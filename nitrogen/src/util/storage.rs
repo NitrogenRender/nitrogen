@@ -54,12 +54,12 @@ impl<T> Handle<T> {
     }
 }
 
-pub enum InsertOp {
+pub(crate) enum InsertOp {
     Grow,
     Inplace,
 }
 
-pub struct Storage<T> {
+pub(crate) struct Storage<T> {
     pub generations: Vec<Generation>,
     pub entries: Slab<T>,
 }
@@ -87,14 +87,14 @@ impl<T> IndexMut<Handle<T>> for Storage<T> {
 }
 
 impl<T> Storage<T> {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             generations: vec![],
             entries: Slab::new(),
         }
     }
 
-    pub fn insert(&mut self, data: T) -> (Handle<T>, InsertOp) {
+    pub(crate) fn insert(&mut self, data: T) -> (Handle<T>, InsertOp) {
         let (entry, handle, insert_op) = {
             let entry = self.entries.vacant_entry();
             let key = entry.key();
@@ -123,7 +123,7 @@ impl<T> Storage<T> {
         (handle, insert_op)
     }
 
-    pub fn is_alive(&self, handle: Handle<T>) -> bool {
+    pub(crate) fn is_alive(&self, handle: Handle<T>) -> bool {
         let storage_size_enough = self.generations.len() > handle.id();
 
         if storage_size_enough {
@@ -134,7 +134,7 @@ impl<T> Storage<T> {
         }
     }
 
-    pub fn remove(&mut self, handle: Handle<T>) -> Option<T> {
+    pub(crate) fn remove(&mut self, handle: Handle<T>) -> Option<T> {
         if self.is_alive(handle) {
             let data = self.entries.remove(handle.id());
             Some(data)
@@ -143,7 +143,7 @@ impl<T> Storage<T> {
         }
     }
 
-    pub fn get(&self, handle: Handle<T>) -> Option<&T> {
+    pub(crate) fn get(&self, handle: Handle<T>) -> Option<&T> {
         if self.is_alive(handle) {
             self.entries.get(handle.id())
         } else {
@@ -151,22 +151,18 @@ impl<T> Storage<T> {
         }
     }
 
-    pub fn get_mut(&mut self, handle: Handle<T>) -> Option<&mut T> {
+    pub(crate) fn get_mut(&mut self, handle: Handle<T>) -> Option<&mut T> {
         if self.is_alive(handle) {
             self.entries.get_mut(handle.id())
         } else {
             None
         }
     }
-
-    pub fn clear(&mut self) {
-        self.entries.clear();
-    }
 }
 
 use std::iter::IntoIterator;
 
-pub struct StorageIter<T> {
+pub(crate) struct StorageIter<T> {
     storage: Storage<T>,
     index: usize,
 }

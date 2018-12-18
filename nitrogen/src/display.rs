@@ -27,7 +27,7 @@ pub struct Display {
 
 impl Display {
     /// Create a new `DisplayContext` which uses the provided surface.
-    pub fn new(surface: Surface, device: &DeviceContext) -> Self {
+    pub(crate) fn new(surface: Surface, device: &DeviceContext) -> Self {
         use gfx::Surface;
 
         let (_, formats, _) = surface.compatibility(&device.adapter.physical_device);
@@ -303,7 +303,7 @@ impl Display {
     }
 
     /// Release the display context, destroys all associated graphics resources.
-    pub fn release(self, device: &DeviceContext) {
+    pub(crate) fn release(self, device: &DeviceContext) {
         for (_, image_view) in self.images {
             device.device.destroy_image_view(image_view);
         }

@@ -81,18 +81,18 @@ impl From<SamplerCreateInfo> for image::SamplerInfo {
 
 pub type SamplerHandle = storage::Handle<Sampler>;
 
-pub struct SamplerStorage {
+pub(crate) struct SamplerStorage {
     pub storage: Storage<Sampler>,
 }
 
 impl SamplerStorage {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             storage: Storage::new(),
         }
     }
 
-    pub fn create(
+    pub(crate) fn create(
         &mut self,
         device: &DeviceContext,
         create_infos: &[SamplerCreateInfo],
@@ -117,7 +117,7 @@ impl SamplerStorage {
         results
     }
 
-    pub fn raw(&self, sampler: SamplerHandle) -> Option<&Sampler> {
+    pub(crate) fn raw(&self, sampler: SamplerHandle) -> Option<&Sampler> {
         if self.storage.is_alive(sampler) {
             Some(&self.storage[sampler])
         } else {
@@ -125,7 +125,7 @@ impl SamplerStorage {
         }
     }
 
-    pub fn destroy<S>(&mut self, res_list: &mut ResourceList, handles: S)
+    pub(crate) fn destroy<S>(&mut self, res_list: &mut ResourceList, handles: S)
     where
         S: IntoIterator,
         S::Item: std::borrow::Borrow<SamplerHandle>,

@@ -444,4 +444,3 @@ impl Context {
         submit_group::SubmitGroup::new(self.device_ctx.clone())
     }
 }
-

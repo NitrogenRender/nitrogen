@@ -12,7 +12,7 @@ pub enum ExecutionGraphError {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct ExecutionBatch {
+pub(crate) struct ExecutionBatch {
     /// Resources that have to be created from scratch
     pub(crate) resource_create: HashSet<ResourceId>,
     /// Resources that have to be created via copying
@@ -24,7 +24,7 @@ pub struct ExecutionBatch {
 }
 
 #[derive(Debug)]
-pub struct ExecutionGraph {
+pub(crate) struct ExecutionGraph {
     pub(crate) pass_execution: Vec<ExecutionBatch>,
 }
 

@@ -122,14 +122,14 @@ pub struct ComputePipelineCreateInfo<'a> {
     pub push_constants: &'a [std::ops::Range<u32>],
 }
 
-pub struct PipelineStorage {
+pub(crate) struct PipelineStorage {
     graphic_pipelines: BTreeMap<usize, GraphicsPipeline>,
     compute_pipelines: BTreeMap<usize, ComputePipeline>,
     storage: Storage<Pipeline>,
 }
 
 impl PipelineStorage {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         PipelineStorage {
             storage: Storage::new(),
             graphic_pipelines: BTreeMap::new(),
@@ -137,7 +137,7 @@ impl PipelineStorage {
         }
     }
 
-    pub fn create_graphics_pipelines(
+    pub(crate) fn create_graphics_pipelines(
         &mut self,
         device: &DeviceContext,
         render_pass_storage: &RenderPassStorage,
@@ -320,7 +320,7 @@ impl PipelineStorage {
         Ok(handle)
     }
 
-    pub fn create_compute_pipelines(
+    pub(crate) fn create_compute_pipelines(
         &mut self,
         device: &DeviceContext,
         create_infos: &[ComputePipelineCreateInfo],
@@ -331,7 +331,7 @@ impl PipelineStorage {
             .collect()
     }
 
-    pub fn create_compute_pipeline(
+    pub(crate) fn create_compute_pipeline(
         &mut self,
         device: &DeviceContext,
         create_info: &ComputePipelineCreateInfo,
@@ -373,7 +373,7 @@ impl PipelineStorage {
         Ok(handle)
     }
 
-    pub fn destroy<P>(&mut self, res_list: &mut ResourceList, pipelines: P)
+    pub(crate) fn destroy<P>(&mut self, res_list: &mut ResourceList, pipelines: P)
     where
         P: IntoIterator,
         P::Item: std::borrow::Borrow<PipelineHandle>,
@@ -421,6 +421,4 @@ impl PipelineStorage {
             None
         }
     }
-
-    pub fn release(self) {}
 }

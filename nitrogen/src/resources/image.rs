@@ -261,7 +261,7 @@ impl From<gfx::image::ViewError> for ImageError {
     }
 }
 
-pub struct ImageStorage {
+pub(crate) struct ImageStorage {
     // TODO handle host visible images??
     transfer_dst: BTreeSet<usize>,
 
@@ -271,14 +271,14 @@ pub struct ImageStorage {
 pub type Result<T> = std::result::Result<T, ImageError>;
 
 impl ImageStorage {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         ImageStorage {
             transfer_dst: BTreeSet::new(),
             storage: Storage::new(),
         }
     }
 
-    pub fn release(self, device: &DeviceContext) {
+    pub(crate) fn release(self, device: &DeviceContext) {
         let mut alloc = device.allocator();
 
         for (_, image) in self.storage.into_iter() {
@@ -287,7 +287,7 @@ impl ImageStorage {
         }
     }
 
-    pub fn create<T: Into<gfx::image::Usage> + Clone>(
+    pub(crate) fn create<T: Into<gfx::image::Usage> + Clone>(
         &mut self,
         device: &DeviceContext,
         create_infos: &[ImageCreateInfo<T>],
@@ -386,7 +386,7 @@ impl ImageStorage {
         result
     }
 
-    pub fn upload_data(
+    pub(crate) fn upload_data(
         &self,
         device: &DeviceContext,
         sem_pool: &SemaphorePool,

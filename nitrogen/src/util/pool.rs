@@ -9,7 +9,7 @@ use std::ops::{Deref, DerefMut};
 
 /// Any type that implements this trait can be used to create and free elements
 /// of a [`Pool<T>`]
-pub trait PoolImpl<T> {
+pub(crate) trait PoolImpl<T> {
     fn new_elem(&mut self) -> T;
     fn reset_elem(&mut self, _elem: &mut T) {}
     fn free_elem(&mut self, elem: T);
@@ -24,16 +24,17 @@ pub(crate) struct PoolInner<T, Impl: PoolImpl<T>> {
 }
 
 /// A pool to insert (or allocate) items which can be reused after freeing
-pub struct Pool<T, Impl: PoolImpl<T>> {
+pub(crate) struct Pool<T, Impl: PoolImpl<T>> {
     inner: UnsafeCell<PoolInner<T, Impl>>,
 }
 
 impl<T, Impl: PoolImpl<T>> Pool<T, Impl> {
-    pub fn new(back: Impl) -> Self {
+    #[allow(unused)]
+    pub(crate) fn new(back: Impl) -> Self {
         Pool::with_intial_elems(back, 0)
     }
 
-    pub fn with_intial_elems(mut back: Impl, cap: usize) -> Self {
+    pub(crate) fn with_intial_elems(mut back: Impl, cap: usize) -> Self {
         let mut values = Vec::with_capacity(cap);
         for _ in 0..cap {
             values.push(back.new_elem());
@@ -66,15 +67,12 @@ impl<T, Impl: PoolImpl<T>> Pool<T, Impl> {
         transmute(self.inner.get())
     }
 
-    pub fn len(&self) -> usize {
+    #[allow(unused)]
+    pub(crate) fn len(&self) -> usize {
         unsafe { self.get().size }
     }
 
-    pub fn cap(&self) -> usize {
-        unsafe { self.get().values.len() }
-    }
-
-    pub fn alloc(&self) -> PoolElem<'_, Impl, T> {
+    pub(crate) fn alloc(&self) -> PoolElem<'_, Impl, T> {
         let this = unsafe { self.get() };
 
         let next = this.next_free.unwrap_or_else(|| {
@@ -102,7 +100,7 @@ impl<T, Impl: PoolImpl<T>> Pool<T, Impl> {
         this.size -= 1;
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         let this = unsafe { self.get() };
 
         this.size = 0;
@@ -122,7 +120,7 @@ impl<T, Impl: PoolImpl<T>> Pool<T, Impl> {
         }
     }
 
-    pub fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         let this = unsafe { self.get() };
 
         use std::mem::replace;
@@ -143,7 +141,7 @@ impl<T, Impl: PoolImpl<T>> Drop for Pool<T, Impl> {
     }
 }
 
-pub struct PoolElem<'a, Impl, T>
+pub(crate) struct PoolElem<'a, Impl, T>
 where
     Impl: PoolImpl<T>,
 {

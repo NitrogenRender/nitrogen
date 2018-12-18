@@ -14,26 +14,20 @@ use smallvec::SmallVec;
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
-#[repr(u8)]
-pub enum QueueType {
-    Rendering,
-    ImageStorage,
-}
+pub(crate) struct DeviceContext {
+    pub(crate) memory_allocator: Mutex<SmartAllocator<back::Backend>>,
 
-pub struct DeviceContext {
-    pub memory_allocator: Mutex<SmartAllocator<back::Backend>>,
+    pub(crate) graphics_queue_idx: usize,
+    pub(crate) compute_queue_idx: usize,
+    pub(crate) queue_groups: SmallVec<[types::QueueGroup<gfx::Transfer>; 2]>,
+    pub(crate) queues: SmallVec<[Vec<Mutex<types::CommandQueue<gfx::Transfer>>>; 2]>,
 
-    pub graphics_queue_idx: usize,
-    pub compute_queue_idx: usize,
-    pub queue_groups: SmallVec<[types::QueueGroup<gfx::Transfer>; 2]>,
-    pub queues: SmallVec<[Vec<Mutex<types::CommandQueue<gfx::Transfer>>>; 2]>,
-
-    pub device: Arc<back::Device>,
-    pub adapter: Arc<gfx::Adapter<back::Backend>>,
+    pub(crate) device: Arc<back::Device>,
+    pub(crate) adapter: Arc<gfx::Adapter<back::Backend>>,
 }
 
 impl DeviceContext {
-    pub fn new(instance: &back::Instance) -> Self {
+    pub(crate) fn new(instance: &back::Instance) -> Self {
         use gfx::PhysicalDevice;
         use std::mem::replace;
 
@@ -122,14 +116,14 @@ impl DeviceContext {
         }
     }
 
-    pub fn allocator(&self) -> MutexGuard<SmartAllocator<back::Backend>> {
+    pub(crate) fn allocator(&self) -> MutexGuard<SmartAllocator<back::Backend>> {
         // if we can't access the device-local memory allocator then ... well, RIP
         self.memory_allocator
             .lock()
             .expect("Memory allocator can't be accessed")
     }
 
-    pub fn graphics_queue_group(&self) -> &types::QueueGroup<gfx::Graphics> {
+    pub(crate) fn graphics_queue_group(&self) -> &types::QueueGroup<gfx::Graphics> {
         use std::mem::transmute;
 
         let queue = &self.queue_groups[self.graphics_queue_idx];
@@ -137,20 +131,12 @@ impl DeviceContext {
         unsafe { transmute(queue) }
     }
 
-    pub fn graphics_queue_group_mut(&mut self) -> &mut types::QueueGroup<gfx::Graphics> {
-        use std::mem::transmute;
-
-        let queue = &mut self.queue_groups[self.graphics_queue_idx];
-
-        unsafe { transmute(queue) }
-    }
-
-    pub fn graphics_queue(&self) -> MutexGuard<types::CommandQueue<gfx::Graphics>> {
+    pub(crate) fn graphics_queue(&self) -> MutexGuard<types::CommandQueue<gfx::Graphics>> {
         use std::mem::transmute;
         unsafe { transmute(self.queues[self.graphics_queue_idx][0].lock().unwrap()) }
     }
 
-    pub fn compute_queue_group(&self) -> &types::QueueGroup<gfx::Compute> {
+    pub(crate) fn compute_queue_group(&self) -> &types::QueueGroup<gfx::Compute> {
         use std::mem::transmute;
 
         let queue = &self.queue_groups[self.compute_queue_idx];
@@ -158,20 +144,12 @@ impl DeviceContext {
         unsafe { transmute(queue) }
     }
 
-    pub fn compute_queue_group_mut(&mut self) -> &mut types::QueueGroup<gfx::Compute> {
-        use std::mem::transmute;
-
-        let queue = &mut self.queue_groups[self.compute_queue_idx];
-
-        unsafe { transmute(queue) }
-    }
-
-    pub fn compute_queue(&self) -> MutexGuard<types::CommandQueue<gfx::Compute>> {
+    pub(crate) fn compute_queue(&self) -> MutexGuard<types::CommandQueue<gfx::Compute>> {
         use std::mem::transmute;
         unsafe { transmute(self.queues[self.compute_queue_idx][0].lock().unwrap()) }
     }
 
-    pub fn transfer_queue_group(&self) -> &types::QueueGroup<gfx::Transfer> {
+    pub(crate) fn transfer_queue_group(&self) -> &types::QueueGroup<gfx::Transfer> {
         use std::mem::transmute;
 
         // TODO find the "best" queue to use.
@@ -180,21 +158,12 @@ impl DeviceContext {
         unsafe { transmute(queue) }
     }
 
-    pub fn transfer_queue_group_mut(&mut self) -> &mut types::QueueGroup<gfx::Transfer> {
-        use std::mem::transmute;
-
-        // TODO find the "best" queue to use.
-        let queue = &mut self.queue_groups[self.compute_queue_idx];
-
-        unsafe { transmute(queue) }
-    }
-
-    pub fn transfer_queue(&self) -> MutexGuard<types::CommandQueue<gfx::Transfer>> {
+    pub(crate) fn transfer_queue(&self) -> MutexGuard<types::CommandQueue<gfx::Transfer>> {
         use std::mem::transmute;
         unsafe { transmute(self.queues[self.compute_queue_idx][0].lock().unwrap()) }
     }
 
-    pub fn release(self) {
+    pub(crate) fn release(self) {
         self.memory_allocator
             .into_inner()
             .unwrap()

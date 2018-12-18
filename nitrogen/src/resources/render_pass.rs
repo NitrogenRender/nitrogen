@@ -42,18 +42,18 @@ pub struct RenderPassCreateInfo<'a> {
     pub dependencies: &'a [gfx::pass::SubpassDependency],
 }
 
-pub struct RenderPassStorage {
+pub(crate) struct RenderPassStorage {
     storage: Storage<RenderPass>,
 }
 
 impl RenderPassStorage {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         RenderPassStorage {
             storage: Storage::new(),
         }
     }
 
-    pub fn create(
+    pub(crate) fn create(
         &mut self,
         device: &DeviceContext,
         create_infos: &[RenderPassCreateInfo],
@@ -79,7 +79,7 @@ impl RenderPassStorage {
             .collect()
     }
 
-    pub fn raw(&self, handle: RenderPassHandle) -> Option<&crate::types::RenderPass> {
+    pub(crate) fn raw(&self, handle: RenderPassHandle) -> Option<&crate::types::RenderPass> {
         if self.storage.is_alive(handle) {
             Some(&self.storage[handle].render_pass)
         } else {
@@ -87,7 +87,7 @@ impl RenderPassStorage {
         }
     }
 
-    pub fn destroy<P>(&mut self, res_list: &mut ResourceList, handles: P)
+    pub(crate) fn destroy<P>(&mut self, res_list: &mut ResourceList, handles: P)
     where
         P: IntoIterator,
         P::Item: std::borrow::Borrow<RenderPassHandle>,

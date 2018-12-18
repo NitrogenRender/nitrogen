@@ -44,7 +44,7 @@ pub struct MaterialInstance {
     pub(crate) set: types::DescriptorSet,
 }
 
-pub struct MaterialStorage {
+pub(crate) struct MaterialStorage {
     storage: Storage<Material>,
 }
 
@@ -107,13 +107,13 @@ pub enum InstanceWriteData {
 }
 
 impl MaterialStorage {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         MaterialStorage {
             storage: Storage::new(),
         }
     }
 
-    pub fn create(
+    pub(crate) fn create(
         &mut self,
         device: &DeviceContext,
         create_infos: &[MaterialCreateInfo],
@@ -165,7 +165,7 @@ impl MaterialStorage {
         results
     }
 
-    pub fn destroy(&mut self, device: &DeviceContext, materials: &[MaterialHandle]) {
+    pub(crate) fn destroy(&mut self, device: &DeviceContext, materials: &[MaterialHandle]) {
         for handle in materials {
             if let Some(mat) = self.storage.remove(*handle) {
                 mat.release(device);
@@ -177,7 +177,7 @@ impl MaterialStorage {
         self.storage.get(material)
     }
 
-    pub fn create_instances(
+    pub(crate) fn create_instances(
         &mut self,
         device: &DeviceContext,
         materials: &[MaterialHandle],
@@ -212,7 +212,7 @@ impl MaterialStorage {
         results
     }
 
-    pub fn write_instance<I>(
+    pub(crate) fn write_instance<I>(
         &self,
         device: &DeviceContext,
         sampler_storage: &SamplerStorage,
@@ -262,7 +262,7 @@ impl MaterialStorage {
         Some(())
     }
 
-    pub fn destroy_instances(&mut self, instances: &[MaterialInstanceHandle]) {
+    pub(crate) fn destroy_instances(&mut self, instances: &[MaterialInstanceHandle]) {
         for (mat_handle, inst) in instances {
             let mat = match self.storage.get_mut(*mat_handle) {
                 Some(mat) => mat,
@@ -273,7 +273,7 @@ impl MaterialStorage {
         }
     }
 
-    pub fn release(self, device: &DeviceContext) {
+    pub(crate) fn release(self, device: &DeviceContext) {
         for (_id, mat) in self.storage {
             mat.release(device);
         }

@@ -149,7 +149,7 @@ pub struct BufferUploadInfo<'a, T: 'a> {
     pub data: &'a [T],
 }
 
-pub struct BufferStorage {
+pub(crate) struct BufferStorage {
     local_buffers: BTreeSet<BufferId>,
     host_visible_buffers: BTreeSet<BufferId>,
     other_buffers: BTreeSet<BufferId>,
@@ -158,7 +158,7 @@ pub struct BufferStorage {
 }
 
 impl BufferStorage {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         BufferStorage {
             local_buffers: BTreeSet::new(),
             host_visible_buffers: BTreeSet::new(),
@@ -168,7 +168,7 @@ impl BufferStorage {
         }
     }
 
-    pub fn release(self, device: &DeviceContext) {
+    pub(crate) fn release(self, device: &DeviceContext) {
         let mut alloc = device.allocator();
 
         for (_, buffer) in self.buffers.into_iter() {
@@ -176,7 +176,7 @@ impl BufferStorage {
         }
     }
 
-    pub fn create<M, U>(
+    pub(crate) fn create<M, U>(
         &mut self,
         device: &DeviceContext,
         create_infos: &[BufferCreateInfo<M, U>],
@@ -268,7 +268,7 @@ impl BufferStorage {
             .map(|_buf| &self.buffers[&buffer.id()].buffer)
     }
 
-    pub fn upload_data<T>(
+    pub(crate) fn upload_data<T>(
         &mut self,
         device: &DeviceContext,
         sem_pool: &SemaphorePool,
@@ -446,7 +446,7 @@ impl BufferStorage {
         results
     }
 
-    pub fn read_data<T: Sized>(
+    pub(crate) fn read_data<T: Sized>(
         &self,
         device: &DeviceContext,
         _sem_pool: &SemaphorePool,

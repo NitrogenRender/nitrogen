@@ -10,31 +10,23 @@ use crate::util::pool::{Pool, PoolElem, PoolImpl};
 
 use smallvec::SmallVec;
 
-pub type Semaphore<'a> = PoolElem<'a, SemaphorePoolImpl, types::Semaphore>;
-pub struct SemaphorePool(pub(crate) Pool<types::Semaphore, SemaphorePoolImpl>);
+pub(crate) type Semaphore<'a> = PoolElem<'a, SemaphorePoolImpl, types::Semaphore>;
+pub(crate) struct SemaphorePool(pub(crate) Pool<types::Semaphore, SemaphorePoolImpl>);
 
 impl SemaphorePool {
-    pub fn new(device: Arc<DeviceContext>) -> Self {
+    pub(crate) fn new(device: Arc<DeviceContext>) -> Self {
         Self::with_capacity(device, 0)
     }
 
-    pub fn with_capacity(device: Arc<DeviceContext>, cap: usize) -> Self {
+    pub(crate) fn with_capacity(device: Arc<DeviceContext>, cap: usize) -> Self {
         SemaphorePool(Pool::with_intial_elems(SemaphorePoolImpl { device }, cap))
     }
 
-    pub fn alloc(&self) -> Semaphore<'_> {
+    pub(crate) fn alloc(&self) -> Semaphore<'_> {
         self.0.alloc()
     }
 
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn cap(&self) -> usize {
-        self.0.cap()
-    }
-
-    pub fn list_prev_sems<'a>(
+    pub(crate) fn list_prev_sems<'a>(
         &'a self,
         list: &'a SemaphoreList,
     ) -> Box<dyn Iterator<Item = &'a types::Semaphore> + 'a> {
@@ -44,7 +36,7 @@ impl SemaphorePool {
         }))
     }
 
-    pub fn list_next_sems<'a>(
+    pub(crate) fn list_next_sems<'a>(
         &'a self,
         list: &'a SemaphoreList,
     ) -> Box<dyn Iterator<Item = &'a types::Semaphore> + 'a> {
@@ -54,16 +46,16 @@ impl SemaphorePool {
         }))
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.0.clear()
     }
 
-    pub fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         self.0.reset()
     }
 }
 
-pub struct SemaphorePoolImpl {
+pub(crate) struct SemaphorePoolImpl {
     device: Arc<DeviceContext>,
 }
 
@@ -79,7 +71,7 @@ impl PoolImpl<types::Semaphore> for SemaphorePoolImpl {
     }
 }
 
-pub struct SemaphoreList {
+pub(crate) struct SemaphoreList {
     prev_semaphores: SmallVec<[usize; 6]>,
     next_semaphores: SmallVec<[usize; 6]>,
 }
@@ -92,15 +84,15 @@ impl SemaphoreList {
         }
     }
 
-    pub fn add_prev_semaphore(&mut self, sem: Semaphore<'_>) {
+    pub(crate) fn add_prev_semaphore(&mut self, sem: Semaphore<'_>) {
         self.prev_semaphores.push(unsafe { sem.into_idx() });
     }
 
-    pub fn add_next_semaphore(&mut self, sem: Semaphore<'_>) {
+    pub(crate) fn add_next_semaphore(&mut self, sem: Semaphore<'_>) {
         self.next_semaphores.push(unsafe { sem.into_idx() });
     }
 
-    pub fn advance(&mut self) {
+    pub(crate) fn advance(&mut self) {
         self.prev_semaphores.clear();
         self.prev_semaphores
             .extend(self.next_semaphores.iter().cloned());
