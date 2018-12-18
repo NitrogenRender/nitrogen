@@ -15,7 +15,7 @@ pub struct SamplerHandle(pub SamplerId, pub SamplerGeneration);
 
 impl SamplerHandle {
     pub fn into(self) -> sampler::SamplerHandle {
-        sampler::SamplerHandle::new(self.0, self.1)
+        unsafe { sampler::SamplerHandle::new(self.0, self.1) }
     }
 }
 

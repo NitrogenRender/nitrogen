@@ -41,7 +41,7 @@ impl<T> Debug for Handle<T> {
 }
 
 impl<T> Handle<T> {
-    pub fn new(id: Id, gen: Generation) -> Self {
+    pub unsafe fn new(id: Id, gen: Generation) -> Self {
         Handle(id, gen, PhantomData)
     }
 
@@ -115,7 +115,7 @@ impl<T> Storage<T> {
 
             let generation = self.generations[key];
 
-            (entry, Handle::new(key, generation), insert_op)
+            (entry, unsafe { Handle::new(key, generation) }, insert_op)
         };
 
         entry.insert(data);

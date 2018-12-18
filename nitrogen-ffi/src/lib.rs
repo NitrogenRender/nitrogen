@@ -15,7 +15,7 @@ pub struct DisplayHandle(pub usize, pub u64);
 
 impl DisplayHandle {
     pub fn into(self) -> nitrogen::DisplayHandle {
-        nitrogen::DisplayHandle::new(self.0, self.1)
+        unsafe { nitrogen::DisplayHandle::new(self.0, self.1) }
     }
 }
 
@@ -55,7 +55,7 @@ pub unsafe extern "C" fn context_add_x11_display(
     let context = &mut (*context);
 
     use std::mem::transmute;
-    let handle = context.add_x11_display(transmute(display), window);
+    let handle = context.display_add_x11(transmute(display), window);
 
     DisplayHandle(handle.id(), handle.generation())
 }
@@ -66,7 +66,7 @@ pub unsafe extern "C" fn context_remove_display(
     display: DisplayHandle,
 ) -> bool {
     let context = &mut (*context);
-    context.remove_display(display.into())
+    context.display_remove(display.into())
 }
 
 #[no_mangle]

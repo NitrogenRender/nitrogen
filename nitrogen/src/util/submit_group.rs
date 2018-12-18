@@ -16,6 +16,21 @@ use smallvec::SmallVec;
 
 use std::sync::Arc;
 
+/// `SubmitGroup`s are used to synchronize access to resources and ensure
+/// that draw calls and dispatches to the device don't cause race conditions.
+///
+/// To acquire a `SubmitGroup`, the [`Context::create_submit_group`] method has to be used.
+///
+/// All commands on a `SubmitGroup` require a mutable [`Context`] reference, so does **freeing** the
+/// object. Dropping a `SubmitGroup` will most likely result in panics later on, instead the
+/// [`release`] method has to be used.
+///
+/// After recording a number of commands using a SubmitGroup, the [`wait`] function can be
+/// called to block the caller-thread until the operations finished executing.
+///
+/// [`Context::create_submit_group`]: ../../struct.Context.html#method.create_submit_group
+/// [`wait`]: #method.wait
+/// [`release`]: #method.release
 pub struct SubmitGroup {
     sem_pool: SemaphorePool,
 
@@ -28,7 +43,7 @@ pub struct SubmitGroup {
 }
 
 impl SubmitGroup {
-    pub fn new(device: Arc<DeviceContext>) -> Self {
+    pub(crate) fn new(device: Arc<DeviceContext>) -> Self {
         let (gfx, cmpt, trns) = {
             let gfx = device
                 .device
@@ -70,42 +85,27 @@ impl SubmitGroup {
         }
     }
 
+    /// Present an image to a display.
+    ///
+    /// If the image to be presented is a result of a graph execution, use
+    /// [`Context::graph_get_output_image`] to retrieve the `ImageHandle`.
+    ///
+    /// [`Context::graph_get_output_image`]: ../../struct.Context.html#method.graph_get_output_image
     pub fn display_present(
         &mut self,
         ctx: &mut Context,
         display: DisplayHandle,
-        graph: graph::GraphHandle,
+        image: image::ImageHandle,
     ) -> bool {
-        if let Some(graph) = ctx.graph_storage.storage.get(graph) {
-            if let Some((_, res)) = graph.exec_resources.as_ref() {
-                let mut image = None;
-                for output in &res.outputs {
-                    if let Some(id) = res.images.get(output) {
-                        image = Some(*id);
-                        break;
-                    }
-                }
 
-                if image == None {
-                    return false;
-                }
-
-                let image = image.unwrap();
-
-                ctx.displays[display].present(
-                    &ctx.device_ctx,
-                    &mut self.sem_pool,
-                    &mut self.sem_list,
-                    &mut self.pool_graphics,
-                    &ctx.image_storage,
-                    image,
-                );
-
-                return true;
-            }
-        }
-
-        false
+        ctx.displays[display].present(
+            &ctx.device_ctx,
+            &mut self.sem_pool,
+            &mut self.sem_list,
+            &mut self.pool_graphics,
+            &ctx.image_storage,
+            image,
+        )
     }
 
     pub fn display_setup_swapchain(&mut self, ctx: &mut Context, display: DisplayHandle) {

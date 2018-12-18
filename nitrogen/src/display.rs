@@ -15,14 +15,14 @@ use crate::submit_group::ResourceList;
 use std;
 
 pub struct Display {
-    pub surface: Surface,
+    pub(crate) surface: Surface,
 
-    pub surface_size: (usize, usize),
+    pub(crate) surface_size: (usize, usize),
 
-    pub swapchain: Option<Swapchain>,
-    pub display_format: gfx::format::Format,
+    pub(crate) swapchain: Option<Swapchain>,
+    pub(crate) display_format: gfx::format::Format,
 
-    pub images: Vec<(Image, ImageView)>,
+    pub(crate) images: Vec<(Image, ImageView)>,
 }
 
 impl Display {
@@ -46,7 +46,7 @@ impl Display {
     /// Setup the swapchain and associated framebuffers/images.
     ///
     /// Destroys the old swapchain, so the caller needs to make sure that it's no longer in use
-    pub fn setup_swapchain(&mut self, device: &DeviceContext, res_list: &mut ResourceList) {
+    pub(crate) fn setup_swapchain(&mut self, device: &DeviceContext, res_list: &mut ResourceList) {
         use gfx::Surface;
 
         {

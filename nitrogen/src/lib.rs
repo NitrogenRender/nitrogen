@@ -2,6 +2,50 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+//! A render graph based rendering engine.
+//!
+//! Nitrogen is intended to provide high-level abstractions to build well performing graphics
+//! applications.
+//!
+//! The [`Context`] holds all information needed for rendering and dispatching compute jobs.
+//! It is the central part that a user will interface with.
+//!
+//! To build graphics or compute applications, various resources can be created.
+//! Those resources can be used as inputs (or storages/outputs) when executing a *"render graph"*.
+//!
+//! A render graph consists of passes which can create resources and operate upon them, as well as
+//! depend on resources created from other passes.
+//!
+//! This makes for nicely structured and decoupled "building blocks" for building
+//! rendering pipelines.
+//!
+//! # Conceptual example: a simple deferred pipeline
+//!
+//! In order to build a simple deferred rendering pipeline, following passes could be set up that
+//! each take a small part in achieving the final result.
+//!
+//! ## Passes
+//!
+//! - DepthPrePass
+//!
+//!   - creates `"PreDepth"` resource
+//!
+//! - GbufferPass
+//!
+//!   - reads `"PreDepth"`
+//!   - creates `"AlbedoRoughness"` resource
+//!   - creates `"NormalMetallic"` resource
+//!   - creates `"Emission"` resource
+//!
+//! - LightingPass
+//!
+//!   - reads `"PreDepth"`, `"AlbedoRoughness"`, `"NormalMetallic"` and `"Emission"`
+//!   - creates `"Shaded"` resource
+//!
+//! - PostProcess
+//!
+//!   - moves `"Shaded"` to `"Final"`
+
 extern crate gfx_backend_vulkan as back;
 pub extern crate gfx_hal as gfx;
 extern crate gfx_memory as gfxm;
@@ -48,6 +92,21 @@ pub type DisplayHandle = Handle<Display>;
 // BAD THINGS WILL HAPPEN IF YOU CHANGE IT.
 // MOUNTAINS OF CRASHES WILL POUR ONTO YOU.
 // So please, just don't.
+/// Contains all state needed for executing graphics or compute programs.
+///
+/// The `Context` contains multiple "sub-contexts" all managing specific resources.
+/// Sub-contexts try to use [`Handle`]s as much as possible.
+///
+/// Since the shutdown sequence of many GPU-resources requires moving data the `Drop` trait is
+/// **not implemented**. Dropping the context will result in a panic. Instead, use the [`release`]
+/// method. (It is planned in future to improve this)
+///
+/// For ease of use, all functionality of sub-contexts that the programmer needs to deal with are
+/// replicated as [methods].
+///
+/// [`Handle`]: ./util/storage/struct.Handle.html
+/// [`release`]: #method.release
+/// [methods]: #methods
 pub struct Context {
     pub(crate) graph_storage: graph::GraphStorage,
 
@@ -66,6 +125,10 @@ pub struct Context {
 }
 
 impl Context {
+    /// Create a new `Context` instance.
+    ///
+    /// The `name` and `version` fields are passed down to the graphics driver. They don't have any
+    /// special meaning attached to them (as far as I know)
     pub fn new(name: &str, version: u32) -> Self {
         let instance = back::Instance::create(name, version);
         let device_ctx = Arc::new(DeviceContext::new(&instance));
@@ -98,8 +161,9 @@ impl Context {
         }
     }
 
+    /// Attach an X11 display to the `Context`
     #[cfg(feature = "x11")]
-    pub fn add_x11_display(
+    pub fn display_add_x11(
         &mut self,
         display: *mut std::os::raw::c_void,
         window: std::os::raw::c_ulong,
@@ -125,8 +189,9 @@ impl Context {
         self.displays.insert(display).0
     }
 
+    /// Attach a winit display to the `Context`
     #[cfg(feature = "winit_support")]
-    pub fn add_display(&mut self, window: &winit::Window) -> Handle<Display> {
+    pub fn display_add(&mut self, window: &winit::Window) -> Handle<Display> {
         use gfx::Surface;
 
         let surface = self.instance.create_surface(window);
@@ -144,7 +209,8 @@ impl Context {
         self.displays.insert(display).0
     }
 
-    pub fn remove_display(&mut self, display: DisplayHandle) -> bool {
+    /// Detach a display from the `Context`
+    pub fn display_remove(&mut self, display: DisplayHandle) -> bool {
         match self.displays.remove(display) {
             None => false,
             Some(display) => {
@@ -154,6 +220,7 @@ impl Context {
         }
     }
 
+    /// Free all resources and release the `Context`
     pub fn release(self) {
         self.buffer_storage.release(&self.device_ctx);
         self.image_storage.release(&self.device_ctx);
@@ -171,6 +238,7 @@ impl Context {
 
     // image
 
+    /// Create image objects and retrieve handles for them.
     pub fn image_create(
         &mut self,
         create_infos: &[image::ImageCreateInfo<image::ImageUsage>],
@@ -180,6 +248,7 @@ impl Context {
 
     // sampler
 
+    /// Create sampler objects and retrieve handles for them.
     pub fn sampler_create(
         &mut self,
         create_infos: &[sampler::SamplerCreateInfo],
@@ -189,6 +258,7 @@ impl Context {
 
     // buffer
 
+    /// Create buffer objects and retrieve handles for them.
     pub fn buffer_create<M, U>(
         &mut self,
         create_infos: &[buffer::BufferCreateInfo<M, U>],
@@ -202,6 +272,12 @@ impl Context {
 
     // vertex attribs
 
+    /// Create new vertex attribute description objects and retrieve handles for them.
+    ///
+    /// Such handles can be used to specify the vertex input format in a [`GraphicsPassInfo`] for
+    /// creating graphics passes in a graph.
+    ///
+    /// [`GraphicsPassInfo`]: ./graph/pass/struct.GraphicsPassInfo.html
     pub fn vertex_attribs_create(
         &mut self,
         infos: &[vertex_attrib::VertexAttribInfo],
@@ -209,12 +285,18 @@ impl Context {
         self.vertex_attrib_storage.create(infos)
     }
 
+    /// Destroy vertex attribute description objects.
     pub fn vertex_attribs_destroy(&mut self, handles: &[vertex_attrib::VertexAttribHandle]) {
         self.vertex_attrib_storage.destroy(handles);
     }
 
     // material
 
+    /// Create material objects and retrieve handles for them.
+    ///
+    /// For more information about materials, see the [`material` module] documentation.
+    ///
+    /// [`material` module]: ./resources/material/index.html
     pub fn material_create(
         &mut self,
         create_infos: &[material::MaterialCreateInfo],
@@ -222,10 +304,16 @@ impl Context {
         self.material_storage.create(&self.device_ctx, create_infos)
     }
 
+    /// Destroy material objects.
     pub fn material_destroy(&mut self, materials: &[material::MaterialHandle]) {
         self.material_storage.destroy(&self.device_ctx, materials)
     }
 
+    /// Create material instances and retrieve handles for them.
+    ///
+    /// For more information about material instances, see the [`material` module] documentation.
+    ///
+    /// [`material` module]: ./resources/material/index.html
     pub fn material_create_instance(
         &mut self,
         materials: &[material::MaterialHandle],
@@ -234,10 +322,12 @@ impl Context {
             .create_instances(&self.device_ctx, materials)
     }
 
+    /// Destroy material instance objects.
     pub fn material_destroy_instance(&mut self, instances: &[material::MaterialInstanceHandle]) {
         self.material_storage.destroy_instances(instances)
     }
 
+    /// Update a material instance with resource handles.
     pub fn material_write_instance<T>(
         &mut self,
         instance: material::MaterialInstanceHandle,
@@ -256,10 +346,15 @@ impl Context {
         );
     }
 
+    // graph
+
+    /// Create a new graph and retrieve the handle.
     pub fn graph_create(&mut self) -> graph::GraphHandle {
         self.graph_storage.create()
     }
 
+    /// Attach a graphics pass to a graph, adding it into the dependency chain when
+    /// compiling the graph.
     pub fn graph_add_graphics_pass<T: Into<graph::PassName>>(
         &mut self,
         graph: graph::GraphHandle,
@@ -271,6 +366,8 @@ impl Context {
             .add_graphics_pass(graph, name, info, Box::new(pass_impl));
     }
 
+    /// Attach a compute pass to a graph, adding it into the dependency chain when
+    /// compiling the graph.
     pub fn graph_add_compute_pass<T: Into<graph::PassName>>(
         &mut self,
         graph: graph::GraphHandle,
@@ -282,6 +379,13 @@ impl Context {
             .add_compute_pass(graph, name, info, Box::new(pass_impl));
     }
 
+    /// Add a resource to the *output list* of a graph.
+    ///
+    /// Output resources can be retrieved using the [`graph_get_output_image`] and
+    /// [`graph_get_output_buffer`] methods.
+    ///
+    /// [`graph_get_output_image`]: #method.graph_get_output_image
+    /// [`graph_get_output_buffer`]: #method.graph_get_output_buffer
     pub fn graph_add_output<T: Into<graph::ResourceName>>(
         &mut self,
         graph: graph::GraphHandle,
@@ -290,6 +394,22 @@ impl Context {
         self.graph_storage.add_output(graph, name);
     }
 
+    /// Compile a graph so it is optimized for execution.
+    ///
+    /// Compiling a graph is potentially a rather expensive operation, so results are cached when
+    /// it makes sense to do so. As a result it is safe to call this method every frame as it will
+    /// only perform computations the first time a "new configuration" of graph is encountered.
+    ///
+    /// The "user facing" graph operates with resource *names* and any dependencies are only
+    /// implied, not manifested in a datastructure somewhere, so the first thing to do is to
+    /// get all the "unrelated" nodes into a graph structure that has direct or indirect links to
+    /// all dependent nodes.
+    ///
+    /// This representation is then hashed to see if any further work has been done already
+    /// in the past.
+    ///
+    /// Any "backend" resources (pipelines, render passes...) for this graph permutation are
+    /// created and cached as well.
     pub fn graph_compile(
         &mut self,
         graph: graph::GraphHandle,
@@ -297,6 +417,16 @@ impl Context {
         self.graph_storage.compile(graph)
     }
 
+    /// Retrieve the `ImageHandle` of a graph output resource.
+    pub fn graph_get_output_image<T: Into<graph::ResourceName>>(
+        &self,
+        graph: graph::GraphHandle,
+        image: T,
+    ) -> Option<image::ImageHandle> {
+        self.graph_storage.output_image(graph, image)
+    }
+
+    /// Retrieve the `BufferHandle` of a graph output resource.
     pub fn graph_get_output_buffer<T: Into<graph::ResourceName>>(
         &self,
         graph: graph::GraphHandle,
@@ -307,7 +437,11 @@ impl Context {
 
     // submit group
 
+    /// Create a new [`SubmitGroup`] to record and execute commands
+    ///
+    /// [`SubmitGroup`]: ./util/submit_group/struct.SubmitGroup.html
     pub fn create_submit_group(&self) -> submit_group::SubmitGroup {
         submit_group::SubmitGroup::new(self.device_ctx.clone())
     }
 }
+

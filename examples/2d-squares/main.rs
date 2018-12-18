@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // cool and fun nitrogen stuff
 
     let mut ctx = Context::new("2d-squares", 1);
-    let display = ctx.add_display(&window);
+    let display = ctx.display_add(&window);
 
     let mut submit = ctx.create_submit_group();
 
@@ -236,7 +236,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             submits[frame_idx].graph_execute(&mut ctx, graph, &store, &exec_context);
 
-            submits[frame_idx].display_present(&mut ctx, display, graph);
+            let img = ctx.graph_get_output_image(graph, "Canvas").unwrap();
+
+            submits[frame_idx].display_present(&mut ctx, display, img);
         }
 
         frame_num += 1;
@@ -253,7 +255,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     ctx.vertex_attribs_destroy(&[vtx_def]);
     ctx.material_destroy(&[material]);
-    ctx.remove_display(display);
+    ctx.display_remove(display);
 
     ctx.release();
 
@@ -281,7 +283,7 @@ fn create_graph(
                 entry: "ComputeMain".into(),
             },
             materials: vec![(1, material)],
-            push_constants: vec![(0..3)],
+            push_constants: vec![(0..4)],
         };
 
         struct MovePass {
@@ -307,11 +309,12 @@ fn create_graph(
                     }
                 }
 
-                cmd.push_constant(0, wide);
+                cmd.push_constant::<u32>(0, wide);
+                cmd.push_constant::<u32>(1, NUM_THINGS as u32);
 
                 let Delta(delta) = store.get::<Delta>().unwrap();
 
-                cmd.push_constant(1, *delta as f32);
+                cmd.push_constant::<f32>(2, *delta as f32);
 
                 cmd.bind_material(1, self.mat_instance);
 

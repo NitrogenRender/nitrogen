@@ -13,7 +13,7 @@ pub struct ImageHandle(pub ImageId, pub ImageGeneration);
 
 impl ImageHandle {
     pub fn into(self) -> nitrogen::image::ImageHandle {
-        nitrogen::image::ImageHandle::new(self.0, self.1)
+        unsafe { nitrogen::image::ImageHandle::new(self.0, self.1) }
     }
 }
 

@@ -37,7 +37,7 @@ fn main() {
 
     let mut submit = ntg.create_submit_group();
 
-    let display = ntg.add_display(&window);
+    let display = ntg.display_add(&window);
 
     let material = {
         let create_info = nitrogen::material::MaterialCreateInfo {
@@ -310,7 +310,9 @@ fn main() {
 
             submits[frame_idx].graph_execute(&mut ntg, graph, &store, &exec_context);
 
-            submits[frame_idx].display_present(&mut ntg, display, graph);
+            let img = ntg.graph_get_output_image(graph, "IOutput").unwrap();
+
+            submits[frame_idx].display_present(&mut ntg, display, img);
         }
 
         frame_num += 1;

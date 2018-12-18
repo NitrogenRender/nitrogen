@@ -76,18 +76,18 @@ pub struct Graph {
     last_input: Option<u64>,
 }
 
-pub struct GraphStorage {
+pub(crate) struct GraphStorage {
     pub(crate) storage: Storage<Graph>,
 }
 
 impl GraphStorage {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         GraphStorage {
             storage: Storage::new(),
         }
     }
 
-    pub fn create(&mut self) -> GraphHandle {
+    pub(crate) fn create(&mut self) -> GraphHandle {
         self.storage.insert(Graph::default()).0
     }
 
@@ -110,7 +110,7 @@ impl GraphStorage {
         }
     }
 
-    pub fn add_graphics_pass<T: Into<PassName>>(
+    pub(crate) fn add_graphics_pass<T: Into<PassName>>(
         &mut self,
         handle: GraphHandle,
         name: T,
@@ -126,7 +126,7 @@ impl GraphStorage {
         });
     }
 
-    pub fn add_compute_pass<T: Into<PassName>>(
+    pub(crate) fn add_compute_pass<T: Into<PassName>>(
         &mut self,
         handle: GraphHandle,
         name: T,
@@ -144,17 +144,19 @@ impl GraphStorage {
 
     /// Compile the graph so it is optimized for execution.
     ///
-    /// Compiling the graph is potentially a rather expensive operation.
-    /// The "user facing" graph operates with resource *names* and any dependencies are only
-    /// implied, not manifested in a datastructure somewhere, so the first thing to do is to
-    /// Get all the "unrelated" nodes into a graph structure that has direct or indirect links to
-    /// all dependent nodes.
+    /// This runs all the `setup` methods on all passes (`GraphicsPassImpl`, `ComputePassImpl`)
+    /// and checks if the "same graph version" has been encountered before. If so, the old compiled
+    /// representation can be reused.
     ///
-    /// This representation is then hashed to see if we already did any further work in the past
-    /// already and can use a cached graph.
+    /// If this is a new graph permutation then all the resource names are resolved to IDs and lists
+    /// are created that store which pass creates, reads, writes or moves which resource.
     ///
+    /// A "execution path" representation is then created from that information, only including
+    /// relevant passes for the current permutation.
     ///
-    pub fn compile(&mut self, handle: GraphHandle) -> Result<(), Vec<GraphCompileError>> {
+    /// With that in place, any gfx resources are created that won't change across execution
+    /// (like pipelines and render passes)
+    pub(crate) fn compile(&mut self, handle: GraphHandle) -> Result<(), Vec<GraphCompileError>> {
         let graph = self
             .storage
             .get_mut(handle)
@@ -355,13 +357,13 @@ impl GraphStorage {
         )
     }
 
-    pub fn add_output<T: Into<ResourceName>>(&mut self, handle: GraphHandle, image: T) {
+    pub(crate) fn add_output<T: Into<ResourceName>>(&mut self, handle: GraphHandle, image: T) {
         self.storage.get_mut(handle).map(|graph| {
             graph.output_resources.push(image.into());
         });
     }
 
-    pub fn output_buffer<T: Into<ResourceName>>(
+    pub(crate) fn output_buffer<T: Into<ResourceName>>(
         &self,
         handle: GraphHandle,
         buffer: T,
@@ -373,6 +375,20 @@ impl GraphStorage {
         let (_, res) = graph.exec_resources.as_ref()?;
 
         res.buffers.get(&id).map(|x| *x)
+    }
+
+    pub(crate) fn output_image<T: Into<ResourceName>>(
+        &self,
+        handle: GraphHandle,
+        image: T,
+    ) -> Option<crate::image::ImageHandle> {
+        let graph = self.storage.get(handle)?;
+        let in_num = graph.last_input?;
+        let (resolve, _exec_num) = graph.resolve_cache.get(&in_num)?;
+        let id = *resolve.name_lookup.get(&image.into())?;
+        let (_, res) = graph.exec_resources.as_ref()?;
+
+        res.images.get(&id).map(|x| *x)
     }
 }
 

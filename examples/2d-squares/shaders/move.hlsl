@@ -9,6 +9,7 @@ struct ComputeInput {
 
 struct PushData {
     uint batch_size;
+    uint total_size;
     float delta;
 };
 
@@ -34,10 +35,7 @@ void ComputeMain(ComputeInput input)
 {
     uint idx = input.idx.x + (push_data.batch_size * input.idx.y);
 
-    uint len;
-    instances.GetDimensions(len);
-
-    if (idx > len)
+    if (idx > push_data.total_size)
         return;
 
     float2 position = instances[idx].position += velocities[idx] * push_data.delta;
