@@ -35,7 +35,7 @@ pub(crate) fn derive_resource_usage(
                 *usage |= IUsage::TRANSFER_SRC;
             });
 
-            usages.buffer.get_mut(&res).map(|(usage, _)| {
+            usages.buffer.get_mut(&res).map(|usage| {
                 *usage |= BUsage::TRANSFER_SRC;
             });
         });
@@ -55,14 +55,8 @@ fn derive_batch(
         match info {
             ResourceCreateInfo::Buffer(buf) => {
                 let usage = BUsage::empty();
-                let properties = match buf.storage {
-                    BufferStorageType::HostVisible => {
-                        Properties::CPU_VISIBLE | Properties::COHERENT
-                    }
-                    BufferStorageType::DeviceLocal => Properties::DEVICE_LOCAL,
-                };
 
-                usages.buffer.insert(*create, (usage, properties));
+                usages.buffer.insert(*create, usage);
             }
             ResourceCreateInfo::Image(img) => {
                 let format = img.format.into();
@@ -100,7 +94,7 @@ fn derive_batch(
         }
 
         // if this is a buffer
-        if let Some((usage, prop)) = usages.buffer.get(&orig).map(|x| x.clone()) {
+        if let Some(usage) = usages.buffer.get(&orig).map(|x| x.clone()) {
             // Same as for images, if we copy a buffer the src has to be TRANSFER_SRC and the new
             // buffer has to be TRANSFER_DST
             let mut orig_usage = usage;
@@ -110,11 +104,11 @@ fn derive_batch(
             usages
                 .buffer
                 .get_mut(&orig)
-                .map(move |entry| entry.0 = orig_usage);
+                .map(move |entry| *entry = orig_usage);
 
             // old flags don't apply to copies
             let new_usage = BUsage::TRANSFER_DST;
-            usages.buffer.insert(*copy, (new_usage, prop));
+            usages.buffer.insert(*copy, new_usage);
         }
     }
 
@@ -137,7 +131,7 @@ fn derive_pass(
 
         match read_ty {
             ResourceReadType::Buffer(buf) => {
-                let (mut usage, prop) = usages.buffer[&origin].clone();
+                let mut usage = usages.buffer[&origin].clone();
 
                 match buf {
                     BufferReadType::Storage => {
@@ -154,7 +148,7 @@ fn derive_pass(
                     }
                 }
 
-                usages.buffer.insert(origin, (usage, prop));
+                usages.buffer.insert(origin, usage);
             }
             ResourceReadType::Image(img) => {
                 let (mut usage, format) = usages.image[&origin].clone();
@@ -183,7 +177,7 @@ fn derive_pass(
 
         match write_ty {
             ResourceWriteType::Buffer(buf) => {
-                let (mut usage, prop) = usages.buffer[&origin].clone();
+                let mut usage = usages.buffer[&origin].clone();
 
                 match buf {
                     BufferWriteType::Storage => {
@@ -194,7 +188,7 @@ fn derive_pass(
                     }
                 }
 
-                usages.buffer.insert(origin, (usage, prop));
+                usages.buffer.insert(origin, usage);
             }
             ResourceWriteType::Image(img) => {
                 let (mut usage, format) = usages.image[&origin].clone();

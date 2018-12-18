@@ -35,17 +35,18 @@ fn main() {
 
         println!("input  {:?}", &buffer_data[..]);
 
-        let create_info = buffer::BufferCreateInfo {
+        let create_info = buffer::CpuVisibleCreateInfo {
             size: std::mem::size_of::<f32>() as u64 * NUM_ELEMS,
             is_transient: false,
             usage: buffer::BufferUsage::TRANSFER_SRC
                 | buffer::BufferUsage::TRANSFER_DST
                 | buffer::BufferUsage::UNIFORM,
-            properties: resources::MemoryProperties::CPU_VISIBLE
-                | resources::MemoryProperties::COHERENT,
         };
 
-        let buffer = ctx.buffer_create(&[create_info]).remove(0).unwrap();
+        let buffer = ctx
+            .buffer_cpu_visible_create(&[create_info])
+            .remove(0)
+            .unwrap();
 
         let upload_data = buffer::BufferUploadInfo {
             offset: 0,
@@ -53,7 +54,7 @@ fn main() {
         };
 
         submit
-            .buffer_upload_data(&mut ctx, &[(buffer, upload_data)])
+            .buffer_cpu_visible_upload(&mut ctx, &[(buffer, upload_data)])
             .remove(0)
             .unwrap();
 
@@ -95,7 +96,7 @@ fn main() {
     {
         let mut out: [f32; NUM_ELEMS as usize] = unsafe { std::mem::uninitialized() };
 
-        submit.buffer_read_data(&ctx, buffer, &mut out[..]);
+        submit.buffer_cpu_visible_read(&ctx, buffer, &mut out[..]);
 
         submit.wait(&mut ctx);
 

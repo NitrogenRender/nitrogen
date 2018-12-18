@@ -30,7 +30,7 @@ use gfx;
 #[derive(Debug, Default)]
 pub(crate) struct ResourceUsages {
     image: HashMap<ResourceId, (gfx::image::Usage, gfx::format::Format)>,
-    buffer: HashMap<ResourceId, (gfx::buffer::Usage, gfx::memory::Properties)>,
+    buffer: HashMap<ResourceId, gfx::buffer::Usage>,
 }
 
 #[derive(Debug, Default)]

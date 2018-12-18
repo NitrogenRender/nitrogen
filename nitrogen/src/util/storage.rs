@@ -54,11 +54,6 @@ impl<T> Handle<T> {
     }
 }
 
-pub(crate) enum InsertOp {
-    Grow,
-    Inplace,
-}
-
 pub(crate) struct Storage<T> {
     pub generations: Vec<Generation>,
     pub entries: Slab<T>,
@@ -94,18 +89,12 @@ impl<T> Storage<T> {
         }
     }
 
-    pub(crate) fn insert(&mut self, data: T) -> (Handle<T>, InsertOp) {
-        let (entry, handle, insert_op) = {
+    pub(crate) fn insert(&mut self, data: T) -> Handle<T> {
+        let (entry, handle) = {
             let entry = self.entries.vacant_entry();
             let key = entry.key();
 
             let needs_to_grow = self.generations.len() <= key;
-
-            let insert_op = if needs_to_grow {
-                InsertOp::Grow
-            } else {
-                InsertOp::Inplace
-            };
 
             if needs_to_grow {
                 self.generations.push(0);
@@ -115,12 +104,12 @@ impl<T> Storage<T> {
 
             let generation = self.generations[key];
 
-            (entry, unsafe { Handle::new(key, generation) }, insert_op)
+            (entry, unsafe { Handle::new(key, generation) })
         };
 
         entry.insert(data);
 
-        (handle, insert_op)
+        handle
     }
 
     pub(crate) fn is_alive(&self, handle: Handle<T>) -> bool {

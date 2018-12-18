@@ -120,15 +120,16 @@ fn main() {
     submit.display_setup_swapchain(&mut ntg, display);
 
     let buffer_pos = {
-        let create_info = nitrogen::buffer::BufferCreateInfo {
+        let create_info = nitrogen::buffer::CpuVisibleCreateInfo {
             size: std::mem::size_of_val(&TRIANGLE_POS) as u64,
             is_transient: false,
             usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC
                 | nitrogen::buffer::BufferUsage::VERTEX,
-            properties: nitrogen::resources::MemoryProperties::CPU_VISIBLE
-                | nitrogen::resources::MemoryProperties::COHERENT,
         };
-        let buffer = ntg.buffer_create(&[create_info]).remove(0).unwrap();
+        let buffer = ntg
+            .buffer_cpu_visible_create(&[create_info])
+            .remove(0)
+            .unwrap();
 
         let upload_data = nitrogen::buffer::BufferUploadInfo {
             offset: 0,
@@ -136,7 +137,7 @@ fn main() {
         };
 
         submit
-            .buffer_upload_data(&mut ntg, &[(buffer, upload_data)])
+            .buffer_cpu_visible_upload(&mut ntg, &[(buffer, upload_data)])
             .remove(0)
             .unwrap();
 
@@ -144,15 +145,16 @@ fn main() {
     };
 
     let buffer_uv = {
-        let create_info = nitrogen::buffer::BufferCreateInfo {
+        let create_info = nitrogen::buffer::CpuVisibleCreateInfo {
             size: std::mem::size_of_val(&TRIANGLE_UV) as u64,
             is_transient: false,
             usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC
                 | nitrogen::buffer::BufferUsage::VERTEX,
-            properties: nitrogen::resources::MemoryProperties::CPU_VISIBLE
-                | nitrogen::resources::MemoryProperties::COHERENT,
         };
-        let buffer = ntg.buffer_create(&[create_info]).remove(0).unwrap();
+        let buffer = ntg
+            .buffer_cpu_visible_create(&[create_info])
+            .remove(0)
+            .unwrap();
 
         let upload_data = nitrogen::buffer::BufferUploadInfo {
             offset: 0,
@@ -160,7 +162,7 @@ fn main() {
         };
 
         submit
-            .buffer_upload_data(&mut ntg, &[(buffer, upload_data)])
+            .buffer_cpu_visible_upload(&mut ntg, &[(buffer, upload_data)])
             .remove(0)
             .unwrap();
 
@@ -218,15 +220,16 @@ fn main() {
     };
 
     let uniform_buffer = {
-        let create_info = nitrogen::buffer::BufferCreateInfo {
+        let create_info = nitrogen::buffer::CpuVisibleCreateInfo {
             size: std::mem::size_of::<UniformData>() as u64,
             is_transient: false,
             usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC
                 | nitrogen::buffer::BufferUsage::UNIFORM,
-            properties: nitrogen::resources::MemoryProperties::CPU_VISIBLE
-                | nitrogen::resources::MemoryProperties::COHERENT,
         };
-        let buffer = ntg.buffer_create(&[create_info]).remove(0).unwrap();
+        let buffer = ntg
+            .buffer_cpu_visible_create(&[create_info])
+            .remove(0)
+            .unwrap();
 
         let upload_data = nitrogen::buffer::BufferUploadInfo {
             offset: 0,
@@ -234,7 +237,7 @@ fn main() {
         };
 
         submit
-            .buffer_upload_data(&mut ntg, &[(buffer, upload_data)])
+            .buffer_cpu_visible_upload(&mut ntg, &[(buffer, upload_data)])
             .remove(0)
             .unwrap();
 

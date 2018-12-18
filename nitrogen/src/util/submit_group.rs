@@ -178,7 +178,6 @@ impl SubmitGroup {
             &mut self.sem_list,
             &mut self.pool_transfer,
             &mut self.res_destroys,
-            &ctx.transfer,
             images,
         )
     }
@@ -187,38 +186,37 @@ impl SubmitGroup {
         ctx.image_storage.destroy(&mut self.res_destroys, images)
     }
 
-    pub fn buffer_upload_data<T>(
+    pub fn buffer_cpu_visible_upload<T>(
         &mut self,
         ctx: &mut Context,
         data: &[(buffer::BufferHandle, buffer::BufferUploadInfo<T>)],
     ) -> SmallVec<[buffer::Result<()>; 16]> {
-        ctx.buffer_storage.upload_data(
-            &ctx.device_ctx,
-            &self.sem_pool,
-            &mut self.sem_list,
-            &mut self.pool_transfer,
-            &mut self.res_destroys,
-            &ctx.transfer,
-            data,
-        )
+        ctx.buffer_storage.cpu_visible_upload(&ctx.device_ctx, data)
     }
 
-    pub fn buffer_read_data<T>(
+    pub fn buffer_cpu_visible_read<T>(
         &mut self,
         ctx: &Context,
         buffer: buffer::BufferHandle,
         data: &mut [T],
     ) {
-        ctx.buffer_storage.read_data(
+        ctx.buffer_storage
+            .cpu_visible_read(&ctx.device_ctx, buffer, data);
+    }
+
+    pub fn buffer_device_local_upload<T>(
+        &mut self,
+        ctx: &mut Context,
+        data: &[(buffer::BufferHandle, buffer::BufferUploadInfo<T>)],
+    ) -> SmallVec<[buffer::Result<()>; 16]> {
+        ctx.buffer_storage.device_local_upload(
             &ctx.device_ctx,
             &self.sem_pool,
             &mut self.sem_list,
             &mut self.pool_transfer,
             &mut self.res_destroys,
-            &ctx.transfer,
-            buffer,
             data,
-        );
+        )
     }
 
     pub fn buffer_destroy(&mut self, ctx: &mut Context, buffers: &[buffer::BufferHandle]) {

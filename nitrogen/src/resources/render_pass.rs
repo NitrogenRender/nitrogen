@@ -62,7 +62,7 @@ impl RenderPassStorage {
 
                 match pass {
                     Ok(render_pass) => {
-                        let handle = self.storage.insert(RenderPass { render_pass }).0;
+                        let handle = self.storage.insert(RenderPass { render_pass });
 
                         Ok(handle)
                     }
