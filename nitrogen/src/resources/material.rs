@@ -153,7 +153,7 @@ impl MaterialStorage {
                         pool_occupancy: Vec::new(),
                         pools: Vec::new(),
                     };
-                    let handle = self.storage.insert(mat).0;
+                    let handle = self.storage.insert(mat);
                     results.push(Ok(handle));
                 }
                 Err(err) => {
@@ -251,7 +251,7 @@ impl MaterialStorage {
                     }
                     InstanceWriteData::Buffer { buffer, ref region } => {
                         let raw = buffer_storage.raw(buffer)?;
-                        gfx::pso::Descriptor::Buffer(raw.raw(), region.clone())
+                        gfx::pso::Descriptor::Buffer(raw.buffer.raw(), region.clone())
                     }
                 }),
             })
@@ -348,7 +348,7 @@ impl Material {
             set,
         };
 
-        Ok(self.instances.insert(instance).0)
+        Ok(self.instances.insert(instance))
     }
 
     fn free_instance(&mut self, handle: Handle<MaterialInstance>) -> Option<()> {

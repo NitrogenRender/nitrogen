@@ -18,8 +18,7 @@ use smallvec::smallvec;
 use smallvec::SmallVec;
 
 use crate::util::storage::{Handle, Storage};
-
-use crate::transfer::TransferContext;
+use crate::util::transfer;
 
 use crate::device::DeviceContext;
 use crate::resources::semaphore_pool::SemaphoreList;
@@ -374,7 +373,7 @@ impl ImageStorage {
                 view: image_view,
             };
 
-            let (handle, _) = self.storage.insert(img_store);
+            let handle = self.storage.insert(img_store);
 
             if usage.contains(gfx::image::Usage::TRANSFER_DST) {
                 self.transfer_dst.insert(handle.id());
@@ -393,7 +392,6 @@ impl ImageStorage {
         sem_list: &mut SemaphoreList,
         cmd_pool: &mut CommandPool<gfx::Transfer>,
         res_list: &mut ResourceList,
-        transfer: &TransferContext,
         images: &[(ImageHandle, ImageUploadInfo)],
     ) -> SmallVec<[Result<()>; 16]> {
         let mut results = smallvec![Ok(()); images.len()];
@@ -606,7 +604,7 @@ impl ImageStorage {
                 })
                 .collect::<SmallVec<[_; 16]>>();
 
-            transfer.copy_buffers_to_images(
+            transfer::copy_buffers_to_images(
                 device,
                 sem_pool,
                 sem_list,

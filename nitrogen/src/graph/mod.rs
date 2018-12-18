@@ -88,7 +88,7 @@ impl GraphStorage {
     }
 
     pub(crate) fn create(&mut self) -> GraphHandle {
-        self.storage.insert(Graph::default()).0
+        self.storage.insert(Graph::default())
     }
 
     pub(crate) fn destroy(

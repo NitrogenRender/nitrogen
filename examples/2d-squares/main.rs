@@ -85,7 +85,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &mut ctx,
             &mut submit,
             &VERTEX_DATA[..],
-            MemoryProperties::CPU_VISIBLE | MemoryProperties::COHERENT,
             BufferUsage::TRANSFER_DST | BufferUsage::VERTEX,
         )
     };
@@ -105,7 +104,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &mut ctx,
             &mut submit,
             &instance_data[..],
-            MemoryProperties::DEVICE_LOCAL,
             BufferUsage::TRANSFER_DST | BufferUsage::UNIFORM | BufferUsage::STORAGE,
         )
     };
@@ -118,7 +116,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &mut ctx,
             &mut submit,
             &instance_vel[..],
-            MemoryProperties::DEVICE_LOCAL,
             BufferUsage::TRANSFER_DST | BufferUsage::STORAGE,
         )
     };
@@ -456,20 +453,22 @@ fn create_buffer<T>(
     ctx: &mut Context,
     submit: &mut SubmitGroup,
     data: &[T],
-    props: resources::MemoryProperties,
     usages: buffer::BufferUsage,
 ) -> buffer::BufferHandle {
-    let create_info = buffer::BufferCreateInfo {
-        size: ::std::mem::size_of::<T>() as u64 * (data.len() as u64),
+    let create_info = buffer::DeviceLocalCreateInfo {
+        size: std::mem::size_of::<T>() as u64 * (data.len() as u64),
         is_transient: false,
-        properties: props,
         usage: usages,
     };
-    let buffer = ctx.buffer_create(&[create_info]).remove(0).unwrap();
+
+    let buffer = ctx
+        .buffer_device_local_create(&[create_info])
+        .remove(0)
+        .unwrap();
 
     let upload_info = buffer::BufferUploadInfo { offset: 0, data };
 
-    submit.buffer_upload_data(ctx, &[(buffer, upload_info)]);
+    submit.buffer_device_local_upload(ctx, &[(buffer, upload_info)]);
 
     buffer
 }

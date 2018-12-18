@@ -109,7 +109,7 @@ impl SamplerStorage {
                     .expect("Can't create sampler")
             };
 
-            let (handle, _) = self.storage.insert(sampler);
+            let handle = self.storage.insert(sampler);
 
             results.push(handle);
         }

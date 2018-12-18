@@ -99,7 +99,7 @@ impl VertexAttribStorage {
                     attribs,
                 }
             })
-            .map(|attrib| self.storage.insert(attrib).0)
+            .map(|attrib| self.storage.insert(attrib))
             .collect()
     }
 

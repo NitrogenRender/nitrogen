@@ -8,9 +8,9 @@ use crate::types;
 use gfx;
 
 use crate::graph::{
-    BufferReadType, BufferWriteType, ComputePassInfo, ExecutionContext, GraphResourcesResolved,
-    GraphicsPassInfo, ImageReadType, ImageWriteType, PassInfo, ResourceCreateInfo,
-    ResourceReadType, ResourceWriteType,
+    BufferReadType, BufferStorageType, BufferWriteType, ComputePassInfo, ExecutionContext,
+    GraphResourcesResolved, GraphicsPassInfo, ImageReadType, ImageWriteType, PassInfo,
+    ResourceCreateInfo, ResourceReadType, ResourceWriteType,
 };
 
 use crate::resources::{image, sampler};
@@ -473,20 +473,36 @@ fn create_resource(
             Some(())
         }
         ResourceCreateInfo::Buffer(buf) => {
-            let (usage, properties) = usages.buffer[&id];
+            let usage = usages.buffer[&id];
 
-            let create_info = crate::buffer::BufferCreateInfo {
-                size: buf.size,
-                is_transient: false,
-                usage,
-                properties,
+            let buffer = match buf.storage {
+                BufferStorageType::DeviceLocal => {
+                    let create_info = crate::buffer::DeviceLocalCreateInfo {
+                        size: buf.size,
+                        is_transient: false,
+                        usage,
+                    };
+
+                    storages
+                        .buffer
+                        .device_local_create(device, &[create_info])
+                        .remove(0)
+                        .ok()?
+                }
+                BufferStorageType::HostVisible => {
+                    let create_info = crate::buffer::CpuVisibleCreateInfo {
+                        size: buf.size,
+                        is_transient: false,
+                        usage,
+                    };
+
+                    storages
+                        .buffer
+                        .cpu_visible_create(device, &[create_info])
+                        .remove(0)
+                        .ok()?
+                }
             };
-
-            let buffer = storages
-                .buffer
-                .create(device, &[create_info])
-                .remove(0)
-                .ok()?;
 
             res.buffers.insert(id, buffer);
 

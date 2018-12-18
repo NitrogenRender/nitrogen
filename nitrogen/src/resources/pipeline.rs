@@ -292,7 +292,7 @@ impl PipelineStorage {
             geometry.map(|geom| device.device.destroy_shader_module(geom));
         }
 
-        let (handle, _) = self.storage.insert(Pipeline::Graphics);
+        let handle = self.storage.insert(Pipeline::Graphics);
 
         self.graphic_pipelines
             .insert(handle.id(), GraphicsPipeline { pipeline, layout });
@@ -345,7 +345,7 @@ impl PipelineStorage {
 
         device.device.destroy_shader_module(shader_module);
 
-        let (handle, _) = self.storage.insert(Pipeline::Compute);
+        let handle = self.storage.insert(Pipeline::Compute);
 
         self.compute_pipelines
             .insert(handle.id(), ComputePipeline { pipeline, layout });

@@ -48,7 +48,7 @@ impl<'a> GraphicsCommandBuffer<'a> {
             stores
                 .buffer
                 .raw(*buffer)
-                .map(|buf| (buf.raw(), *index as u64))
+                .map(|buf| (buf.buffer.raw(), *index as u64))
         });
 
         self.encoder.bind_vertex_buffers(0, bufs);

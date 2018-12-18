@@ -45,6 +45,8 @@
 //! - PostProcess
 //!
 //!   - moves `"Shaded"` to `"Final"`
+//!
+//! [`Context`]: ./struct.Context.html
 
 extern crate gfx_backend_vulkan as back;
 pub extern crate gfx_hal as gfx;
@@ -119,7 +121,6 @@ pub struct Context {
     pub(crate) material_storage: material::MaterialStorage,
 
     pub(crate) displays: Storage<Display>,
-    pub(crate) transfer: transfer::TransferContext,
     pub(crate) device_ctx: Arc<DeviceContext>,
     pub(crate) instance: back::Instance,
 }
@@ -132,8 +133,6 @@ impl Context {
     pub fn new(name: &str, version: u32) -> Self {
         let instance = back::Instance::create(name, version);
         let device_ctx = Arc::new(DeviceContext::new(&instance));
-
-        let transfer = transfer::TransferContext::new();
 
         let image_storage = image::ImageStorage::new();
         let sampler_storage = sampler::SamplerStorage::new();
@@ -148,7 +147,6 @@ impl Context {
         Context {
             instance,
             device_ctx,
-            transfer,
             displays: Storage::new(),
             pipeline_storage,
             render_pass_storage,
@@ -186,7 +184,7 @@ impl Context {
 
         let display = Display::new(surface, &self.device_ctx);
 
-        self.displays.insert(display).0
+        self.displays.insert(display)
     }
 
     /// Attach a winit display to the `Context`
@@ -206,7 +204,7 @@ impl Context {
 
         let display = Display::new(surface, &self.device_ctx);
 
-        self.displays.insert(display).0
+        self.displays.insert(display)
     }
 
     /// Detach a display from the `Context`
@@ -230,8 +228,6 @@ impl Context {
         for (_, display) in self.displays {
             display.release(&self.device_ctx);
         }
-
-        self.transfer.release();
 
         Arc::try_unwrap(self.device_ctx).ok().unwrap().release();
     }
@@ -259,15 +255,26 @@ impl Context {
     // buffer
 
     /// Create buffer objects and retrieve handles for them.
-    pub fn buffer_create<M, U>(
+    pub fn buffer_cpu_visible_create<U>(
         &mut self,
-        create_infos: &[buffer::BufferCreateInfo<M, U>],
+        create_infos: &[buffer::CpuVisibleCreateInfo<U>],
     ) -> SmallVec<[buffer::Result<buffer::BufferHandle>; 16]>
     where
-        M: Into<gfx::memory::Properties> + Clone,
         U: Into<gfx::buffer::Usage> + Clone,
     {
-        self.buffer_storage.create(&self.device_ctx, create_infos)
+        self.buffer_storage
+            .cpu_visible_create(&self.device_ctx, create_infos)
+    }
+
+    pub fn buffer_device_local_create<U>(
+        &mut self,
+        create_infos: &[buffer::DeviceLocalCreateInfo<U>],
+    ) -> SmallVec<[buffer::Result<buffer::BufferHandle>; 16]>
+    where
+        U: Into<gfx::buffer::Usage> + Clone,
+    {
+        self.buffer_storage
+            .device_local_create(&self.device_ctx, create_infos)
     }
 
     // vertex attribs

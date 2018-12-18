@@ -11,7 +11,6 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
 use crate::device::DeviceContext;
-use crate::transfer::TransferContext;
 
 use crate::util::storage::{Handle, Storage};
 
@@ -26,25 +25,17 @@ use crate::resources::semaphore_pool::SemaphorePool;
 use crate::submit_group::ResourceList;
 use crate::types::CommandPool;
 
-type BufferId = usize;
 pub(crate) type BufferTypeInternal =
     <SmartAllocator<back::Backend> as Factory<back::Backend>>::Buffer;
 
-#[derive(Copy, Clone, Eq, PartialEq)]
-pub enum BufferType {
-    DeviceAccessible,
-    HostAccessible,
-    UnAccessible,
-}
-
 pub struct Buffer {
-    buffer: BufferTypeInternal,
+    pub(crate) buffer: BufferTypeInternal,
     size: u64,
     _usage: gfx::buffer::Usage,
     _properties: gfx::memory::Properties,
 }
 
-pub type BufferHandle = Handle<BufferType>;
+pub type BufferHandle = Handle<Buffer>;
 
 pub type Result<T> = std::result::Result<T, BufferError>;
 
@@ -131,16 +122,18 @@ impl From<BufferUsage> for gfx::buffer::Usage {
     }
 }
 
-pub struct BufferCreateInfo<M, U>
-where
-    M: Into<gfx::memory::Properties> + Clone,
-    U: Into<gfx::buffer::Usage> + Clone,
-{
+pub struct CpuVisibleCreateInfo<U: Into<gfx::buffer::Usage> + Clone> {
+    pub size: u64,
+
+    // TODO persistent mapping?
+    pub is_transient: bool,
+    pub usage: U,
+}
+
+pub struct DeviceLocalCreateInfo<U: Into<gfx::buffer::Usage> + Clone> {
     pub size: u64,
 
     pub is_transient: bool,
-
-    pub properties: M,
     pub usage: U,
 }
 
@@ -151,21 +144,18 @@ pub struct BufferUploadInfo<'a, T: 'a> {
 }
 
 pub(crate) struct BufferStorage {
-    local_buffers: BTreeSet<BufferId>,
-    host_visible_buffers: BTreeSet<BufferId>,
-    other_buffers: BTreeSet<BufferId>,
-    buffers: BTreeMap<BufferId, Buffer>,
-    storage: Storage<BufferType>,
+    cpu_visible: BTreeSet<usize>,
+    device_local: BTreeSet<usize>,
+
+    buffers: Storage<Buffer>,
 }
 
 impl BufferStorage {
     pub(crate) fn new() -> Self {
         BufferStorage {
-            local_buffers: BTreeSet::new(),
-            host_visible_buffers: BTreeSet::new(),
-            other_buffers: BTreeSet::new(),
-            buffers: BTreeMap::new(),
-            storage: Storage::new(),
+            cpu_visible: BTreeSet::new(),
+            device_local: BTreeSet::new(),
+            buffers: Storage::new(),
         }
     }
 
@@ -177,75 +167,285 @@ impl BufferStorage {
         }
     }
 
-    pub(crate) fn create<M, U>(
+    pub(crate) fn raw(&self, handle: BufferHandle) -> Option<&Buffer> {
+        self.buffers.get(handle)
+    }
+
+    pub(crate) fn cpu_visible_create<I, U>(
         &mut self,
         device: &DeviceContext,
-        create_infos: &[BufferCreateInfo<M, U>],
+        create_infos: I,
     ) -> SmallVec<[Result<BufferHandle>; 16]>
     where
-        M: Into<gfx::memory::Properties> + Clone,
-        U: Into<gfx::buffer::Usage> + Clone,
+        I: IntoIterator,
+        I::Item: std::borrow::Borrow<CpuVisibleCreateInfo<U>>,
+        U: Clone,
+        U: Into<gfx::buffer::Usage>,
     {
-        let mut results = SmallVec::with_capacity(create_infos.len());
+        use gfx::memory::Properties;
 
-        // TODO This is a big critical section, need to check if it's better to do
-        // a lot of small locks or just this one big one.
+        let mut results = SmallVec::new();
+
         let mut allocator = device.allocator();
 
-        for create_info in create_infos {
-            let (raw_buffer, properties, usage) = {
-                let ty = match create_info.is_transient {
-                    true => gfxm::Type::ShortLived,
-                    false => gfxm::Type::General,
-                };
+        for create_info in create_infos.into_iter() {
+            let create_info = create_info.borrow();
 
-                let props = create_info.properties.clone().into();
-
-                let usage = create_info.usage.clone().into();
-
-                let buf = match allocator.create_buffer(
-                    &device.device,
-                    (ty, props),
-                    create_info.size,
-                    usage,
-                ) {
-                    Err(e) => {
-                        results.push(Err(e.into()));
-                        continue;
-                    }
-                    Ok(buf) => buf,
-                };
-
-                (buf, props, usage)
+            let ty = match create_info.is_transient {
+                true => gfxm::Type::ShortLived,
+                false => gfxm::Type::General,
             };
 
-            let ty = buffer_type(properties, usage);
+            let props = Properties::CPU_VISIBLE | Properties::COHERENT;
+            let usage = create_info.usage.clone().into();
+
+            let raw_buffer =
+                match allocator.create_buffer(&device.device, (ty, props), create_info.size, usage)
+                {
+                    Ok(buf) => buf,
+                    Err(err) => {
+                        results.push(Err(err.into()));
+                        continue;
+                    }
+                };
 
             let buffer = Buffer {
-                buffer: raw_buffer,
                 size: create_info.size,
-                _properties: properties,
+                buffer: raw_buffer,
+                _properties: props,
                 _usage: usage,
             };
 
-            let (handle, _) = self.storage.insert(ty);
-
-            match ty {
-                BufferType::DeviceAccessible => {
-                    self.local_buffers.insert(handle.id());
-                }
-                BufferType::HostAccessible => {
-                    self.host_visible_buffers.insert(handle.id());
-                }
-                BufferType::UnAccessible => {
-                    self.other_buffers.insert(handle.id());
-                }
-            }
-
-            self.buffers.insert(handle.id(), buffer);
+            let handle = self.buffers.insert(buffer);
+            self.cpu_visible.insert(handle.0);
 
             results.push(Ok(handle));
         }
+
+        results
+    }
+
+    pub(crate) fn cpu_visible_upload<'a, I, T>(
+        &self,
+        device: &DeviceContext,
+        uploads: I,
+    ) -> SmallVec<[Result<()>; 16]>
+    where
+        T: 'a,
+        I: IntoIterator,
+        I::Item: std::borrow::Borrow<(BufferHandle, BufferUploadInfo<'a, T>)>,
+    {
+        let mut results = SmallVec::new();
+
+        for upload in uploads.into_iter() {
+            let (buffer, info) = upload.borrow();
+
+            if !self.cpu_visible.contains(&buffer.0) {
+                results.push(Err(BufferError::HandleInvalid));
+                continue;
+            }
+
+            let buffer = match self.raw(*buffer) {
+                Some(buf) => buf,
+                None => {
+                    results.push(Err(BufferError::HandleInvalid));
+                    continue;
+                }
+            };
+
+            let u8_data = unsafe { to_u8_slice(info.data) };
+
+            let upload_fits = info.offset + u8_data.len() as u64 <= buffer.size;
+
+            let res = if upload_fits {
+                write_data_to_buffer(device, &buffer.buffer, info.offset, u8_data).into()
+            } else {
+                Err(BufferError::UploadOutOfBounds)
+            };
+
+            results.push(res);
+        }
+
+        results
+    }
+
+    pub(crate) fn cpu_visible_read<T: Sized>(
+        &self,
+        device: &DeviceContext,
+        buffer: BufferHandle,
+        out: &mut [T],
+    ) -> Option<()> {
+        if !self.cpu_visible.contains(&buffer.0) {
+            return None;
+        }
+
+        let buffer = self.buffers.get(buffer)?;
+
+        read_data_from_buffer(device, &buffer.buffer, 0, unsafe { to_u8_mut_slice(out) }).ok()?;
+
+        Some(())
+    }
+
+    pub(crate) fn device_local_create<I, U>(
+        &mut self,
+        device: &DeviceContext,
+        create_infos: I,
+    ) -> SmallVec<[Result<BufferHandle>; 16]>
+    where
+        I: IntoIterator,
+        I::Item: std::borrow::Borrow<DeviceLocalCreateInfo<U>>,
+        U: Clone,
+        U: Into<gfx::buffer::Usage>,
+    {
+        use gfx::memory::Properties;
+
+        let mut results = SmallVec::new();
+
+        let mut allocator = device.allocator();
+
+        for create_info in create_infos.into_iter() {
+            let create_info = create_info.borrow();
+
+            let ty = match create_info.is_transient {
+                true => gfxm::Type::ShortLived,
+                false => gfxm::Type::General,
+            };
+
+            let props = Properties::DEVICE_LOCAL;
+            let usage = create_info.usage.clone().into();
+
+            let raw_buffer =
+                match allocator.create_buffer(&device.device, (ty, props), create_info.size, usage)
+                {
+                    Ok(buf) => buf,
+                    Err(err) => {
+                        results.push(Err(err.into()));
+                        continue;
+                    }
+                };
+
+            let buffer = Buffer {
+                size: create_info.size,
+                buffer: raw_buffer,
+                _properties: props,
+                _usage: usage,
+            };
+
+            let handle = self.buffers.insert(buffer);
+            self.device_local.insert(handle.0);
+
+            results.push(Ok(handle));
+        }
+
+        results
+    }
+
+    pub(crate) fn device_local_upload<'a, I, T>(
+        &self,
+        device: &DeviceContext,
+        sem_pool: &SemaphorePool,
+        sem_list: &mut SemaphoreList,
+        cmd_pool: &mut CommandPool<gfx::Transfer>,
+        res_list: &mut ResourceList,
+        uploads: I,
+    ) -> SmallVec<[Result<()>; 16]>
+    where
+        T: 'a,
+        I: IntoIterator,
+        I::Item: std::borrow::Borrow<(BufferHandle, BufferUploadInfo<'a, T>)>,
+        I::Item: Clone,
+    {
+        use gfx::buffer::Usage;
+        use gfx::memory::Properties;
+
+        let mut results = SmallVec::new();
+
+        let mut staging_buffers = SmallVec::<[_; 16]>::new();
+
+        let mut transfers = SmallVec::<[_; 16]>::new();
+
+        let mut alloc = device.allocator();
+        for upload in uploads.into_iter() {
+            let (buffer, info) = upload.borrow();
+
+            if !self.device_local.contains(&buffer.0) {
+                results.push(Err(BufferError::HandleInvalid));
+                continue;
+            }
+
+            let buffer = match self.raw(*buffer) {
+                None => {
+                    results.push(Err(BufferError::HandleInvalid));
+                    continue;
+                }
+                Some(buf) => buf,
+            };
+
+            let u8_slice = unsafe { to_u8_slice(info.data) };
+
+            let upload_fits = info.offset + u8_slice.len() as u64 <= buffer.size;
+
+            if !upload_fits {
+                results.push(Err(BufferError::UploadOutOfBounds));
+                continue;
+            }
+
+            let staging_res = alloc.create_buffer(
+                &device.device,
+                (
+                    gfxm::Type::ShortLived,
+                    Properties::CPU_VISIBLE | Properties::COHERENT,
+                ),
+                u8_slice.len() as u64,
+                Usage::TRANSFER_SRC | Usage::TRANSFER_DST,
+            );
+
+            let staging_buffer = match staging_res {
+                Err(err) => {
+                    results.push(Err(err.into()));
+                    continue;
+                }
+                Ok(buffer) => buffer,
+            };
+
+            // write to staging buffer
+
+            match write_data_to_buffer(device, &staging_buffer, 0, u8_slice) {
+                Err(err) => {
+                    results.push(Err(err.into()));
+                    continue;
+                }
+                Ok(_) => {}
+            };
+
+            staging_buffers.push(staging_buffer);
+
+            transfers.push((upload, u8_slice));
+        }
+
+        crate::transfer::copy_buffers(
+            device,
+            sem_pool,
+            sem_list,
+            cmd_pool,
+            transfers.as_slice().iter().zip(staging_buffers.iter()).map(
+                |((upload, u8_slice), staging_buf)| {
+                    let (buf, info) = upload.borrow();
+                    let buf = self.raw(*buf).unwrap();
+
+                    crate::transfer::BufferTransfer {
+                        src: staging_buf,
+                        dst: &buf.buffer,
+                        offset: info.offset,
+                        data: *u8_slice,
+                    }
+                },
+            ),
+        );
+
+        staging_buffers.into_iter().for_each(|buf| {
+            res_list.queue_buffer(buf);
+        });
 
         results
     }
@@ -257,217 +457,14 @@ impl BufferStorage {
     {
         for handle in buffers.into_iter() {
             let handle = *handle.borrow();
-            let id = handle.id();
-            let buffer = self.buffers.remove(&id).unwrap();
+            let buffer = match self.buffers.remove(handle) {
+                Some(buf) => buf,
+                None => continue,
+            };
+            self.device_local.remove(&handle.0);
+            self.cpu_visible.remove(&handle.0);
             res_list.queue_buffer(buffer.buffer);
         }
-    }
-
-    pub(crate) fn raw(&self, buffer: BufferHandle) -> Option<&BufferTypeInternal> {
-        self.storage
-            .get(buffer)
-            .map(|_buf| &self.buffers[&buffer.id()].buffer)
-    }
-
-    pub(crate) fn upload_data<T>(
-        &mut self,
-        device: &DeviceContext,
-        sem_pool: &SemaphorePool,
-        sem_list: &mut SemaphoreList,
-        cmd_pool: &mut CommandPool<gfx::Transfer>,
-        res_list: &mut ResourceList,
-        transfer: &TransferContext,
-        data: &[(BufferHandle, BufferUploadInfo<T>)],
-    ) -> SmallVec<[Result<()>; 16]> {
-        let mut results = smallvec![Ok(()); data.len()];
-
-        // sort for linear access pattern
-        let mut data: SmallVec<[_; 16]> = data.iter().enumerate().collect();
-        data.as_mut_slice()
-            .sort_by_key(|(_, (handle, _))| handle.id());
-
-        // categorize buffers
-        let (cpu_accessible, dev_local, other) = {
-            let mut cpu_accessible = SmallVec::<[_; 16]>::new();
-            let mut dev_local = SmallVec::<[_; 16]>::new();
-            let mut other = SmallVec::<[_; 16]>::new();
-
-            for (idx, (handle, data)) in data {
-                let handle = *handle;
-                if !self.storage.is_alive(handle) {
-                    results[idx] = Err(BufferError::HandleInvalid);
-                    continue;
-                }
-
-                let ty = self.storage[handle];
-                match ty {
-                    BufferType::HostAccessible => {
-                        cpu_accessible.push((idx, handle, data));
-                    }
-                    BufferType::DeviceAccessible => {
-                        dev_local.push((idx, handle, data));
-                    }
-                    BufferType::UnAccessible => {
-                        other.push((idx, handle, data));
-                    }
-                }
-            }
-
-            (cpu_accessible, dev_local, other)
-        };
-
-        // Can't write to those...
-        for (idx, _, _) in other {
-            results[idx] = Err(BufferError::CantWriteToBuffer);
-        }
-
-        // Simple memory-mapped writing is enough.
-        for (idx, handle, data) in cpu_accessible {
-            let buffer = self.buffers.get(&handle.id()).unwrap();
-
-            let upload_fits = data.offset + data.data.len() as u64 <= buffer.size;
-
-            let result = if upload_fits {
-                unsafe {
-                    write_data_to_buffer(
-                        device,
-                        &buffer.buffer,
-                        data.offset,
-                        to_u8_slice(data.data),
-                    )
-                    .into()
-                }
-            } else {
-                Err(BufferError::UploadOutOfBounds)
-            };
-
-            results[idx] = result;
-        }
-
-        //
-        // DEALING WITH DEVICE LOCAL STUFF HERE.
-        //
-
-        let mut allocator = device.allocator();
-        let staging_data = {
-            dev_local
-                .as_slice()
-                .iter()
-                .map(|(idx, handle, data)| {
-                    let data_slice = unsafe { to_u8_slice(data.data) };
-
-                    let buffer = self.buffers.get(&handle.id()).unwrap();
-
-                    let upload_fits = data.offset + data_slice.len() as u64 <= buffer.size;
-
-                    if !upload_fits {
-                        (*idx, None)
-                    } else {
-                        (*idx, Some((data, buffer)))
-                    }
-                })
-                .filter_map(|(idx, res)| {
-                    let (data, buffer) = match res {
-                        None => {
-                            results[idx] = Err(BufferError::UploadOutOfBounds);
-                            return None;
-                        }
-                        Some((data, buffer)) => (data, buffer),
-                    };
-
-                    let data_slice = unsafe { to_u8_slice(data.data) };
-
-                    use gfx::buffer::Usage;
-                    use gfx::memory::Properties;
-
-                    let result = allocator.create_buffer(
-                        &device.device,
-                        (
-                            gfxm::Type::ShortLived,
-                            Properties::CPU_VISIBLE | Properties::COHERENT,
-                        ),
-                        data_slice.len() as u64,
-                        Usage::TRANSFER_SRC | Usage::TRANSFER_DST,
-                    );
-
-                    match result {
-                        Err(e) => {
-                            results[idx] = Err(e.into());
-                            None
-                        }
-                        Ok(staging) => Some((idx, data, buffer, staging)),
-                    }
-                })
-                .collect::<SmallVec<[_; 16]>>()
-        };
-
-        // do copying and writing
-        {
-            let buffer_transfers = staging_data
-                .as_slice()
-                .iter()
-                .filter_map(|(idx, data, buffer, staging)| {
-                    let upload_sice = unsafe { to_u8_slice(data.data) };
-
-                    match write_data_to_buffer(device, staging, 0, upload_sice) {
-                        Err(e) => {
-                            results[*idx] = Err(e.into());
-                            None
-                        }
-                        Ok(()) => Some((data, buffer, staging)),
-                    }
-                })
-                .map(|(data, buffer, staging)| {
-                    use crate::transfer::BufferTransfer;
-
-                    let upload_sice = unsafe { to_u8_slice(data.data) };
-
-                    BufferTransfer {
-                        src: &staging,
-                        dst: &buffer.buffer,
-                        offset: data.offset,
-                        data: upload_sice,
-                    }
-                })
-                .collect::<SmallVec<[_; 16]>>();
-
-            transfer.copy_buffers(
-                device,
-                sem_pool,
-                sem_list,
-                cmd_pool,
-                buffer_transfers.as_slice(),
-            );
-        }
-
-        staging_data.into_iter().for_each(|(_, _, _, staging)| {
-            res_list.queue_buffer(staging);
-        });
-
-        results
-    }
-
-    pub(crate) fn read_data<T: Sized>(
-        &self,
-        device: &DeviceContext,
-        _sem_pool: &SemaphorePool,
-        _sem_list: &mut SemaphoreList,
-        _cmd_pool: &mut CommandPool<gfx::Transfer>,
-        _res_list: &mut ResourceList,
-        _transfer: &TransferContext,
-        buffer: BufferHandle,
-        out: &mut [T],
-    ) -> Option<()> {
-        let ty = self.storage.get(buffer)?;
-        if *ty != BufferType::HostAccessible {
-            unimplemented!();
-        }
-
-        let raw = self.raw(buffer)?;
-
-        read_data_from_buffer(device, raw, 0, unsafe { to_u8_mut_slice(out) }).ok()?;
-
-        Some(())
     }
 }
 
@@ -541,21 +538,4 @@ fn read_data_from_buffer(
     device.device.release_mapping_reader(reader);
 
     Ok(())
-}
-
-fn buffer_type(properties: gfx::memory::Properties, usage: gfx::buffer::Usage) -> BufferType {
-    use gfx::buffer::Usage;
-    use gfx::memory::Properties;
-
-    let is_device_accessible =
-        properties.contains(Properties::DEVICE_LOCAL) && usage.contains(Usage::TRANSFER_DST);
-    let is_cpu_accessible = properties.contains(Properties::CPU_VISIBLE | Properties::COHERENT);
-
-    if is_device_accessible {
-        BufferType::DeviceAccessible
-    } else if is_cpu_accessible {
-        BufferType::HostAccessible
-    } else {
-        BufferType::UnAccessible
-    }
 }

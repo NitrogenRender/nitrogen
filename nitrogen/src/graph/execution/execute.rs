@@ -142,7 +142,7 @@ pub(crate) fn execute(
                                                 array_offset: 0,
                                                 descriptors: std::iter::once(
                                                     gfx::pso::Descriptor::Buffer(
-                                                        buffer.raw(),
+                                                        buffer.buffer.raw(),
                                                         None..None,
                                                     ),
                                                 ),
