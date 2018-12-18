@@ -24,6 +24,7 @@ impl Store {
     /// # Examples
     ///
     /// ```
+    /// # use nitrogen::graph::Store;
     /// let store = Store::new();
     /// ```
     pub fn new() -> Self {
@@ -37,6 +38,7 @@ impl Store {
     /// # Examples
     ///
     /// ```
+    /// # use nitrogen::graph::Store;
     /// let mut store = Store::new();
     /// store.insert::<u8>(12);
     /// ```
@@ -54,6 +56,7 @@ impl Store {
     /// # Examples
     ///
     /// ```
+    /// # use nitrogen::graph::Store;
     /// let mut store = Store::new();
     /// store.insert::<usize>(1180);
     ///
@@ -73,6 +76,7 @@ impl Store {
     /// # Examples
     ///
     /// ```
+    /// # use nitrogen::graph::Store;
     /// let mut store = Store::new();
     /// store.insert::<u8>(0);
     ///
@@ -91,6 +95,7 @@ impl Store {
     /// # Examples
     ///
     /// ```
+    /// # use nitrogen::graph::Store;
     /// let mut store = Store::new();
     /// store.insert::<bool>(true);
     ///
@@ -118,6 +123,7 @@ impl Store {
     /// # Examples
     ///
     /// ```
+    /// # use nitrogen::graph::Store;
     /// let mut store = Store::new();
     /// store.entry::<i16>().or_insert(15);
     ///
@@ -164,6 +170,7 @@ impl<'a, T: Any + Send> Entry<'a, T> {
     /// # Examples
     ///
     /// ```
+    /// # use nitrogen::graph::Store;
     /// let mut store = Store::new();
     ///
     /// // The callback is only run and the result inserted when no element exists yet
@@ -188,6 +195,7 @@ impl<'a, T: Any + Send> Entry<'a, T> {
     /// # Examples
     ///
     /// ```
+    /// # use nitrogen::graph::Store;
     /// let mut store = Store::new();
     /// store.entry::<bool>().or_insert(false);
     /// assert_eq!(store.get::<bool>(), Some(&false));
@@ -206,6 +214,7 @@ impl<'a, T: Any + Send> Entry<'a, T> {
     /// # Examples
     ///
     /// ```
+    /// # use nitrogen::graph::Store;
     /// let mut store = Store::new();
     /// store.entry::<u8>().or_insert(12);
     ///
