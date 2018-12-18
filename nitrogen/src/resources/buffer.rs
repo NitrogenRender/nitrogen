@@ -7,7 +7,6 @@ use failure_derive::Fail;
 
 use std;
 use std::borrow::Borrow;
-use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
 use crate::device::DeviceContext;
@@ -17,7 +16,6 @@ use crate::util::storage::{Handle, Storage};
 use gfxm::Factory;
 use gfxm::SmartAllocator;
 
-use smallvec::smallvec;
 use smallvec::SmallVec;
 
 use crate::resources::semaphore_pool::SemaphoreList;

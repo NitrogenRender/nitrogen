@@ -79,7 +79,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let vertex_buffer = {
         use crate::buffer::BufferUsage;
-        use crate::resources::MemoryProperties;
 
         create_buffer(
             &mut ctx,
@@ -98,7 +97,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let instance_buffer = {
         use crate::buffer::BufferUsage;
-        use crate::resources::MemoryProperties;
 
         create_buffer(
             &mut ctx,
@@ -110,7 +108,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let velocity_buffer = {
         use crate::buffer::BufferUsage;
-        use crate::resources::MemoryProperties;
 
         create_buffer(
             &mut ctx,

@@ -7,11 +7,10 @@ use crate::graph::GraphResourcesResolved;
 
 use gfx::buffer::Usage as BUsage;
 use gfx::image::Usage as IUsage;
-use gfx::memory::Properties;
 
 use crate::graph::{
-    BufferReadType, BufferStorageType, BufferWriteType, ImageReadType, ImageWriteType,
-    ResourceCreateInfo, ResourceReadType, ResourceWriteType,
+    BufferReadType, BufferWriteType, ImageReadType, ImageWriteType, ResourceCreateInfo,
+    ResourceReadType, ResourceWriteType,
 };
 
 pub(crate) fn derive_resource_usage(
@@ -53,7 +52,7 @@ fn derive_batch(
         let info = &resolved.infos[create];
 
         match info {
-            ResourceCreateInfo::Buffer(buf) => {
+            ResourceCreateInfo::Buffer(_buf) => {
                 let usage = BUsage::empty();
 
                 usages.buffer.insert(*create, usage);
