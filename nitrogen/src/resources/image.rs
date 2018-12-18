@@ -213,7 +213,7 @@ impl From<ViewKind> for gfx::image::ViewKind {
     }
 }
 
-pub type ImageType = <SmartAllocator<back::Backend> as Factory<back::Backend>>::Image;
+pub(crate) type ImageType = <SmartAllocator<back::Backend> as Factory<back::Backend>>::Image;
 type ImageView = <back::Backend as gfx::Backend>::ImageView;
 
 pub struct Image {

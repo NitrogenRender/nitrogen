@@ -7,10 +7,10 @@ pub use super::*;
 pub mod buffer;
 pub mod image;
 pub mod material;
-pub mod pipeline;
-pub mod render_pass;
+pub(crate) mod pipeline;
+pub(crate) mod render_pass;
 pub mod sampler;
-pub mod semaphore_pool;
+pub(crate) mod semaphore_pool;
 pub mod vertex_attrib;
 
 use bitflags::bitflags;

@@ -52,18 +52,18 @@ extern crate gfx_memory as gfxm;
 
 use smallvec::SmallVec;
 
-pub mod types;
+pub(crate) mod types;
 
 pub mod display;
 use crate::display::Display;
 
-pub mod device;
+pub(crate) mod device;
 use crate::device::DeviceContext;
 
 pub mod util;
 pub use crate::util::storage;
 pub use crate::util::submit_group;
-pub use crate::util::transfer;
+pub(crate) use crate::util::transfer;
 
 pub use crate::util::CowString;
 
@@ -73,8 +73,8 @@ pub mod resources;
 pub use crate::resources::buffer;
 pub use crate::resources::image;
 pub use crate::resources::material;
-pub use crate::resources::pipeline;
-pub use crate::resources::render_pass;
+pub(crate) use crate::resources::pipeline;
+pub(crate) use crate::resources::render_pass;
 pub use crate::resources::sampler;
 pub use crate::resources::vertex_attrib;
 

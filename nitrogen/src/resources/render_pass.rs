@@ -11,13 +11,6 @@ use smallvec::SmallVec;
 use crate::device::DeviceContext;
 use crate::submit_group::ResourceList;
 
-#[derive(Clone, Copy, Debug)]
-pub enum BlendMode {
-    Alpha,
-    Add,
-    Mul,
-}
-
 pub enum RenderPassError {
     OutOfMemory(gfx::device::OutOfMemory),
 }

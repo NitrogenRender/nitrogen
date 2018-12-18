@@ -32,9 +32,9 @@ pub use self::builder::*;
 pub mod command;
 pub use self::command::*;
 
-pub mod compilation;
-pub use self::compilation::*;
-pub mod execution;
+pub(crate) mod compilation;
+pub(crate) use self::compilation::*;
+pub(crate) mod execution;
 pub(crate) use self::execution::*;
 
 pub mod store;

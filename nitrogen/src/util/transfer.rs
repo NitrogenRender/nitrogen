@@ -13,19 +13,19 @@ use crate::resources::semaphore_pool::SemaphoreList;
 use crate::resources::semaphore_pool::SemaphorePool;
 use crate::types::CommandPool;
 
-pub struct BufferTransfer<'a> {
-    pub src: &'a BufferTypeInternal,
-    pub dst: &'a BufferTypeInternal,
-    pub offset: u64,
-    pub data: &'a [u8],
+pub(crate) struct BufferTransfer<'a> {
+    pub(crate) src: &'a BufferTypeInternal,
+    pub(crate) dst: &'a BufferTypeInternal,
+    pub(crate) offset: u64,
+    pub(crate) data: &'a [u8],
 }
 
-pub struct BufferImageTransfer<'a> {
-    pub src: &'a BufferTypeInternal,
-    pub dst: &'a ImageType,
+pub(crate) struct BufferImageTransfer<'a> {
+    pub(crate) src: &'a BufferTypeInternal,
+    pub(crate) dst: &'a ImageType,
 
-    pub subresource_range: gfx::image::SubresourceRange,
-    pub copy_information: gfx::command::BufferImageCopy,
+    pub(crate) subresource_range: gfx::image::SubresourceRange,
+    pub(crate) copy_information: gfx::command::BufferImageCopy,
 }
 
 pub(crate) struct TransferContext;

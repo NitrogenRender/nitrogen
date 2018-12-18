@@ -458,8 +458,8 @@ where
     let pass_info = nitrogen::graph::GraphicsPassInfo {
         vertex_attrib: vert,
         shaders,
-        primitive: nitrogen::pipeline::Primitive::TriangleStrip,
-        blend_modes: vec![nitrogen::render_pass::BlendMode::Alpha],
+        primitive: nitrogen::graph::Primitive::TriangleStrip,
+        blend_modes: vec![nitrogen::graph::BlendMode::Alpha],
         materials,
         push_constants: vec![],
     };

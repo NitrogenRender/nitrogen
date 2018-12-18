@@ -27,7 +27,8 @@ use crate::submit_group::ResourceList;
 use crate::types::CommandPool;
 
 type BufferId = usize;
-pub type BufferTypeInternal = <SmartAllocator<back::Backend> as Factory<back::Backend>>::Buffer;
+pub(crate) type BufferTypeInternal =
+    <SmartAllocator<back::Backend> as Factory<back::Backend>>::Buffer;
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum BufferType {

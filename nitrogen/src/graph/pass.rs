@@ -6,8 +6,6 @@ use crate::graph::builder;
 use crate::graph::command;
 
 use crate::material::MaterialHandle;
-use crate::pipeline::Primitive;
-use crate::render_pass::BlendMode;
 use crate::vertex_attrib::VertexAttribHandle;
 
 use crate::util::CowString;
@@ -16,6 +14,34 @@ use std::borrow::Cow;
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, Debug)]
 pub struct PassId(pub(crate) usize);
+
+#[derive(Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Hash, Debug)]
+pub enum Primitive {
+    PointList,
+    LineList,
+    LineStrip,
+    TriangleList,
+    TriangleStrip,
+}
+
+impl From<Primitive> for gfx::Primitive {
+    fn from(p: Primitive) -> Self {
+        match p {
+            Primitive::PointList => gfx::Primitive::PointList,
+            Primitive::LineList => gfx::Primitive::LineList,
+            Primitive::LineStrip => gfx::Primitive::LineStrip,
+            Primitive::TriangleList => gfx::Primitive::TriangleList,
+            Primitive::TriangleStrip => gfx::Primitive::TriangleStrip,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum BlendMode {
+    Alpha,
+    Add,
+    Mul,
+}
 
 pub struct GraphicsPassInfo {
     pub vertex_attrib: Option<VertexAttribHandle>,

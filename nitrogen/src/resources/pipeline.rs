@@ -5,7 +5,8 @@
 use crate::device::DeviceContext;
 use crate::storage::{Handle, Storage};
 
-use crate::render_pass::{BlendMode, RenderPassHandle, RenderPassStorage};
+use crate::graph::BlendMode;
+use crate::render_pass::{RenderPassHandle, RenderPassStorage};
 use crate::vertex_attrib::{VertexAttribHandle, VertexAttribStorage};
 
 use smallvec::SmallVec;
@@ -51,12 +52,12 @@ impl From<gfx::device::OutOfMemory> for PipelineError {
     }
 }
 
-pub type Result<T> = std::result::Result<T, PipelineError>;
+pub(crate) type Result<T> = std::result::Result<T, PipelineError>;
 
-pub type PipelineHandle = Handle<Pipeline>;
+pub(crate) type PipelineHandle = Handle<Pipeline>;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum Pipeline {
+pub(crate) enum Pipeline {
     Graphics,
     Compute,
 }
@@ -72,54 +73,33 @@ pub(crate) struct ComputePipeline {
 }
 
 #[derive(Clone)]
-pub struct ShaderInfo<'a> {
-    pub content: &'a [u8],
-    pub entry: &'a str,
-}
-
-#[derive(Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Hash, Debug)]
-pub enum Primitive {
-    PointList,
-    LineList,
-    LineStrip,
-    TriangleList,
-    TriangleStrip,
-}
-
-impl From<Primitive> for gfx::Primitive {
-    fn from(p: Primitive) -> Self {
-        match p {
-            Primitive::PointList => gfx::Primitive::PointList,
-            Primitive::LineList => gfx::Primitive::LineList,
-            Primitive::LineStrip => gfx::Primitive::LineStrip,
-            Primitive::TriangleList => gfx::Primitive::TriangleList,
-            Primitive::TriangleStrip => gfx::Primitive::TriangleStrip,
-        }
-    }
+pub(crate) struct ShaderInfo<'a> {
+    pub(crate) content: &'a [u8],
+    pub(crate) entry: &'a str,
 }
 
 #[derive(Clone)]
-pub struct GraphicsPipelineCreateInfo<'a> {
-    pub primitive: Primitive,
+pub(crate) struct GraphicsPipelineCreateInfo<'a> {
+    pub(crate) primitive: crate::graph::Primitive,
 
-    pub vertex_attribs: Option<VertexAttribHandle>,
+    pub(crate) vertex_attribs: Option<VertexAttribHandle>,
 
-    pub descriptor_set_layout: &'a [&'a types::DescriptorSetLayout],
+    pub(crate) descriptor_set_layout: &'a [&'a types::DescriptorSetLayout],
     // TODO shader stage flags
-    pub push_constants: &'a [std::ops::Range<u32>],
-    pub blend_modes: &'a [BlendMode],
+    pub(crate) push_constants: &'a [std::ops::Range<u32>],
+    pub(crate) blend_modes: &'a [BlendMode],
 
-    pub shader_vertex: ShaderInfo<'a>,
-    pub shader_fragment: Option<ShaderInfo<'a>>,
-    pub shader_geometry: Option<ShaderInfo<'a>>,
+    pub(crate) shader_vertex: ShaderInfo<'a>,
+    pub(crate) shader_fragment: Option<ShaderInfo<'a>>,
+    pub(crate) shader_geometry: Option<ShaderInfo<'a>>,
 }
 
 #[derive(Clone)]
-pub struct ComputePipelineCreateInfo<'a> {
-    pub descriptor_set_layout: &'a [&'a types::DescriptorSetLayout],
-    pub shader: ShaderInfo<'a>,
+pub(crate) struct ComputePipelineCreateInfo<'a> {
+    pub(crate) descriptor_set_layout: &'a [&'a types::DescriptorSetLayout],
+    pub(crate) shader: ShaderInfo<'a>,
     // TODO shader stage flags
-    pub push_constants: &'a [std::ops::Range<u32>],
+    pub(crate) push_constants: &'a [std::ops::Range<u32>],
 }
 
 pub(crate) struct PipelineStorage {
