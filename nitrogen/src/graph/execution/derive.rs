@@ -159,6 +159,9 @@ fn derive_pass(
                     ImageReadType::Storage => {
                         usage |= IUsage::STORAGE;
                     }
+                    ImageReadType::DepthStencil => {
+                        usage |= IUsage::DEPTH_STENCIL_ATTACHMENT;
+                    }
                 }
 
                 usages.image.insert(origin, (usage, format));

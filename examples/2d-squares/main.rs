@@ -324,6 +324,8 @@ fn create_graph(
     {
         let info = graph::GraphicsPassInfo {
             vertex_attrib: Some(vertex_attrib),
+            depth_mode: None,
+            stencil_mode: None,
             shaders: graph::Shaders {
                 vertex: graph::ShaderInfo {
                     content: Cow::Borrowed(include_bytes!(concat!(
@@ -364,7 +366,7 @@ fn create_graph(
                             height: 1.0,
                         },
                         format: image::ImageFormat::RgbaUnorm,
-                        clear_color: [0.1, 0.1, 0.2, 1.0],
+                        clear: graph::ImageClearValue::Color([0.1, 0.1, 0.2, 1.0]),
                     },
                 );
 

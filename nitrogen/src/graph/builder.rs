@@ -69,9 +69,12 @@ impl GraphBuilder {
         self.resource_writes
             .push((name.into(), W::Image(ImageWriteType::Color), binding));
     }
-    pub fn image_write_depth_stencil<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
-        self.resource_writes
-            .push((name.into(), W::Image(ImageWriteType::DepthStencil), binding));
+    pub fn image_write_depth_stencil<T: Into<ResourceName>>(&mut self, name: T) {
+        self.resource_writes.push((
+            name.into(),
+            W::Image(ImageWriteType::DepthStencil),
+            u8::max_value(),
+        ));
     }
     pub fn image_write_storage<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
         self.resource_writes
@@ -91,6 +94,16 @@ impl GraphBuilder {
             Some(sampler_binding),
         ));
     }
+
+    pub fn image_read_depth_stencil<T: Into<ResourceName>>(&mut self, name: T) {
+        self.resource_reads.push((
+            name.into(),
+            R::Image(ImageReadType::DepthStencil),
+            u8::max_value(),
+            None,
+        ));
+    }
+
     pub fn image_read_storage<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
         self.resource_reads
             .push((name.into(), R::Image(ImageReadType::Storage), binding, None));
@@ -181,11 +194,20 @@ impl GraphBuilder {
     }
 }
 
+pub type DepthValue = f32;
+pub type StencilValue = u32;
+
+#[derive(Debug, Clone, Copy)]
+pub enum ImageClearValue {
+    Color([f32; 4]),
+    DepthStencil(DepthValue, StencilValue),
+}
+
 #[derive(Debug, Clone)]
 pub struct ImageCreateInfo {
     pub format: image::ImageFormat,
     pub size_mode: image::ImageSizeMode,
-    pub clear_color: [f32; 4],
+    pub clear: ImageClearValue,
 }
 
 // impl to ignore clear color.
@@ -220,6 +242,7 @@ pub enum ResourceReadType {
 pub enum ImageReadType {
     Color,
     Storage,
+    DepthStencil,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]

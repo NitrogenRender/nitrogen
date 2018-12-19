@@ -43,8 +43,46 @@ pub enum BlendMode {
     Mul,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct DepthMode {
+    pub func: Comparison,
+    pub write: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Comparison {
+    Never,
+    Less,
+    Equal,
+    LessEqual,
+    Greater,
+    NotEqual,
+    GreaterEqual,
+    Always,
+}
+
+impl From<Comparison> for gfx::pso::Comparison {
+    fn from(cmp: Comparison) -> Self {
+        use self::Comparison as C;
+        use gfx::pso::Comparison as GC;
+        match cmp {
+            C::Never => GC::Never,
+            C::Less => GC::Less,
+            C::Equal => GC::Equal,
+            C::LessEqual => GC::LessEqual,
+            C::Greater => GC::Greater,
+            C::NotEqual => GC::NotEqual,
+            C::GreaterEqual => GC::GreaterEqual,
+            C::Always => GC::Always,
+        }
+    }
+}
+
 pub struct GraphicsPassInfo {
     pub vertex_attrib: Option<VertexAttribHandle>,
+    pub depth_mode: Option<DepthMode>,
+    // TODO
+    pub stencil_mode: Option<()>,
     pub shaders: Shaders,
     pub primitive: Primitive,
     pub blend_modes: Vec<BlendMode>,

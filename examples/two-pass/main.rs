@@ -354,7 +354,7 @@ fn setup_graphs(
                 width: 1.0,
                 height: 1.0,
             },
-            clear_color: [0.0, 0.0, 0.0, 1.0],
+            clear: graph::ImageClearValue::Color([0.0, 0.0, 0.0, 1.0]),
         }
     }
 
@@ -460,6 +460,8 @@ where
 {
     let pass_info = nitrogen::graph::GraphicsPassInfo {
         vertex_attrib: vert,
+        depth_mode: None,
+        stencil_mode: None,
         shaders,
         primitive: nitrogen::graph::Primitive::TriangleStrip,
         blend_modes: vec![nitrogen::graph::BlendMode::Alpha],

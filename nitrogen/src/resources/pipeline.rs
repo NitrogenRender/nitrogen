@@ -5,7 +5,7 @@
 use crate::device::DeviceContext;
 use crate::storage::{Handle, Storage};
 
-use crate::graph::BlendMode;
+use crate::graph::{BlendMode, DepthMode};
 use crate::render_pass::{RenderPassHandle, RenderPassStorage};
 use crate::vertex_attrib::{VertexAttribHandle, VertexAttribStorage};
 
@@ -88,7 +88,8 @@ pub(crate) struct GraphicsPipelineCreateInfo<'a> {
     // TODO shader stage flags
     pub(crate) push_constants: &'a [std::ops::Range<u32>],
     pub(crate) blend_modes: &'a [BlendMode],
-
+    pub(crate) depth_mode: Option<DepthMode>,
+    // TODO stencil mode
     pub(crate) shader_vertex: ShaderInfo<'a>,
     pub(crate) shader_fragment: Option<ShaderInfo<'a>>,
     pub(crate) shader_geometry: Option<ShaderInfo<'a>>,
@@ -245,7 +246,6 @@ impl PipelineStorage {
             let mut desc =
                 pso::GraphicsPipelineDesc::new(shaders, primitive, rasterizer, &layout, subpass);
 
-            // TODO add attributes
             if let Some(attrib) = &create_info.vertex_attribs {
                 if let Some(data) = vertex_attrib_storage.raw(*attrib) {
                     for buffer in &data.buffers {
@@ -273,6 +273,22 @@ impl PipelineStorage {
                         },
                     )
                 }));
+
+            // depth and stencil
+            {
+                // TODO implement stencil
+                desc.depth_stencil.stencil = gfx::pso::StencilTest::default();
+
+                desc.depth_stencil.depth = if let Some(depth) = create_info.depth_mode {
+                    gfx::pso::DepthTest::On {
+                        fun: depth.func.into(),
+                        write: depth.write,
+                    }
+                } else {
+                    gfx::pso::DepthTest::Off
+                };
+                desc.depth_stencil.depth_bounds = false;
+            }
 
             device.device.create_graphics_pipeline(&desc, None)?
         };

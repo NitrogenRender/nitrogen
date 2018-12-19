@@ -31,3 +31,7 @@ path = "multi-target/main.rs"
 [[example]]
 name = "compute"
 path = "compute/main.rs"
+
+[[example]]
+name = "opaque-alpha"
+path = "opaque-alpha/main.rs"

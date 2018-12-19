@@ -354,7 +354,7 @@ fn setup_graphs(
                 width: 1.0,
                 height: 1.0,
             },
-            clear_color: [0.0, 0.0, 0.0, 1.0],
+            clear: graph::ImageClearValue::Color([0.0, 0.0, 0.0, 1.0]),
         }
     }
 
@@ -365,7 +365,7 @@ fn setup_graphs(
                 width: 1.0,
                 height: 1.0,
             },
-            clear_color: [0.0, 0.0, 0.0, 1.0],
+            clear: graph::ImageClearValue::Color([0.0, 0.0, 0.0, 1.0]),
         }
     }
 
@@ -410,6 +410,7 @@ fn setup_graphs(
             },
             vertex_attrib.clone(),
             vec![(1, material)],
+            3,
         );
 
         ntg.graph_add_graphics_pass(graph, "Split", info, pass_impl);
@@ -454,6 +455,7 @@ fn setup_graphs(
             },
             vertex_attrib,
             vec![],
+            1,
         );
 
         ntg.graph_add_graphics_pass(graph, "Read", info, pass_impl);
@@ -470,6 +472,7 @@ fn create_test_pass<FSetUp, FExec>(
     execute: FExec,
     vert: Option<nitrogen::vertex_attrib::VertexAttribHandle>,
     materials: Vec<(usize, nitrogen::material::MaterialHandle)>,
+    num_attachments: usize,
 ) -> (impl GraphicsPassImpl, graph::GraphicsPassInfo)
 where
     FSetUp: FnMut(&mut graph::GraphBuilder),
@@ -477,9 +480,11 @@ where
 {
     let pass_info = nitrogen::graph::GraphicsPassInfo {
         vertex_attrib: vert,
+        depth_mode: None,
+        stencil_mode: None,
         shaders,
         primitive: nitrogen::graph::Primitive::TriangleStrip,
-        blend_modes: vec![nitrogen::graph::BlendMode::Alpha; 3],
+        blend_modes: vec![nitrogen::graph::BlendMode::Alpha; num_attachments],
         materials,
         push_constants: vec![],
     };

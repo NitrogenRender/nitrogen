@@ -161,6 +161,24 @@ pub(crate) fn prepare_pass(
 
                         Some((&image.view, &image.dimension))
                     })
+                    // depth textures might be "read" from when using for testing without writing
+                    .chain(
+                        resolved.pass_reads[&pass]
+                            .iter()
+                            .filter(|(_, ty, _, _)| match ty {
+                                ResourceReadType::Image(ImageReadType::DepthStencil) => true,
+                                _ => false,
+                            })
+                            .filter_map(|(res_id, _, _, _)| {
+                                let res_id = resolved.moved_from(*res_id)?;
+
+                                let handle = res.images[&res_id];
+
+                                let image = storages.image.raw(handle)?;
+
+                                Some((&image.view, &image.dimension))
+                            }),
+                    )
                     .unzip()
             };
 
@@ -200,16 +218,22 @@ fn create_render_pass(
     resolved_graph: &GraphResourcesResolved,
     pass: PassId,
 ) -> Option<RenderPassHandle> {
-    let attachments = {
+    let mut has_depth_write = false;
+    let mut has_depth_read = false;
+
+    let mut attachments = {
         resolved_graph.pass_writes[&pass]
             .iter()
             // we are only interested in images that are written to as color or depth
             .filter(|(_, ty, _)| match ty {
                 ResourceWriteType::Image(ImageWriteType::Color) => true,
-                ResourceWriteType::Image(ImageWriteType::DepthStencil) => true,
+                ResourceWriteType::Image(ImageWriteType::DepthStencil) => {
+                    has_depth_write = true;
+                    true
+                }
                 _ => false,
             })
-            .map(|(res, _ty, _binding)| {
+            .map(|(res, _ty, binding)| {
                 let (origin, info) = resolved_graph.create_info(*res).unwrap();
 
                 let info = match info {
@@ -228,37 +252,108 @@ fn create_render_pass(
                 let initial_layout = if clear {
                     gfx::image::Layout::Undefined
                 } else {
-                    gfx::image::Layout::Preinitialized
+                    gfx::image::Layout::General
                 };
 
-                gfx::pass::Attachment {
-                    format: Some(info.format.into()),
-                    samples: 0,
-                    ops: gfx::pass::AttachmentOps {
+                let (ops, stencil) = {
+                    // applies to color AND depth
+                    let ops = gfx::pass::AttachmentOps {
                         load: load_op,
                         store: gfx::pass::AttachmentStoreOp::Store,
+                    };
+
+                    let stencil = gfx::pass::AttachmentOps::DONT_CARE;
+
+                    (ops, stencil)
+                };
+
+                (
+                    *binding,
+                    gfx::pass::Attachment {
+                        format: Some(info.format.into()),
+                        samples: 1,
+                        ops,
+                        stencil_ops: stencil,
+                        // TODO Better layout transitions
+                        layouts: initial_layout..gfx::image::Layout::General,
                     },
-                    // TODO stencil and depth
-                    stencil_ops: gfx::pass::AttachmentOps::DONT_CARE,
-                    // TODO depth/stencil
-                    // TODO Better layout transitions
-                    layouts: initial_layout..gfx::image::Layout::General,
-                }
+                )
             })
+            // we might be "reading" from depth, but we still have to mention it as an attachment
+            .chain(
+                resolved_graph.pass_reads[&pass]
+                    .iter()
+                    .filter(|(_, ty, _, _)| match ty {
+                        ResourceReadType::Image(ImageReadType::DepthStencil) => true,
+                        _ => false,
+                    })
+                    .map(|(res, _, _, _)| {
+                        has_depth_read = true;
+
+                        let (_origin, info) = resolved_graph.create_info(*res).unwrap();
+
+                        let info = match info {
+                            ResourceCreateInfo::Image(img) => img,
+                            _ => unreachable!(),
+                        };
+
+                        (
+                            u8::max_value(),
+                            gfx::pass::Attachment {
+                                format: Some(info.format.into()),
+                                samples: 1,
+                                ops: gfx::pass::AttachmentOps {
+                                    load: gfx::pass::AttachmentLoadOp::Load,
+                                    store: gfx::pass::AttachmentStoreOp::DontCare,
+                                },
+                                stencil_ops: gfx::pass::AttachmentOps::DONT_CARE,
+                                layouts: gfx::image::Layout::General..gfx::image::Layout::General,
+                            },
+                        )
+                    }),
+            )
             .collect::<SmallVec<[_; 16]>>()
     };
 
-    let color_attachments = attachments
+    let has_depth = has_depth_write || has_depth_read;
+
+    attachments
+        .as_mut_slice()
+        .sort_by_key(|(binding, _)| *binding);
+
+    let depth_binding = if has_depth {
+        // if depth is the only binding then we don't want to underflow :)
+        attachments.len().max(1) - 1
+    } else {
+        attachments.len()
+    };
+
+    if has_depth {
+        attachments[depth_binding].0 = depth_binding as _;
+    }
+
+    let mut attachments_desc = attachments
         .as_slice()
         .iter()
         .enumerate()
         .map(|(i, _)| (i, gfx::image::Layout::ColorAttachmentOptimal))
         .collect::<SmallVec<[_; 16]>>();
 
+    if has_depth {
+        attachments_desc[depth_binding].1 = gfx::image::Layout::DepthStencilAttachmentOptimal;
+    }
+
+    let color_desc = &attachments_desc[0..depth_binding];
+
+    let depth_stencil_desc = if has_depth {
+        Some(&attachments_desc[depth_binding])
+    } else {
+        None
+    };
+
     let subpass = gfx::pass::SubpassDesc {
-        colors: color_attachments.as_slice(),
-        // TODO OOOOOOOOOO
-        depth_stencil: None,
+        colors: color_desc,
+        depth_stencil: depth_stencil_desc,
         inputs: &[],
         resolves: &[],
         preserves: &[],
@@ -274,6 +369,11 @@ fn create_render_pass(
     };
 
     use crate::render_pass::RenderPassCreateInfo;
+
+    let attachments = attachments
+        .into_iter()
+        .map(|(_, data)| data)
+        .collect::<SmallVec<[_; 16]>>();
 
     let create_info = RenderPassCreateInfo {
         attachments: attachments.as_slice(),
@@ -385,6 +485,7 @@ fn create_pipeline_graphics(
         descriptor_set_layout: &layouts[..],
         push_constants: &info.push_constants[..],
         blend_modes: &info.blend_modes[..],
+        depth_mode: info.depth_mode,
     };
 
     let pipeline_handle = storages
@@ -425,6 +526,10 @@ fn create_resource(
 
             let format = img.format;
 
+            let is_depth_stencil = format.is_depth_stencil();
+
+            let num_mips = if is_depth_stencil { 0 } else { 1 };
+
             // any flags that will be needed
             let usages = &usages.image[&id];
 
@@ -433,7 +538,7 @@ fn create_resource(
                 dimension: dim,
                 num_layers: 1,
                 num_samples: 1,
-                num_mipmaps: 1,
+                num_mipmaps: num_mips,
                 format,
                 kind,
                 usage: usages.0.clone(),
@@ -536,6 +641,7 @@ fn create_pipeline_base<'a>(
             .iter()
             .filter(|(_id, _ty, _, _)| match _ty {
                 ResourceReadType::External => false,
+                ResourceReadType::Image(ImageReadType::DepthStencil) => false,
                 ResourceReadType::Image(_) => true,
                 ResourceReadType::Buffer(_) => true,
             });
@@ -601,6 +707,7 @@ fn create_pipeline_base<'a>(
                         ResourceReadType::Image(img) => match img {
                             ImageReadType::Color => gfx::pso::DescriptorType::SampledImage,
                             ImageReadType::Storage => gfx::pso::DescriptorType::StorageImage,
+                            ImageReadType::DepthStencil => unreachable!(),
                         },
                         ResourceReadType::Buffer(buf) => {
                             match buf {
@@ -635,6 +742,7 @@ fn create_pipeline_base<'a>(
                         ResourceReadType::Image(img) => match img {
                             ImageReadType::Color => gfx::pso::DescriptorType::SampledImage,
                             ImageReadType::Storage => gfx::pso::DescriptorType::StorageImage,
+                            ImageReadType::DepthStencil => unreachable!(),
                         },
                         ResourceReadType::Buffer(buf) => {
                             match buf {
