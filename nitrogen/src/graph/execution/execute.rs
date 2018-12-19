@@ -115,6 +115,10 @@ pub(crate) fn execute(
 
                                         res
                                     }
+                                    ImageReadType::DepthStencil => {
+                                        // this is a not a "real" read type
+                                        SmallVec::new()
+                                    }
                                 }
                             }
                             ResourceReadType::Buffer(_buf) => unimplemented!(),
@@ -181,6 +185,7 @@ pub(crate) fn execute(
                     let framebuffer = &framebuffer.0;
 
                     let viewport = gfx::pso::Viewport {
+                        // TODO depth boundaries
                         depth: 0.0..1.0,
                         rect: gfx::pso::Rect {
                             x: 0,
@@ -192,7 +197,8 @@ pub(crate) fn execute(
 
                     // clear values for image targets
                     // TODO handle depth and storage clears
-                    let mut clear_values = SmallVec::<[_; 16]>::new();
+                    let mut clear_colors = SmallVec::<[_; 16]>::new();
+                    let mut clear_depth = SmallVec::<[_; 16]>::new();
 
                     'clear_loop: for (id, ty, binding) in &resolved_graph.pass_writes[pass] {
                         if !batch.resource_create.contains(id) {
@@ -208,7 +214,15 @@ pub(crate) fn execute(
                                         ResourceCreateInfo::Image(info) => info,
                                         _ => unreachable!(),
                                     };
-                                    clear_values.push((binding, image_info.clear_color));
+                                    clear_colors.push((binding, image_info.clear));
+                                }
+                                ImageWriteType::DepthStencil => {
+                                    let info = &resolved_graph.infos[id];
+                                    let image_info = match info {
+                                        ResourceCreateInfo::Image(info) => info,
+                                        _ => unreachable!(),
+                                    };
+                                    clear_depth.push(image_info.clear);
                                 }
                                 _ => unimplemented!(),
                             },
@@ -216,13 +230,34 @@ pub(crate) fn execute(
                         }
                     }
 
-                    clear_values
+                    clear_colors
                         .as_mut_slice()
                         .sort_by_key(|(binding, _)| *binding);
 
-                    let clear_values = clear_values.into_iter().map(|(_, color)| {
-                        gfx::command::ClearValue::Color(gfx::command::ClearColor::Float(color))
-                    });
+                    let clear_values = clear_colors
+                        .into_iter()
+                        .filter_map(|(_, color)| {
+                            use crate::graph::ImageClearValue;
+
+                            if let ImageClearValue::Color(color) = color {
+                                Some(gfx::command::ClearValue::Color(
+                                    gfx::command::ClearColor::Float(color),
+                                ))
+                            } else {
+                                None
+                            }
+                        })
+                        .chain(clear_depth.into_iter().filter_map(|clear| {
+                            use crate::graph::ImageClearValue;
+
+                            if let ImageClearValue::DepthStencil(depth, stencil) = clear {
+                                Some(gfx::command::ClearValue::DepthStencil(
+                                    gfx::command::ClearDepthStencil(depth, stencil),
+                                ))
+                            } else {
+                                None
+                            }
+                        }));
 
                     let submit = {
                         let mut raw_cmd = cmd_pool_gfx.acquire_command_buffer(false);

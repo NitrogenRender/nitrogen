@@ -158,6 +158,8 @@ pub enum ImageFormat {
     RgbaUnorm,
 
     E5b9g9r9Float,
+
+    D32FloatS8Uint,
 }
 
 impl Default for ImageFormat {
@@ -176,7 +178,29 @@ impl From<ImageFormat> for gfx::format::Format {
             ImageFormat::RgbaUnorm => Format::Rgba8Unorm,
 
             ImageFormat::E5b9g9r9Float => Format::E5b9g9r9Ufloat,
+
+            ImageFormat::D32FloatS8Uint => Format::D32FloatS8Uint,
         }
+    }
+}
+
+impl ImageFormat {
+    pub fn is_depth(self) -> bool {
+        match self {
+            ImageFormat::D32FloatS8Uint => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_stencil(self) -> bool {
+        match self {
+            ImageFormat::D32FloatS8Uint => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_depth_stencil(self) -> bool {
+        self.is_depth() && self.is_stencil()
     }
 }
 
@@ -307,6 +331,24 @@ impl ImageStorage {
                 format => format,
             };
 
+            let aspect = {
+                let mut aspect = gfx::format::Aspects::empty();
+
+                if format.is_depth() {
+                    aspect |= gfx::format::Aspects::DEPTH;
+                }
+
+                if format.is_stencil() {
+                    aspect |= gfx::format::Aspects::STENCIL;
+                }
+
+                if format.is_color() {
+                    aspect |= gfx::format::Aspects::COLOR;
+                }
+
+                aspect
+            };
+
             let (image, usage) = {
                 let image_kind = match create_info.dimension {
                     ImageDimension::D1 { x } => image::Kind::D1(x, create_info.num_layers),
@@ -353,7 +395,7 @@ impl ImageStorage {
                     format,
                     gfx::format::Swizzle::NO,
                     image::SubresourceRange {
-                        aspects: gfx::format::Aspects::COLOR,
+                        aspects: aspect,
                         layers: 0..1,
                         levels: 0..1,
                     },

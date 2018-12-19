@@ -386,6 +386,7 @@ impl GraphStorage {
         let in_num = graph.last_input?;
         let (resolve, _exec_num) = graph.resolve_cache.get(&in_num)?;
         let id = *resolve.name_lookup.get(&image.into())?;
+        let id = resolve.moved_from(id)?;
         let (_, res) = graph.exec_resources.as_ref()?;
 
         res.images.get(&id).map(|x| *x)
