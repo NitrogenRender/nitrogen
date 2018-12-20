@@ -30,7 +30,12 @@ fn main() {
         let mut geometry_shaders = HashSet::new();
         let mut compute_shaders = HashSet::new();
 
-        for entry in fs::read_dir(shaders_dir).unwrap() {
+        let dir_reader = match fs::read_dir(shaders_dir) {
+            Ok(reader) => reader,
+            Err(_) => continue,
+        };
+
+        for entry in dir_reader {
             if entry.is_err() {
                 continue;
             }

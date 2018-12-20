@@ -218,6 +218,21 @@ fn create_render_pass(
     resolved_graph: &GraphResourcesResolved,
     pass: PassId,
 ) -> Option<RenderPassHandle> {
+    // create a render pass handle for use in a graphics pass
+    //
+    // A render pass contains a list of "attachments" which are generally used for writing
+    // color values.
+    //
+    // A special kind of attachment is a depth-stencil attachment. Since depth- and stencil tests
+    // are deeply buried in the graphics pipeline, they are also considered an attachment.
+    //
+    // In order to have a "reading depth test" (just checking but not writing own depth value)
+    // a depth attachment has to be present.
+    //
+    // So in order to create a render pass we use all color images that we write to,
+    // check if there is a depth attachment that is written to and use those as attachments.
+    // If there is a **reading** depth attachment, we add it as well.
+
     let mut has_depth_write = false;
     let mut has_depth_read = false;
 

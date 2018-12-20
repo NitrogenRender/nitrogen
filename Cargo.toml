@@ -2,5 +2,6 @@
 
 members = [
     "examples",
+    "examples/common",
     "nitrogen",
 ]

@@ -4,17 +4,23 @@
 
 use winit::{Event, EventsLoop, Window, WindowBuilder, WindowEvent};
 
+use nitrogen::graph::Store;
+use nitrogen::submit_group::SubmitGroup;
 use nitrogen::*;
+
+use std::time::Instant;
 
 pub struct CanvasSize(pub f32, pub f32);
 
 pub trait UserData {
+    fn iteration(&mut self, _store: &mut graph::Store, _delta: f64) {}
+
     fn graph(&self) -> graph::GraphHandle;
 
     fn output_image(&self) -> graph::ResourceName;
 }
 
-pub(crate) struct MainLoop<U: UserData> {
+pub struct MainLoop<U: UserData> {
     events_loop: EventsLoop,
     _window: Window,
 
@@ -25,20 +31,26 @@ pub(crate) struct MainLoop<U: UserData> {
     submit_idx: usize,
 
     user_data: U,
+    store: Store,
+
+    last_iter: Instant,
 
     running: bool,
     size: (f32, f32),
 }
 
 impl<U: UserData> MainLoop<U> {
-    pub fn new<F: FnOnce(&mut Context) -> U>(f: F) -> Self {
+    pub fn new<F>(name: &str, f: F) -> Self
+    where
+        F: FnOnce(&mut Store, &mut Context, &mut SubmitGroup) -> U,
+    {
         let events_loop = EventsLoop::new();
         let window = WindowBuilder::new()
-            .with_title("Nitrogen - Opaque-Alpha Demo")
+            .with_title(name)
             .build(&events_loop)
             .unwrap();
 
-        let mut ctx = Context::new("opaque-alpha-demo", 1);
+        let mut ctx = Context::new(name, 1);
         let display = ctx.display_add(&window);
 
         let size = {
@@ -47,9 +59,15 @@ impl<U: UserData> MainLoop<U> {
             (size.width as f32, size.height as f32)
         };
 
-        let submits = vec![ctx.create_submit_group(), ctx.create_submit_group()];
+        let mut store = Store::new();
 
-        let user_data = f(&mut ctx);
+        store.insert(CanvasSize(size.0, size.1));
+
+        let mut submits = vec![ctx.create_submit_group(), ctx.create_submit_group()];
+
+        let user_data = f(&mut store, &mut ctx, &mut submits[0]);
+
+        let instant = Instant::now();
 
         MainLoop {
             events_loop,
@@ -62,6 +80,9 @@ impl<U: UserData> MainLoop<U> {
             size,
 
             user_data,
+            store,
+
+            last_iter: instant,
 
             submits,
             submit_idx: 0,
@@ -72,7 +93,7 @@ impl<U: UserData> MainLoop<U> {
         self.running
     }
 
-    pub fn iterate(&mut self, store: &mut graph::Store) {
+    pub fn iterate(&mut self) {
         let submit = &mut self.submits[self.submit_idx];
         submit.wait(&mut self.ctx);
 
@@ -102,7 +123,22 @@ impl<U: UserData> MainLoop<U> {
             }
         }
 
-        store.insert(CanvasSize(self.size.0, self.size.1));
+        self.store.insert(CanvasSize(self.size.0, self.size.1));
+
+        let delta = {
+            let new_instant = Instant::now();
+            let dur = new_instant.duration_since(self.last_iter);
+            self.last_iter = new_instant;
+
+            const NANOS_PER_SEC: u32 = 1_000_000_000;
+
+            let secs = dur.as_secs() as f64;
+            let subsecs = dur.subsec_nanos() as f64 / NANOS_PER_SEC as f64;
+
+            secs + subsecs
+        };
+
+        self.user_data.iteration(&mut self.store, delta);
 
         let context = graph::ExecutionContext {
             reference_size: (self.size.0 as u32, self.size.1 as u32),
@@ -117,7 +153,7 @@ impl<U: UserData> MainLoop<U> {
                 println!("{:?}", err);
             }
 
-            submit.graph_execute(&mut self.ctx, graph, store, &context);
+            submit.graph_execute(&mut self.ctx, graph, &mut self.store, &context);
 
             let image = self.ctx.graph_get_output_image(graph, image).unwrap();
 

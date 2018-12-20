@@ -13,6 +13,11 @@ use crate::material::{MaterialInstanceHandle, MaterialStorage};
 
 use crate::buffer::{BufferHandle, BufferStorage};
 
+pub enum IndexType {
+    U16,
+    U32,
+}
+
 #[derive(Clone)]
 pub(crate) struct ReadStorages<'a> {
     pub(crate) buffer: &'a BufferStorage,
@@ -30,6 +35,10 @@ pub struct GraphicsCommandBuffer<'a> {
 impl<'a> GraphicsCommandBuffer<'a> {
     pub fn draw(&mut self, vertices: Range<u32>, instances: Range<u32>) {
         self.encoder.draw(vertices, instances);
+    }
+
+    pub fn draw_indexed(&mut self, indices: Range<u32>, base_vertex: i32, instances: Range<u32>) {
+        self.encoder.draw_indexed(indices, base_vertex, instances);
     }
 
     /// Bind vertex buffers for the next draw call.
@@ -52,6 +61,27 @@ impl<'a> GraphicsCommandBuffer<'a> {
         });
 
         self.encoder.bind_vertex_buffers(0, bufs);
+    }
+
+    pub fn bind_index_buffer(&mut self, buffer: BufferHandle, offset: u64, index_type: IndexType) {
+        let stores = self.storages.clone();
+
+        let buffer_raw = stores.buffer.raw(buffer).map(|buf| buf.buffer.raw());
+
+        let buffer_raw = match buffer_raw {
+            Some(val) => val,
+            None => return,
+        };
+
+        self.encoder
+            .bind_index_buffer(gfx::buffer::IndexBufferView {
+                buffer: buffer_raw,
+                offset,
+                index_type: match index_type {
+                    IndexType::U16 => gfx::IndexType::U16,
+                    IndexType::U32 => gfx::IndexType::U32,
+                },
+            });
     }
 
     pub fn bind_material(

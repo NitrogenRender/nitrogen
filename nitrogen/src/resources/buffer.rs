@@ -416,6 +416,8 @@ impl BufferStorage {
                 Ok(_) => {}
             };
 
+            results.push(Ok(()));
+
             staging_buffers.push(staging_buffer);
 
             transfers.push((upload, u8_slice));

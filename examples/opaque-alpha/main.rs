@@ -4,7 +4,7 @@
 
 use nitrogen::*;
 
-mod main_loop;
+use nitrogen_examples_common::*;
 
 struct QuadData {
     pub pos: [f32; 2],
@@ -27,53 +27,10 @@ fn main() {
     std::env::set_var("RUST_LOG", "debug");
     env_logger::init();
 
-    let mut ml = main_loop::MainLoop::new(init_resources);
-
-    let mut store = graph::Store::new();
-
-    // put some data!
-    {
-        store.insert(Quads::default());
-        store.insert(QuadsAlpha::default());
-
-        store.entry::<Quads>().and_modify(|quads| {
-            {
-                let quad = QuadData {
-                    pos: [150.0, 150.0],
-                    size: [150.0, 150.0],
-                    color: [0.3, 1.0, 0.3, 1.0],
-                    depth: 0.5,
-                };
-
-                quads.quads.push(quad);
-            }
-
-            {
-                let quad = QuadData {
-                    pos: [100.0, 100.0],
-                    size: [150.0, 150.0],
-                    color: [0.3, 0.3, 1.0, 1.0],
-                    depth: 0.8,
-                };
-
-                quads.quads.push(quad);
-            }
-        });
-
-        store.entry::<QuadsAlpha>().and_modify(|quads| {
-            let quad = QuadData {
-                pos: [125.0, 175.0],
-                size: [150.0, 150.0],
-                color: [1.0, 0.2, 0.1, 0.3],
-                depth: 0.6,
-            };
-
-            quads.quads.push(quad);
-        });
-    }
+    let mut ml = main_loop::MainLoop::new("Nitrogen - Opaque-Alpha example", init_resources);
 
     while ml.running() {
-        ml.iterate(&mut store);
+        ml.iterate();
     }
 
     ml.release();
@@ -93,7 +50,48 @@ impl main_loop::UserData for Resources {
     }
 }
 
-fn init_resources(ctx: &mut Context) -> Resources {
+fn init_resources(
+    store: &mut graph::Store,
+    ctx: &mut Context,
+    _submit: &mut submit_group::SubmitGroup,
+) -> Resources {
+    store.insert(Quads::default());
+    store.insert(QuadsAlpha::default());
+
+    store.entry::<Quads>().and_modify(|quads| {
+        {
+            let quad = QuadData {
+                pos: [150.0, 150.0],
+                size: [150.0, 150.0],
+                color: [0.3, 1.0, 0.3, 1.0],
+                depth: 0.5,
+            };
+
+            quads.quads.push(quad);
+        }
+
+        {
+            let quad = QuadData {
+                pos: [100.0, 100.0],
+                size: [150.0, 150.0],
+                color: [0.3, 0.3, 1.0, 1.0],
+                depth: 0.8,
+            };
+
+            quads.quads.push(quad);
+        }
+    });
+
+    store.entry::<QuadsAlpha>().and_modify(|quads| {
+        let quad = QuadData {
+            pos: [125.0, 175.0],
+            size: [150.0, 150.0],
+            color: [1.0, 0.2, 0.1, 0.3],
+            depth: 0.6,
+        };
+
+        quads.quads.push(quad);
+    });
     let graph = create_graph(ctx);
 
     Resources { graph }
