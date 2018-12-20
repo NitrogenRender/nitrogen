@@ -3,5 +3,4 @@
 members = [
     "examples",
     "nitrogen",
-    "nitrogen-ffi",
 ]
