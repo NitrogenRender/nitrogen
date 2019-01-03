@@ -184,7 +184,7 @@ fn create_graph(
                             width: 1.0,
                             height: 1.0,
                         },
-                        format: image::ImageFormat::D32FloatS8Uint,
+                        format: image::ImageFormat::D32Float,
                         clear: graph::ImageClearValue::DepthStencil(1.0, 0),
                     },
                 );

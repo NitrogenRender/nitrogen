@@ -159,6 +159,7 @@ pub enum ImageFormat {
 
     E5b9g9r9Float,
 
+    D32Float,
     D32FloatS8Uint,
 }
 
@@ -171,6 +172,7 @@ impl Default for ImageFormat {
 impl From<ImageFormat> for gfx::format::Format {
     fn from(format: ImageFormat) -> Self {
         use gfx::format::Format;
+
         match format {
             ImageFormat::RUnorm => Format::R8Unorm,
             ImageFormat::RgUnorm => Format::Rg8Unorm,
@@ -179,6 +181,7 @@ impl From<ImageFormat> for gfx::format::Format {
 
             ImageFormat::E5b9g9r9Float => Format::E5b9g9r9Ufloat,
 
+            ImageFormat::D32Float => Format::D32Float,
             ImageFormat::D32FloatS8Uint => Format::D32FloatS8Uint,
         }
     }
@@ -188,6 +191,7 @@ impl ImageFormat {
     pub fn is_depth(self) -> bool {
         match self {
             ImageFormat::D32FloatS8Uint => true,
+            ImageFormat::D32Float => true,
             _ => false,
         }
     }

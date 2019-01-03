@@ -32,7 +32,7 @@ const VERTEX_DATA: [VertexData; 4] = [
     VertexData { pos: [1.0, 1.0] },
 ];
 
-const NUM_THINGS: usize = 1_024 * 1_024;
+const NUM_THINGS: usize = 1_024; // * 1_024;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::env::set_var("RUST_LOG", "debug");
