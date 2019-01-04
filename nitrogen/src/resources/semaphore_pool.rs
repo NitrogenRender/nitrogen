@@ -14,15 +14,15 @@ pub(crate) type Semaphore<'a> = PoolElem<'a, SemaphorePoolImpl, types::Semaphore
 pub(crate) struct SemaphorePool(pub(crate) Pool<types::Semaphore, SemaphorePoolImpl>);
 
 impl SemaphorePool {
-    pub(crate) fn new(device: Arc<DeviceContext>) -> Self {
+    pub(crate) unsafe fn new(device: Arc<DeviceContext>) -> Self {
         Self::with_capacity(device, 0)
     }
 
-    pub(crate) fn with_capacity(device: Arc<DeviceContext>, cap: usize) -> Self {
+    pub(crate) unsafe fn with_capacity(device: Arc<DeviceContext>, cap: usize) -> Self {
         SemaphorePool(Pool::with_intial_elems(SemaphorePoolImpl { device }, cap))
     }
 
-    pub(crate) fn alloc(&self) -> Semaphore<'_> {
+    pub(crate) unsafe fn alloc(&self) -> Semaphore<'_> {
         self.0.alloc()
     }
 
@@ -46,11 +46,11 @@ impl SemaphorePool {
         }))
     }
 
-    pub(crate) fn clear(&mut self) {
+    pub(crate) unsafe fn clear(&mut self) {
         self.0.clear()
     }
 
-    pub(crate) fn reset(&mut self) {
+    pub(crate) unsafe fn reset(&mut self) {
         self.0.reset()
     }
 }
@@ -67,7 +67,9 @@ impl PoolImpl<types::Semaphore> for SemaphorePoolImpl {
 
     fn free_elem(&mut self, elem: types::Semaphore) {
         use gfx::Device;
-        self.device.device.destroy_semaphore(elem);
+        unsafe {
+            self.device.device.destroy_semaphore(elem);
+        }
     }
 }
 

@@ -13,6 +13,9 @@ pub(crate) trait PoolImpl<T> {
     fn new_elem(&mut self) -> T;
     fn reset_elem(&mut self, _elem: &mut T) {}
     fn free_elem(&mut self, elem: T);
+    fn free_on_drop() -> bool {
+        true
+    }
 }
 
 pub(crate) struct PoolInner<T, Impl: PoolImpl<T>> {
@@ -89,6 +92,14 @@ impl<T, Impl: PoolImpl<T>> Pool<T, Impl> {
         unsafe { PoolElem::from_idx(next, self) }
     }
 
+    unsafe fn free_on_drop(&self, idx: usize) {
+        let this = self.get();
+
+        if Impl::free_on_drop() {
+            self.free(idx);
+        }
+    }
+
     unsafe fn free(&self, idx: usize) {
         let this = self.get();
 
@@ -109,7 +120,7 @@ impl<T, Impl: PoolImpl<T>> Pool<T, Impl> {
             this.nexts[i] = Some((i + 1) % this.nexts.len());
         }
 
-        for val in &mut this.values {
+        for (i, val) in this.values.iter_mut().enumerate() {
             this.pool_impl.reset_elem(val);
         }
 
@@ -125,19 +136,22 @@ impl<T, Impl: PoolImpl<T>> Pool<T, Impl> {
 
         use std::mem::replace;
 
-        let values = replace(&mut this.values, vec![]);
-
-        for val in values {
+        for val in this.values.drain(0..) {
             this.pool_impl.free_elem(val);
         }
 
         this.nexts.clear();
     }
-}
 
-impl<T, Impl: PoolImpl<T>> Drop for Pool<T, Impl> {
-    fn drop(&mut self) {
-        self.clear();
+    pub(crate) fn impl_ref_mut(&mut self) -> &mut Impl {
+        let this = unsafe { self.get() };
+
+        &mut this.pool_impl
+    }
+
+    pub(crate) unsafe fn into_impl(self) -> Impl {
+        let this = self.inner.into_inner();
+        this.pool_impl
     }
 }
 
@@ -184,7 +198,7 @@ where
         use std::mem::transmute;
         unsafe {
             let pool: &mut Pool<T, Impl> = transmute(self.pool);
-            pool.free(self.idx);
+            pool.free_on_drop(self.idx);
         }
     }
 }

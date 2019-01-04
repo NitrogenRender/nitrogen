@@ -23,7 +23,7 @@ use smallvec::SmallVec;
 use crate::resources::material::MaterialStorage;
 use std::collections::BTreeMap;
 
-pub(crate) fn prepare_base(
+pub(crate) unsafe fn prepare_base(
     device: &DeviceContext,
     storages: &mut Storages,
     exec: &ExecutionGraph,
@@ -43,7 +43,7 @@ pub(crate) fn prepare_base(
     res
 }
 
-pub(crate) fn prepare_pass_base(
+pub(crate) unsafe fn prepare_pass_base(
     device: &DeviceContext,
     storages: &mut Storages,
     resolved: &GraphResourcesResolved,
@@ -81,7 +81,7 @@ pub(crate) fn prepare_pass_base(
     }
 }
 
-pub(crate) fn prepare(
+pub(crate) unsafe fn prepare(
     usages: &ResourceUsages,
     base: &GraphBaseResources,
     device: &DeviceContext,
@@ -118,7 +118,7 @@ pub(crate) fn prepare(
     res
 }
 
-pub(crate) fn prepare_pass(
+pub(crate) unsafe fn prepare_pass(
     base: &GraphBaseResources,
     device: &DeviceContext,
     storages: &mut Storages,
@@ -212,7 +212,7 @@ pub(crate) fn prepare_pass(
     }
 }
 
-fn create_render_pass(
+unsafe fn create_render_pass(
     device: &DeviceContext,
     storages: &mut Storages,
     resolved_graph: &GraphResourcesResolved,
@@ -403,7 +403,7 @@ fn create_render_pass(
         .ok()
 }
 
-fn create_pipeline_compute(
+unsafe fn create_pipeline_compute(
     device: &DeviceContext,
     storages: &mut Storages,
     resolved: &GraphResourcesResolved,
@@ -449,7 +449,7 @@ fn create_pipeline_compute(
     pipeline_handle.map(move |handle| (handle, pass_stuff.0, pass_stuff.1, pass_stuff.2))
 }
 
-fn create_pipeline_graphics(
+unsafe fn create_pipeline_graphics(
     device: &DeviceContext,
     storages: &mut Storages,
     resolved_graph: &GraphResourcesResolved,
@@ -518,7 +518,7 @@ fn create_pipeline_graphics(
     pipeline_handle.map(move |handle| (handle, pass_stuff.0, pass_stuff.1, pass_stuff.2))
 }
 
-fn create_resource(
+unsafe fn create_resource(
     usages: &ResourceUsages,
     device: &DeviceContext,
     context: &ExecutionContext,
@@ -635,7 +635,7 @@ fn create_resource(
     }
 }
 
-fn create_pipeline_base<'a>(
+unsafe fn create_pipeline_base<'a>(
     device: &DeviceContext,
     resolved: &GraphResourcesResolved,
     material_storage: &'a MaterialStorage,

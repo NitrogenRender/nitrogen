@@ -19,14 +19,15 @@ use gfx::Device;
 use smallvec::SmallVec;
 
 use crate::device::DeviceContext;
+use crate::resources::command_pool::{CommandPoolCompute, CommandPoolGraphics};
 use crate::resources::semaphore_pool::{SemaphoreList, SemaphorePool};
 
-pub(crate) fn execute(
+pub(crate) unsafe fn execute(
     device: &DeviceContext,
     sem_pool: &mut SemaphorePool,
     sem_list: &mut SemaphoreList,
-    cmd_pool_gfx: &mut CommandPool<gfx::Graphics>,
-    cmd_pool_cmpt: &mut CommandPool<gfx::Compute>,
+    cmd_pool_gfx: &CommandPoolGraphics,
+    cmd_pool_cmpt: &CommandPoolCompute,
     storages: &mut Storages,
     store: &crate::graph::Store,
     exec_graph: &ExecutionGraph,
@@ -260,7 +261,8 @@ pub(crate) fn execute(
                         }));
 
                     let submit = {
-                        let mut raw_cmd = cmd_pool_gfx.acquire_command_buffer(false);
+                        let mut raw_cmd = cmd_pool_gfx.alloc();
+
                         raw_cmd.bind_graphics_pipeline(&pipeline.pipeline);
 
                         raw_cmd.set_viewports(0, &[viewport.clone()]);
@@ -287,18 +289,19 @@ pub(crate) fn execute(
                             pass_impl.execute(store, &mut command);
                         }
 
-                        raw_cmd.finish()
+                        raw_cmd.finish();
+                        raw_cmd
                     };
 
                     {
-                        let submission = gfx::Submission::new()
-                            .wait_on(
-                                sem_pool
-                                    .list_prev_sems(sem_list)
-                                    .map(|sem| (sem, gfx::pso::PipelineStage::BOTTOM_OF_PIPE)),
-                            )
-                            .signal(sem_pool.list_next_sems(sem_list))
-                            .submit(Some(submit));
+                        let submission = gfx::Submission {
+                            command_buffers: Some(&*submit),
+                            wait_semaphores: sem_pool
+                                .list_prev_sems(sem_list)
+                                .map(|sem| (sem, gfx::pso::PipelineStage::BOTTOM_OF_PIPE)),
+                            signal_semaphores: sem_pool.list_next_sems(sem_list),
+                        };
+
                         device.graphics_queue().submit(submission, None);
                     }
                 }
@@ -308,7 +311,7 @@ pub(crate) fn execute(
                     let pipeline = storages.pipeline.raw_compute(*handle).unwrap();
 
                     let submit = {
-                        let mut raw_cmd = cmd_pool_cmpt.acquire_command_buffer(false);
+                        let mut raw_cmd = cmd_pool_cmpt.alloc();
 
                         raw_cmd.bind_compute_pipeline(&pipeline.pipeline);
 
@@ -316,30 +319,29 @@ pub(crate) fn execute(
 
                         let pass_impl = &graph.passes_cmpt_impl[&pass.0];
 
-                        let raw_cmd = {
+                        {
                             let mut cmd_buffer = crate::graph::command::ComputeCommandBuffer {
-                                buf: raw_cmd,
+                                buf: &mut *raw_cmd,
                                 storages: &read_storages,
                                 pipeline_layout: &pipeline.layout,
                             };
 
                             pass_impl.execute(store, &mut cmd_buffer);
+                        }
 
-                            cmd_buffer.buf
-                        };
-
-                        raw_cmd.finish()
+                        raw_cmd.finish();
+                        raw_cmd
                     };
 
                     {
-                        let submission = gfx::Submission::new()
-                            .wait_on(
-                                sem_pool
-                                    .list_prev_sems(sem_list)
-                                    .map(|sem| (sem, gfx::pso::PipelineStage::BOTTOM_OF_PIPE)),
-                            )
-                            .signal(sem_pool.list_next_sems(sem_list))
-                            .submit(Some(submit));
+                        let submission = gfx::Submission {
+                            command_buffers: Some(&*submit),
+                            wait_semaphores: sem_pool
+                                .list_prev_sems(sem_list)
+                                .map(|sem| (sem, gfx::pso::PipelineStage::BOTTOM_OF_PIPE)),
+                            signal_semaphores: sem_pool.list_next_sems(sem_list),
+                        };
+
                         device.compute_queue().submit(submission, None);
                     }
                 }

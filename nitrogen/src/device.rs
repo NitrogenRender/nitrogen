@@ -27,7 +27,7 @@ pub(crate) struct DeviceContext {
 }
 
 impl DeviceContext {
-    pub(crate) fn new(instance: &back::Instance) -> Self {
+    pub(crate) unsafe fn new(instance: &back::Instance) -> Self {
         use gfx::PhysicalDevice;
         use std::mem::replace;
 
@@ -163,7 +163,7 @@ impl DeviceContext {
         unsafe { transmute(self.queues[self.compute_queue_idx][0].lock().unwrap()) }
     }
 
-    pub(crate) fn release(self) {
+    pub(crate) unsafe fn release(self) {
         self.memory_allocator
             .into_inner()
             .unwrap()

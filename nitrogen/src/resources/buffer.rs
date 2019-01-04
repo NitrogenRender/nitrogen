@@ -18,6 +18,7 @@ use gfxm::SmartAllocator;
 
 use smallvec::SmallVec;
 
+use crate::resources::command_pool::CommandPoolTransfer;
 use crate::resources::semaphore_pool::SemaphoreList;
 use crate::resources::semaphore_pool::SemaphorePool;
 use crate::submit_group::ResourceList;
@@ -157,7 +158,7 @@ impl BufferStorage {
         }
     }
 
-    pub(crate) fn release(self, device: &DeviceContext) {
+    pub(crate) unsafe fn release(self, device: &DeviceContext) {
         let mut alloc = device.allocator();
 
         for (_, buffer) in self.buffers.into_iter() {
@@ -169,7 +170,7 @@ impl BufferStorage {
         self.buffers.get(handle)
     }
 
-    pub(crate) fn cpu_visible_create<I, U>(
+    pub(crate) unsafe fn cpu_visible_create<I, U>(
         &mut self,
         device: &DeviceContext,
         create_infos: I,
@@ -223,7 +224,7 @@ impl BufferStorage {
         results
     }
 
-    pub(crate) fn cpu_visible_upload<'a, I, T>(
+    pub(crate) unsafe fn cpu_visible_upload<'a, I, T>(
         &self,
         device: &DeviceContext,
         uploads: I,
@@ -251,7 +252,7 @@ impl BufferStorage {
                 }
             };
 
-            let u8_data = unsafe { to_u8_slice(info.data) };
+            let u8_data = to_u8_slice(info.data);
 
             let upload_fits = info.offset + u8_data.len() as u64 <= buffer.size;
 
@@ -267,7 +268,7 @@ impl BufferStorage {
         results
     }
 
-    pub(crate) fn cpu_visible_read<T: Sized>(
+    pub(crate) unsafe fn cpu_visible_read<T: Sized>(
         &self,
         device: &DeviceContext,
         buffer: BufferHandle,
@@ -279,12 +280,12 @@ impl BufferStorage {
 
         let buffer = self.buffers.get(buffer)?;
 
-        read_data_from_buffer(device, &buffer.buffer, 0, unsafe { to_u8_mut_slice(out) }).ok()?;
+        read_data_from_buffer(device, &buffer.buffer, 0, to_u8_mut_slice(out)).ok()?;
 
         Some(())
     }
 
-    pub(crate) fn device_local_create<I, U>(
+    pub(crate) unsafe fn device_local_create<I, U>(
         &mut self,
         device: &DeviceContext,
         create_infos: I,
@@ -338,12 +339,12 @@ impl BufferStorage {
         results
     }
 
-    pub(crate) fn device_local_upload<'a, I, T>(
+    pub(crate) unsafe fn device_local_upload<'a, I, T>(
         &self,
         device: &DeviceContext,
         sem_pool: &SemaphorePool,
         sem_list: &mut SemaphoreList,
-        cmd_pool: &mut CommandPool<gfx::Transfer>,
+        cmd_pool: &CommandPoolTransfer,
         res_list: &mut ResourceList,
         uploads: I,
     ) -> SmallVec<[Result<()>; 16]>
@@ -379,7 +380,7 @@ impl BufferStorage {
                 Some(buf) => buf,
             };
 
-            let u8_slice = unsafe { to_u8_slice(info.data) };
+            let u8_slice = to_u8_slice(info.data);
 
             let upload_fits = info.offset + u8_slice.len() as u64 <= buffer.size;
 
@@ -492,7 +493,7 @@ unsafe fn to_u8_mut_slice<T>(slice: &mut [T]) -> &mut [u8] {
     std::slice::from_raw_parts_mut(b_ptr, b_len)
 }
 
-fn write_data_to_buffer(
+unsafe fn write_data_to_buffer(
     device: &DeviceContext,
     buffer: &BufferTypeInternal,
     offset: u64,
@@ -516,7 +517,7 @@ fn write_data_to_buffer(
     Ok(())
 }
 
-fn read_data_from_buffer(
+unsafe fn read_data_from_buffer(
     device: &DeviceContext,
     buffer: &BufferTypeInternal,
     offset: u64,

@@ -40,7 +40,7 @@ pub struct MainLoop<U: UserData> {
 }
 
 impl<U: UserData> MainLoop<U> {
-    pub fn new<F>(name: &str, f: F) -> Self
+    pub unsafe fn new<F>(name: &str, f: F) -> Self
     where
         F: FnOnce(&mut Store, &mut Context, &mut SubmitGroup) -> U,
     {
@@ -93,7 +93,7 @@ impl<U: UserData> MainLoop<U> {
         self.running
     }
 
-    pub fn iterate(&mut self) {
+    pub unsafe fn iterate(&mut self) {
         let submit = &mut self.submits[self.submit_idx];
         submit.wait(&mut self.ctx);
 
@@ -163,8 +163,10 @@ impl<U: UserData> MainLoop<U> {
         self.submit_idx = (self.submit_idx + 1) % self.submits.len();
     }
 
-    pub fn release(mut self) {
+    pub unsafe fn release(mut self) {
         self.submits[self.submit_idx].graph_destroy(&mut self.ctx, &[self.user_data.graph()]);
+
+        self.ctx.wait_idle();
 
         for mut submit in self.submits {
             submit.wait(&mut self.ctx);

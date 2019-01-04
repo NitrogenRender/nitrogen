@@ -21,6 +21,7 @@ use crate::util::storage::{Handle, Storage};
 use crate::util::transfer;
 
 use crate::device::DeviceContext;
+use crate::resources::command_pool::CommandPoolTransfer;
 use crate::resources::semaphore_pool::SemaphoreList;
 use crate::resources::semaphore_pool::SemaphorePool;
 use crate::submit_group::ResourceList;
@@ -305,7 +306,7 @@ impl ImageStorage {
         }
     }
 
-    pub(crate) fn release(self, device: &DeviceContext) {
+    pub(crate) unsafe fn release(self, device: &DeviceContext) {
         let mut alloc = device.allocator();
 
         for (_, image) in self.storage.into_iter() {
@@ -314,7 +315,7 @@ impl ImageStorage {
         }
     }
 
-    pub(crate) fn create<T: Into<gfx::image::Usage> + Clone>(
+    pub(crate) unsafe fn create<T: Into<gfx::image::Usage> + Clone>(
         &mut self,
         device: &DeviceContext,
         create_infos: &[ImageCreateInfo<T>],
@@ -431,12 +432,12 @@ impl ImageStorage {
         result
     }
 
-    pub(crate) fn upload_data(
+    pub(crate) unsafe fn upload_data(
         &self,
         device: &DeviceContext,
         sem_pool: &SemaphorePool,
         sem_list: &mut SemaphoreList,
-        cmd_pool: &mut CommandPool<gfx::Transfer>,
+        cmd_pool: &CommandPoolTransfer,
         res_list: &mut ResourceList,
         images: &[(ImageHandle, ImageUploadInfo)],
     ) -> SmallVec<[Result<()>; 16]> {

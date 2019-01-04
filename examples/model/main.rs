@@ -15,13 +15,15 @@ fn main() {
     std::env::set_var("RUST_LOG", "debug");
     env_logger::init();
 
-    let mut ml = main_loop::MainLoop::new("Nitrogen - Model example", init_resources);
+    let mut ml = unsafe { main_loop::MainLoop::new("Nitrogen - Model example", init_resources) };
 
     while ml.running() {
-        ml.iterate();
+        unsafe { ml.iterate() };
     }
 
-    ml.release();
+    unsafe {
+        ml.release();
+    }
 }
 
 struct Data {
@@ -61,11 +63,12 @@ fn init_resources(
         models.remove(0).mesh
     };
 
-    let b_position = device_local_buffer_vertex(ctx, submit, &mesh.positions[..]).unwrap();
+    let b_position =
+        unsafe { device_local_buffer_vertex(ctx, submit, &mesh.positions[..]).unwrap() };
 
-    let b_normal = device_local_buffer_vertex(ctx, submit, &mesh.normals[..]).unwrap();
+    let b_normal = unsafe { device_local_buffer_vertex(ctx, submit, &mesh.normals[..]).unwrap() };
 
-    let b_index = device_local_buffer_index(ctx, submit, &mesh.indices[..]).unwrap();
+    let b_index = unsafe { device_local_buffer_index(ctx, submit, &mesh.indices[..]).unwrap() };
 
     let vertex_def = {
         let create_info = vertex_attrib::VertexAttribInfo {
@@ -216,7 +219,7 @@ fn create_graph(
 
                 let mvp = p * m;
 
-                fn push_matrix(
+                unsafe fn push_matrix(
                     cmd: &mut graph::GraphicsCommandBuffer<'_>,
                     offset: u32,
                     mat: Matrix4<f32>,
@@ -227,14 +230,16 @@ fn create_graph(
                     cmd.push_constant(offset + 12, mat.w);
                 }
 
-                push_matrix(cmd, 0, mvp);
-                push_matrix(cmd, 16, m);
+                unsafe {
+                    push_matrix(cmd, 0, mvp);
+                    push_matrix(cmd, 16, m);
 
-                cmd.bind_vertex_buffers(&[(self.position, 0), (self.normal, 0)]);
+                    cmd.bind_vertex_buffers(&[(self.position, 0), (self.normal, 0)]);
 
-                cmd.bind_index_buffer(self.index, 0, graph::IndexType::U32);
+                    cmd.bind_index_buffer(self.index, 0, graph::IndexType::U32);
 
-                cmd.draw_indexed(0..self.vertices as u32, 0, 0..1);
+                    cmd.draw_indexed(0..self.vertices as u32, 0, 0..1);
+                }
             }
         }
 

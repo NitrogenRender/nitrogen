@@ -12,6 +12,7 @@ use smallvec::SmallVec;
 use crate::device::DeviceContext;
 use crate::resources::{
     buffer::BufferStorage,
+    command_pool::{CommandPoolCompute, CommandPoolGraphics},
     image::ImageStorage,
     material::MaterialStorage,
     pipeline::PipelineStorage,
@@ -251,13 +252,13 @@ impl GraphStorage {
         }
     }
 
-    pub(crate) fn execute(
+    pub(crate) unsafe fn execute(
         &mut self,
         device: &DeviceContext,
         sem_pool: &mut SemaphorePool,
         sem_list: &mut SemaphoreList,
-        cmd_pool_gfx: &mut CommandPool<gfx::Graphics>,
-        cmd_pool_cmpt: &mut CommandPool<gfx::Compute>,
+        cmd_pool_gfx: &CommandPoolGraphics,
+        cmd_pool_cmpt: &CommandPoolCompute,
         res_list: &mut ResourceList,
         storages: &mut Storages,
         store: &Store,
