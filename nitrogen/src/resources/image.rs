@@ -6,8 +6,6 @@ use failure_derive::Fail;
 
 use gfx::image;
 use gfx::Device;
-use gfxm::Factory;
-use gfxm::SmartAllocator;
 
 use std;
 use std::borrow::Borrow;
@@ -19,6 +17,13 @@ use smallvec::SmallVec;
 
 use crate::util::storage::{Handle, Storage};
 use crate::util::transfer;
+use crate::util::allocator::{
+    Allocator,
+    AllocatorError,
+    Image as AllocImage,
+    ImageRequest,
+    BufferRequest,
+};
 
 use crate::device::DeviceContext;
 use crate::resources::command_pool::CommandPoolTransfer;
@@ -241,11 +246,11 @@ impl From<ViewKind> for gfx::image::ViewKind {
     }
 }
 
-pub(crate) type ImageType = <SmartAllocator<back::Backend> as Factory<back::Backend>>::Image;
+pub(crate) type ImageType = AllocImage;
 type ImageView = <back::Backend as gfx::Backend>::ImageView;
 
 pub struct Image {
-    pub image: ImageType,
+    pub(crate) image: ImageType,
     pub view: ImageView,
     pub dimension: ImageDimension,
     pub format: gfx::format::Format,
@@ -260,7 +265,7 @@ pub enum ImageError {
     UploadDataInvalid,
 
     #[fail(display = "Failed to allocate image")]
-    CantCreate(#[cause] gfxm::FactoryError),
+    CantCreate(#[cause] AllocatorError),
 
     #[fail(display = "Failed to map memory")]
     MappingError(#[cause] gfx::mapping::Error),
@@ -272,8 +277,8 @@ pub enum ImageError {
     CantWriteToImage,
 }
 
-impl From<gfxm::FactoryError> for ImageError {
-    fn from(err: gfxm::FactoryError) -> Self {
+impl From<AllocatorError> for ImageError {
+    fn from(err: AllocatorError) -> Self {
         ImageError::CantCreate(err)
     }
 }
@@ -367,21 +372,20 @@ impl ImageStorage {
 
                 let usage_flags = create_info.usage.clone().into();
 
-                let alloc_type = if create_info.is_transient {
-                    gfxm::Type::ShortLived
-                } else {
-                    gfxm::Type::General
+                let req = ImageRequest {
+                    transient: create_info.is_transient,
+                    properties: Properties::DEVICE_LOCAL,
+                    kind: image_kind,
+                    level: 1,
+                    format,
+                    tiling: image::Tiling::Optimal,
+                    usage: usage_flags,
+                    view_caps: image::ViewCapabilities::empty(),
                 };
 
                 let image = allocator.create_image(
                     &device.device,
-                    (alloc_type, Properties::DEVICE_LOCAL),
-                    image_kind,
-                    1,
-                    format,
-                    image::Tiling::Optimal,
-                    usage_flags,
-                    image::ViewCapabilities::empty(),
+                    req,
                 );
 
                 match image {
@@ -542,14 +546,17 @@ impl ImageStorage {
                     upload_size >= upload_width as u64 * upload_height as u64 * texel_size as u64
                 );
 
+                let buf_req = BufferRequest {
+                    transient: true,
+                    persistently_mappable: false,
+                    properties: Properties::CPU_VISIBLE | Properties::COHERENT,
+                    usage: gfx::buffer::Usage::TRANSFER_SRC | gfx::buffer::Usage::TRANSFER_DST,
+                    size: upload_size,
+                };
+
                 let staging_buffer = match allocator.create_buffer(
                     &device.device,
-                    (
-                        gfxm::Type::ShortLived,
-                        Properties::CPU_VISIBLE | Properties::COHERENT,
-                    ),
-                    upload_size,
-                    gfx::buffer::Usage::TRANSFER_SRC | gfx::buffer::Usage::TRANSFER_DST,
+                    buf_req,
                 ) {
                     Err(e) => {
                         results[idx] = Err(e.into());
@@ -580,13 +587,13 @@ impl ImageStorage {
 
                     // write to staging buffer
                     {
-                        use gfxm::Block;
+                        use crate::util::allocator::Block;
 
-                        let range = staging.range();
+                        let range = staging.block().range();
 
                         let mut writer = match device
                             .device
-                            .acquire_mapping_writer(staging.memory(), range)
+                            .acquire_mapping_writer(staging.block().memory(), range)
                         {
                             Err(e) => {
                                 results[*idx] = Err(e.into());

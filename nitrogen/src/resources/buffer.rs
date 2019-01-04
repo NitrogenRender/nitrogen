@@ -12,9 +12,8 @@ use std::collections::BTreeSet;
 use crate::device::DeviceContext;
 
 use crate::util::storage::{Handle, Storage};
+use crate::util::allocator::{Allocator, DefaultAlloc, AllocatorError, BufferRequest, Buffer as AllocBuffer};
 
-use gfxm::Factory;
-use gfxm::SmartAllocator;
 
 use smallvec::SmallVec;
 
@@ -24,8 +23,7 @@ use crate::resources::semaphore_pool::SemaphorePool;
 use crate::submit_group::ResourceList;
 use crate::types::CommandPool;
 
-pub(crate) type BufferTypeInternal =
-    <SmartAllocator<back::Backend> as Factory<back::Backend>>::Buffer;
+pub(crate) type BufferTypeInternal = AllocBuffer;
 
 pub struct Buffer {
     pub(crate) buffer: BufferTypeInternal,
@@ -44,7 +42,7 @@ pub enum BufferError {
     HandleInvalid,
 
     #[fail(display = "Failed to allocate buffer")]
-    CantCreate(#[cause] gfxm::FactoryError),
+    CantCreate(#[cause] AllocatorError),
 
     #[fail(display = "Failed to map the memory of the buffer")]
     MappingError(#[cause] gfx::mapping::Error),
@@ -56,8 +54,8 @@ pub enum BufferError {
     CantWriteToBuffer,
 }
 
-impl From<gfxm::FactoryError> for BufferError {
-    fn from(error: gfxm::FactoryError) -> Self {
+impl From<AllocatorError> for BufferError {
+    fn from(error: AllocatorError) -> Self {
         BufferError::CantCreate(error)
     }
 }
@@ -190,16 +188,21 @@ impl BufferStorage {
         for create_info in create_infos.into_iter() {
             let create_info = create_info.borrow();
 
-            let ty = match create_info.is_transient {
-                true => gfxm::Type::ShortLived,
-                false => gfxm::Type::General,
-            };
-
             let props = Properties::CPU_VISIBLE | Properties::COHERENT;
             let usage = create_info.usage.clone().into();
 
+            let req = BufferRequest {
+                transient: create_info.is_transient,
+                // TODO handle mapping??
+                persistently_mappable: false,
+                properties: props,
+                usage,
+                size: create_info.size,
+            };
+
+
             let raw_buffer =
-                match allocator.create_buffer(&device.device, (ty, props), create_info.size, usage)
+                match allocator.create_buffer(&device.device, req)
                 {
                     Ok(buf) => buf,
                     Err(err) => {
@@ -305,16 +308,20 @@ impl BufferStorage {
         for create_info in create_infos.into_iter() {
             let create_info = create_info.borrow();
 
-            let ty = match create_info.is_transient {
-                true => gfxm::Type::ShortLived,
-                false => gfxm::Type::General,
-            };
-
             let props = Properties::DEVICE_LOCAL;
             let usage = create_info.usage.clone().into();
 
+            let req = BufferRequest {
+                transient: create_info.is_transient,
+                // TODO handle mapping
+                persistently_mappable: false,
+                properties: props,
+                usage,
+                size: create_info.size,
+            };
+
             let raw_buffer =
-                match allocator.create_buffer(&device.device, (ty, props), create_info.size, usage)
+                match allocator.create_buffer(&device.device, req)
                 {
                     Ok(buf) => buf,
                     Err(err) => {
@@ -389,14 +396,18 @@ impl BufferStorage {
                 continue;
             }
 
+            let req = BufferRequest {
+                transient: true,
+                // TODO handle mapping
+                persistently_mappable: false,
+                properties: Properties::CPU_VISIBLE | Properties::COHERENT,
+                usage: Usage::TRANSFER_SRC | Usage::TRANSFER_DST,
+                size: u8_slice.len() as u64,
+            };
+
             let staging_res = alloc.create_buffer(
                 &device.device,
-                (
-                    gfxm::Type::ShortLived,
-                    Properties::CPU_VISIBLE | Properties::COHERENT,
-                ),
-                u8_slice.len() as u64,
-                Usage::TRANSFER_SRC | Usage::TRANSFER_DST,
+                req,
             );
 
             let staging_buffer = match staging_res {
@@ -500,15 +511,16 @@ unsafe fn write_data_to_buffer(
     data: &[u8],
 ) -> Result<()> {
     use gfx::Device;
-    use gfxm::Block;
+
+    use crate::util::allocator::Block;
 
     let offset = offset as usize;
 
-    let range = buffer.range();
+    let range = buffer.block().range();
 
     let mut writer = device
         .device
-        .acquire_mapping_writer(buffer.memory(), range)?;
+        .acquire_mapping_writer(buffer.block().memory(), range)?;
 
     writer[offset..offset + data.len()].copy_from_slice(data);
 
@@ -524,15 +536,15 @@ unsafe fn read_data_from_buffer(
     data: &mut [u8],
 ) -> Result<()> {
     use gfx::Device;
-    use gfxm::Block;
+    use crate::util::allocator::Block;
 
     let offset = offset as usize;
 
-    let range = buffer.range();
+    let range = buffer.block().range();
 
     let reader = device
         .device
-        .acquire_mapping_reader(buffer.memory(), range)?;
+        .acquire_mapping_reader(buffer.block().memory(), range)?;
 
     data.copy_from_slice(&reader[offset..offset + data.len()]);
 

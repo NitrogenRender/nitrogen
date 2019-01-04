@@ -6,6 +6,7 @@ pub(crate) mod pool;
 pub mod storage;
 pub mod submit_group;
 pub(crate) mod transfer;
+pub(crate) mod allocator;
 
 use std::borrow::Cow;
 

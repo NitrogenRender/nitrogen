@@ -5,9 +5,7 @@
 use gfx::Device;
 use gfx::Instance;
 
-use gfxm::MemoryAllocator;
-use gfxm::SmartAllocator;
-
+use crate::util::allocator::{Allocator, DefaultAlloc};
 use crate::types;
 
 use smallvec::SmallVec;
@@ -15,7 +13,7 @@ use smallvec::SmallVec;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 pub(crate) struct DeviceContext {
-    pub(crate) memory_allocator: Mutex<SmartAllocator<back::Backend>>,
+    pub(crate) memory_allocator: Mutex<DefaultAlloc>,
 
     pub(crate) graphics_queue_idx: usize,
     pub(crate) compute_queue_idx: usize,
@@ -36,9 +34,6 @@ impl DeviceContext {
         // TODO select best fitting adapter
         let adapter = adapters.remove(0);
 
-        let memory_properties = adapter.physical_device.memory_properties();
-        let memory_allocator =
-            SmartAllocator::new(memory_properties, 256, 64, 1024, 256 * 1024 * 1024);
 
         let (device, mut queue_groups, graphics_idx, compute_idx) = {
             use gfx::QueueFamily;
@@ -103,6 +98,9 @@ impl DeviceContext {
             })
             .collect();
 
+        let memory_properties = adapter.physical_device.memory_properties();
+        let memory_allocator = DefaultAlloc::new(&device, memory_properties);
+
         DeviceContext {
             memory_allocator: Mutex::new(memory_allocator),
 
@@ -116,7 +114,7 @@ impl DeviceContext {
         }
     }
 
-    pub(crate) fn allocator(&self) -> MutexGuard<SmartAllocator<back::Backend>> {
+    pub(crate) fn allocator(&self) -> MutexGuard<DefaultAlloc> {
         // if we can't access the device-local memory allocator then ... well, RIP
         self.memory_allocator
             .lock()

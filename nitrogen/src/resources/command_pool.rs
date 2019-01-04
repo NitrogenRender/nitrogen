@@ -23,8 +23,6 @@ where
     C: gfx::queue::capability::Capability,
 {
     fn new_elem(&mut self) -> CmdBufType<C> {
-        println!("new");
-
         let mut buf = self.pool.acquire_command_buffer::<gfx::command::OneShot>();
         unsafe {
             buf.begin();
@@ -33,7 +31,6 @@ where
     }
 
     fn reset_elem(&mut self, elem: &mut CmdBufType<C>) {
-        println!("reset/begin()");
         unsafe {
             elem.begin();
         }

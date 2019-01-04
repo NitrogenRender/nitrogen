@@ -376,7 +376,7 @@ impl ResourceList {
     }
 
     unsafe fn free_resources(&mut self) {
-        use gfxm::Factory;
+        use crate::util::allocator::Allocator;
 
         let mut alloc = self.device.allocator();
 

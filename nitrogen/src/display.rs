@@ -83,6 +83,9 @@ impl Display {
 
         let mut config =
             gfx::SwapchainConfig::from_caps(&surface_capability, format, default_extent);
+
+        println!("{:?}", surface_capability);
+        println!("{:?}", config);
         config.image_usage |= gfx::image::Usage::TRANSFER_DST;
         config.image_layers = 1;
 

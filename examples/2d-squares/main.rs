@@ -180,8 +180,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     while running {
-        println!("frame");
-
         events_loop.poll_events(|ev| match ev {
             winit::Event::WindowEvent { event, .. } => match event {
                 winit::WindowEvent::CloseRequested => {
