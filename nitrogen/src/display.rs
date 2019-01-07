@@ -84,8 +84,6 @@ impl Display {
         let mut config =
             gfx::SwapchainConfig::from_caps(&surface_capability, format, default_extent);
 
-        println!("{:?}", surface_capability);
-        println!("{:?}", config);
         config.image_usage |= gfx::image::Usage::TRANSFER_DST;
         config.image_layers = 1;
 
@@ -192,8 +190,8 @@ impl Display {
                     use gfx::pso::PipelineStage;
 
                     let src_barrier = gfx::memory::Barrier::Image {
-                        states: (Access::empty(), Layout::Undefined)
-                            ..(Access::TRANSFER_WRITE, Layout::TransferSrcOptimal),
+                        states: (Access::empty(), Layout::General)
+                            ..(Access::TRANSFER_READ, Layout::TransferSrcOptimal),
                         target: src_image,
                         families: None,
                         range: subres_range.clone(),
@@ -264,14 +262,14 @@ impl Display {
                     use gfx::pso::PipelineStage;
 
                     let src_barrier = gfx::memory::Barrier::Image {
-                        states: (Access::TRANSFER_WRITE, Layout::TransferSrcOptimal)
+                        states: (Access::empty(), Layout::TransferSrcOptimal)
                             ..(Access::empty(), Layout::General),
                         target: src_image,
                         families: None,
                         range: subres_range.clone(),
                     };
                     let dst_barrier = gfx::memory::Barrier::Image {
-                        states: (Access::TRANSFER_WRITE, Layout::TransferDstOptimal)
+                        states: (Access::empty(), Layout::TransferDstOptimal)
                             ..(Access::empty(), Layout::Present),
                         target: dst_image,
                         families: None,
