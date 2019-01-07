@@ -2,11 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::time::Instant;
+use nitrogen_examples_common::{
+    self as helper,
+    main_loop::{MainLoop, UserData},
+};
 
-use nitrogen::*;
-
-use nitrogen::submit_group::SubmitGroup;
+use nitrogen::{self as nit, buffer, graph, image, material, submit_group, vertex_attrib as vtx};
 
 struct Delta(pub f64);
 struct Scale(pub f32);
@@ -32,23 +33,103 @@ const VERTEX_DATA: [VertexData; 4] = [
     VertexData { pos: [1.0, 1.0] },
 ];
 
-const NUM_THINGS: usize = 1_024; // * 1_024;
+const NUM_THINGS: usize = 1_024 * 1_024 * 4;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    std::env::set_var("RUST_LOG", "debug");
-    env_logger::init();
+struct Data2dSquares {
+    graph: graph::GraphHandle,
 
-    // boring window stuff
+    buf_instance: buffer::BufferHandle,
+    buf_velocity: buffer::BufferHandle,
+    buf_vertex: buffer::BufferHandle,
 
-    let mut events_loop = winit::EventsLoop::new();
-    let window = winit::Window::new(&events_loop)?;
+    vtx_def: vtx::VertexAttribHandle,
 
-    // cool and fun nitrogen stuff
+    mat: material::MaterialHandle,
+}
 
-    let mut ctx = unsafe { Context::new("2d-squares", 1) };
-    let display = ctx.display_add(&window);
+impl UserData for Data2dSquares {
+    fn iteration(&mut self, store: &mut graph::Store, delta: f64) {
+        store.insert(Delta(delta));
+    }
 
-    let mut submit = unsafe { ctx.create_submit_group() };
+    fn graph(&self) -> graph::GraphHandle {
+        self.graph
+    }
+
+    fn output_image(&self) -> graph::ResourceName {
+        "Canvas".into()
+    }
+
+    fn release(self, ctx: &mut nit::Context, submit: &mut submit_group::SubmitGroup) {
+        submit.graph_destroy(ctx, &[self.graph]);
+
+        submit.buffer_destroy(
+            ctx,
+            &[self.buf_vertex, self.buf_instance, self.buf_velocity],
+        );
+
+        unsafe {
+            submit.wait(ctx);
+
+            ctx.material_destroy(&[self.mat]);
+        }
+
+        ctx.vertex_attribs_destroy(&[self.vtx_def]);
+    }
+}
+
+fn init(
+    store: &mut graph::Store,
+    ctx: &mut nit::Context,
+    submit: &mut submit_group::SubmitGroup,
+) -> Option<Data2dSquares> {
+    // create vertex attribute description
+
+    let vtx_def = {
+        let create_info = vtx::VertexAttribInfo {
+            buffer_infos: &[vtx::VertexAttribBufferInfo {
+                stride: ::std::mem::size_of::<VertexData>(),
+                index: 0,
+                elements: &[vtx::VertexAttribBufferElementInfo {
+                    location: 0,
+                    format: nit::gfx::format::Format::Rg32Float,
+                    offset: 0,
+                }],
+            }],
+        };
+        ctx.vertex_attribs_create(&[create_info]).remove(0)
+    };
+
+    // create a bunch of buffers
+
+    let vertex_buffer =
+        unsafe { helper::resource::buffer_device_local_vertex(ctx, submit, &VERTEX_DATA[..])? };
+
+    let (instance_buffer, velocity_buffer) = {
+        let instance_data = create_instance_data();
+        let instance_vel = create_instance_velocity();
+
+        let instance_buffer = unsafe {
+            helper::resource::buffer_device_local_create(
+                ctx,
+                submit,
+                &instance_data[..],
+                buffer::BufferUsage::UNIFORM | buffer::BufferUsage::STORAGE,
+            )?
+        };
+
+        let velocity_buffer = unsafe {
+            helper::resource::buffer_device_local_storage(ctx, submit, &instance_vel[..])?
+        };
+
+        unsafe {
+            submit.wait(ctx);
+        }
+
+        (instance_buffer, velocity_buffer)
+    };
+
+    // create material definition and an instance
 
     let material = unsafe {
         let create_info = material::MaterialCreateInfo {
@@ -59,71 +140,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 (1, material::MaterialParameterType::StorageBuffer),
             ],
         };
-        ctx.material_create(&[create_info]).remove(0).unwrap()
+        ctx.material_create(&[create_info]).remove(0).ok()?
     };
 
-    let vtx_def = {
-        let create_info = vertex_attrib::VertexAttribInfo {
-            buffer_infos: &[vertex_attrib::VertexAttribBufferInfo {
-                stride: ::std::mem::size_of::<VertexData>(),
-                index: 0,
-                elements: &[vertex_attrib::VertexAttribBufferElementInfo {
-                    location: 0,
-                    format: nitrogen::gfx::format::Format::Rg32Float,
-                    offset: 0,
-                }],
-            }],
-        };
-        ctx.vertex_attribs_create(&[create_info]).remove(0)
-    };
+    let instance_material = unsafe { ctx.material_create_instance(&[material]).remove(0).ok()? };
 
-    let vertex_buffer = unsafe {
-        use crate::buffer::BufferUsage;
-
-        create_buffer(
-            &mut ctx,
-            &mut submit,
-            &VERTEX_DATA[..],
-            BufferUsage::TRANSFER_DST | BufferUsage::VERTEX,
-        )
-    };
-
-    let num_squares = NUM_THINGS as _;
-
-    let instance_data = create_instance_data(num_squares);
-    let instance_vel = create_instance_velocity(num_squares);
-
-    let instance_material = unsafe { ctx.material_create_instance(&[material]).remove(0).unwrap() };
-
-    let instance_buffer = unsafe {
-        use crate::buffer::BufferUsage;
-
-        create_buffer(
-            &mut ctx,
-            &mut submit,
-            &instance_data[..],
-            BufferUsage::TRANSFER_DST | BufferUsage::UNIFORM | BufferUsage::STORAGE,
-        )
-    };
-
-    let velocity_buffer = unsafe {
-        use crate::buffer::BufferUsage;
-
-        create_buffer(
-            &mut ctx,
-            &mut submit,
-            &instance_vel[..],
-            BufferUsage::TRANSFER_DST | BufferUsage::STORAGE,
-        )
-    };
-
-    unsafe {
-        submit.wait(&mut ctx);
-    }
-
-    drop(instance_data);
-    drop(instance_vel);
-
+    // write to instance
     {
         let writes = &[
             material::InstanceWrite {
@@ -147,134 +169,52 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let graph = create_graph(
-        &mut ctx,
-        vtx_def,
-        material,
-        instance_material,
-        vertex_buffer,
-    );
+    let graph = create_graph(ctx, vtx_def, material, instance_material, vertex_buffer);
 
-    let mut running = true;
-    let mut resized = true;
-
-    let mut exec_context = {
-        let initial_size = window.get_inner_size().unwrap();
-        graph::ExecutionContext {
-            reference_size: (initial_size.width as u32, initial_size.height as u32),
-        }
-    };
-
-    let mut submits = vec![submit, unsafe { ctx.create_submit_group() }];
-
-    let mut frame_num = 0;
-    let mut frame_idx = 0;
-
-    let mut instant = Instant::now();
-
-    let mut store = graph::Store::new();
-
+    // write initial scale to the store
     {
         let scale = 0.25 / 8.0;
         store.insert(Scale(scale));
     }
 
-    while running {
-        events_loop.poll_events(|ev| match ev {
-            winit::Event::WindowEvent { event, .. } => match event {
-                winit::WindowEvent::CloseRequested => {
-                    running = false;
-                }
-                winit::WindowEvent::Resized(size) => {
-                    exec_context.reference_size = (size.width as u32, size.height as u32);
+    store.insert(Delta(0.00001));
 
-                    resized = true;
-                }
-                _ => {}
-            },
-            _ => {}
-        });
+    Some(Data2dSquares {
+        graph,
 
-        // render stuff
-        let res = ctx.graph_compile(graph);
-        if let Err(err) = res {
-            println!("{:?}", err);
-            continue;
-        }
+        buf_instance: instance_buffer,
+        buf_velocity: velocity_buffer,
+        buf_vertex: vertex_buffer,
 
-        // wait for prev frame
-        {
-            let last_idx = frame_idx;
+        vtx_def,
 
-            unsafe {
-                submits[last_idx].wait(&mut ctx);
-            }
-        }
+        mat: material,
+    })
+}
 
-        // update delta time
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    std::env::set_var("RUST_LOG", "debug");
+    env_logger::init();
 
-        let delta = {
-            let new_instant = Instant::now();
-            let dur = new_instant.duration_since(instant);
-            instant = new_instant;
+    // boring window stuff
+    let mut ml = unsafe { MainLoop::new("2d-squares", init).unwrap() };
 
-            const NANOS_PER_SEC: u32 = 1_000_000_000;
-
-            let secs = dur.as_secs() as f64;
-            let subsecs = dur.subsec_nanos() as f64 / NANOS_PER_SEC as f64;
-
-            secs + subsecs
-        };
-
-        store.insert(Delta(delta));
-
+    while ml.running() {
         unsafe {
-            if resized {
-                submits[frame_idx].display_setup_swapchain(&mut ctx, display);
-                resized = false;
-            }
-
-            submits[frame_idx].graph_execute(&mut ctx, graph, &store, &exec_context);
-
-            let img = ctx.graph_get_output_image(graph, "Canvas").unwrap();
-
-            submits[frame_idx].display_present(&mut ctx, display, img);
-        }
-
-        frame_num += 1;
-        frame_idx = frame_num % submits.len();
-    }
-
-    submits[0].buffer_destroy(&mut ctx, &[vertex_buffer, instance_buffer, velocity_buffer]);
-    submits[0].graph_destroy(&mut ctx, &[graph]);
-
-    // wait until all work is done
-    unsafe {
-        ctx.wait_idle();
-    }
-
-    for mut submit in submits {
-        unsafe {
-            submit.wait(&mut ctx);
-            submit.release(&mut ctx);
+            ml.iterate();
         }
     }
-
-    ctx.vertex_attribs_destroy(&[vtx_def]);
 
     unsafe {
-        ctx.material_destroy(&[material]);
-        ctx.display_remove(display);
-
-        ctx.release();
+        ml.release();
     }
 
     Ok(())
 }
 
 fn create_graph(
-    ctx: &mut Context,
-    vertex_attrib: vertex_attrib::VertexAttribHandle,
+    ctx: &mut nit::Context,
+    vertex_attrib: vtx::VertexAttribHandle,
     material: material::MaterialHandle,
     mat_instance: material::MaterialInstanceHandle,
     buffer: buffer::BufferHandle,
@@ -423,14 +363,14 @@ fn create_graph(
     graph
 }
 
-fn create_instance_data(num: u32) -> Vec<InstanceData> {
+fn create_instance_data() -> Vec<InstanceData> {
     use rand::{thread_rng, Rng};
 
     let mut rng = thread_rng();
 
-    let mut result = Vec::with_capacity(num as usize);
+    let mut result = Vec::with_capacity(NUM_THINGS);
 
-    for _i in 0..num {
+    for _ in 0..NUM_THINGS {
         let size = [rng.gen_range(0.05, 0.1), rng.gen_range(0.05, 0.1)];
 
         let size = [size[0], size[0]];
@@ -453,41 +393,17 @@ fn create_instance_data(num: u32) -> Vec<InstanceData> {
     result
 }
 
-fn create_instance_velocity(num: u32) -> Vec<[f32; 2]> {
+fn create_instance_velocity() -> Vec<[f32; 2]> {
     use rand::{thread_rng, Rng};
 
     let mut rng = thread_rng();
 
-    let mut result = Vec::with_capacity(num as usize);
+    let mut result = Vec::with_capacity(NUM_THINGS);
 
-    for _ in 0..num {
+    for _ in 0..NUM_THINGS {
         let vel = [rng.gen_range(-0.5, 0.5), rng.gen_range(-0.5, 0.5)];
         result.push(vel);
     }
 
     result
-}
-
-unsafe fn create_buffer<T>(
-    ctx: &mut Context,
-    submit: &mut SubmitGroup,
-    data: &[T],
-    usages: buffer::BufferUsage,
-) -> buffer::BufferHandle {
-    let create_info = buffer::DeviceLocalCreateInfo {
-        size: std::mem::size_of::<T>() as u64 * (data.len() as u64),
-        is_transient: false,
-        usage: usages,
-    };
-
-    let buffer = ctx
-        .buffer_device_local_create(&[create_info])
-        .remove(0)
-        .unwrap();
-
-    let upload_info = buffer::BufferUploadInfo { offset: 0, data };
-
-    submit.buffer_device_local_upload(ctx, &[(buffer, upload_info)]);
-
-    buffer
 }

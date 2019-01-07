@@ -4,11 +4,15 @@
 
 extern crate image as img;
 
-use nitrogen::graph;
-use nitrogen::graph::GraphicsPassImpl;
-use nitrogen::image;
+use nitrogen_examples_common::{
+    self as helper,
+    main_loop::{MainLoop, UserData},
+};
 
-use log::debug;
+use nitrogen::{
+    self as nit, buffer, graph, graph::GraphicsPassImpl, image, material, sampler, submit_group,
+    vertex_attrib as vtx,
+};
 
 use std::borrow::Cow;
 
@@ -26,170 +30,92 @@ const TRIANGLE_UV: [[f32; 2]; 4] = [
     [1.0, 1.0], // RIGHT BOTTOM
 ];
 
-fn main() {
-    std::env::set_var("RUST_LOG", "debug");
-    env_logger::init();
+struct Data {
+    graph: graph::GraphHandle,
 
-    let mut events = winit::EventsLoop::new();
-    let window = winit::Window::new(&events).unwrap();
+    bufs: Vec<buffer::BufferHandle>,
 
-    let mut ntg = unsafe { nitrogen::Context::new("nitrogen test", 1) };
+    img: image::ImageHandle,
+    sampler: sampler::SamplerHandle,
 
-    let mut submit = unsafe { ntg.create_submit_group() };
+    mat: material::MaterialHandle,
 
-    let display = ntg.display_add(&window);
+    vtx_def: vtx::VertexAttribHandle,
+}
 
-    let material = unsafe {
-        let create_info = nitrogen::material::MaterialCreateInfo {
-            parameters: &[
-                (0, nitrogen::material::MaterialParameterType::SampledImage),
-                (1, nitrogen::material::MaterialParameterType::Sampler),
-                (2, nitrogen::material::MaterialParameterType::UniformBuffer),
-            ],
-        };
-
-        ntg.material_create(&[create_info]).remove(0).unwrap()
-    };
-
-    let mat_example_instance =
-        unsafe { ntg.material_create_instance(&[material]).remove(0).unwrap() };
-
-    let (image, sampler) = {
-        let image_data = include_bytes!("assets/test.png");
-
-        let image = img::load(std::io::Cursor::new(&image_data[..]), img::PNG)
-            .unwrap()
-            .to_rgba();
-
-        let (width, height) = image.dimensions();
-        let dimension = image::ImageDimension::D2 {
-            x: width,
-            y: height,
-        };
-
-        let create_info = image::ImageCreateInfo {
-            dimension,
-            num_layers: 1,
-            num_samples: 1,
-            num_mipmaps: 1,
-
-            usage: image::ImageUsage {
-                transfer_dst: true,
-                sampling: true,
-                ..Default::default()
-            },
-
-            ..Default::default()
-        };
-
-        let img = unsafe { ntg.image_create(&[create_info]).remove(0).unwrap() };
-
-        debug!("width {}, height {}", width, height);
-
-        unsafe {
-            let data = image::ImageUploadInfo {
-                data: &(*image),
-                format: image::ImageFormat::RgbaUnorm,
-                dimension,
-                target_offset: (0, 0, 0),
-            };
-
-            submit
-                .image_upload_data(&mut ntg, &[(img, data)])
-                .remove(0)
-                .unwrap()
-        }
-
-        drop(image);
-
-        let sampler = unsafe {
-            use nitrogen::sampler::{Filter, WrapMode};
-
-            let sampler_create = nitrogen::sampler::SamplerCreateInfo {
-                min_filter: Filter::Linear,
-                mag_filter: Filter::Linear,
-                mip_filter: Filter::Linear,
-                wrap_mode: (WrapMode::Clamp, WrapMode::Clamp, WrapMode::Clamp),
-            };
-
-            ntg.sampler_create(&[sampler_create]).remove(0)
-        };
-
-        (img, sampler)
-    };
-
-    unsafe {
-        submit.display_setup_swapchain(&mut ntg, display);
+impl UserData for Data {
+    fn graph(&self) -> graph::GraphHandle {
+        self.graph
     }
 
-    let buffer_pos = unsafe {
-        let create_info = nitrogen::buffer::CpuVisibleCreateInfo {
-            size: std::mem::size_of_val(&TRIANGLE_POS) as u64,
-            is_transient: false,
-            usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC
-                | nitrogen::buffer::BufferUsage::VERTEX,
-        };
-        let buffer = ntg
-            .buffer_cpu_visible_create(&[create_info])
-            .remove(0)
-            .unwrap();
+    fn output_image(&self) -> graph::ResourceName {
+        "Output".into()
+    }
 
-        let upload_data = nitrogen::buffer::BufferUploadInfo {
-            offset: 0,
-            data: &TRIANGLE_POS,
-        };
+    fn release(self, ctx: &mut nit::Context, submit: &mut submit_group::SubmitGroup) {
+        submit.graph_destroy(ctx, &[self.graph]);
 
-        submit
-            .buffer_cpu_visible_upload(&mut ntg, &[(buffer, upload_data)])
-            .remove(0)
-            .unwrap();
+        submit.buffer_destroy(ctx, &self.bufs);
+        submit.image_destroy(ctx, &[self.img]);
+        submit.sampler_destroy(ctx, &[self.sampler]);
 
-        buffer
+        unsafe {
+            submit.wait(ctx);
+
+            ctx.material_destroy(&[self.mat]);
+        }
+
+        ctx.vertex_attribs_destroy(&[self.vtx_def]);
+    }
+}
+
+fn init(
+    _store: &mut graph::Store,
+    ctx: &mut nit::Context,
+    submit: &mut submit_group::SubmitGroup,
+) -> Option<Data> {
+    // create image
+
+    let (img, sampler) = unsafe {
+        let data = include_bytes!("assets/test.png");
+
+        let image = img::load(std::io::Cursor::new(&data[..]), img::PNG)
+            .ok()?
+            .to_rgba();
+
+        let dims = image.dimensions();
+
+        helper::resource::image_color(ctx, submit, &*image, dims, image::ImageFormat::RgbaUnorm)?
     };
 
-    let buffer_uv = unsafe {
-        let create_info = nitrogen::buffer::CpuVisibleCreateInfo {
-            size: std::mem::size_of_val(&TRIANGLE_UV) as u64,
-            is_transient: false,
-            usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC
-                | nitrogen::buffer::BufferUsage::VERTEX,
-        };
-        let buffer = ntg
-            .buffer_cpu_visible_create(&[create_info])
-            .remove(0)
-            .unwrap();
+    // create quad buffers
 
-        let upload_data = nitrogen::buffer::BufferUploadInfo {
-            offset: 0,
-            data: &TRIANGLE_UV,
-        };
+    let buf_pos =
+        unsafe { helper::resource::buffer_device_local_vertex(ctx, submit, &TRIANGLE_POS)? };
 
-        submit
-            .buffer_cpu_visible_upload(&mut ntg, &[(buffer, upload_data)])
-            .remove(0)
-            .unwrap();
+    let buf_uv =
+        unsafe { helper::resource::buffer_device_local_vertex(ctx, submit, &TRIANGLE_UV)? };
 
-        buffer
-    };
+    // vertex attribute description
 
     let vertex_attrib = {
-        let info = nitrogen::vertex_attrib::VertexAttribInfo {
+        let info = vtx::VertexAttribInfo {
             buffer_infos: &[
                 // pos
-                nitrogen::vertex_attrib::VertexAttribBufferInfo {
+                vtx::VertexAttribBufferInfo {
                     stride: std::mem::size_of::<[f32; 2]>(),
                     index: 0,
-                    elements: &[nitrogen::vertex_attrib::VertexAttribBufferElementInfo {
+                    elements: &[vtx::VertexAttribBufferElementInfo {
                         location: 0,
-                        format: nitrogen::gfx::format::Format::Rg32Float,
+                        format: nit::gfx::format::Format::Rg32Float,
                         offset: 0,
                     }],
                 },
                 // uv
-                nitrogen::vertex_attrib::VertexAttribBufferInfo {
+                vtx::VertexAttribBufferInfo {
                     stride: std::mem::size_of::<[f32; 2]>(),
                     index: 1,
-                    elements: &[nitrogen::vertex_attrib::VertexAttribBufferElementInfo {
+                    elements: &[vtx::VertexAttribBufferElementInfo {
                         location: 1,
                         format: nitrogen::gfx::format::Format::Rg32Float,
                         offset: 0,
@@ -198,163 +124,87 @@ fn main() {
             ],
         };
 
-        ntg.vertex_attribs_create(&[info]).remove(0)
+        ctx.vertex_attribs_create(&[info]).remove(0)
     };
 
-    let graph = setup_graphs(
-        &mut ntg,
-        Some(vertex_attrib),
-        buffer_pos,
-        buffer_uv,
-        material,
-        mat_example_instance,
-    );
+    // create material and material instance
 
-    let mut running = true;
-    let mut resized = true;
+    let material = unsafe {
+        let create_info = material::MaterialCreateInfo {
+            parameters: &[
+                (0, material::MaterialParameterType::SampledImage),
+                (1, material::MaterialParameterType::Sampler),
+            ],
+        };
 
-    #[derive(Copy, Clone)]
-    struct UniformData {
-        _color: [f32; 4],
+        ctx.material_create(&[create_info]).remove(0)
     }
+    .unwrap();
 
-    let uniform_data = UniformData {
-        _color: [0.3, 0.5, 1.0, 1.0],
-    };
-
-    let uniform_buffer = unsafe {
-        let create_info = nitrogen::buffer::CpuVisibleCreateInfo {
-            size: std::mem::size_of::<UniformData>() as u64,
-            is_transient: false,
-            usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC
-                | nitrogen::buffer::BufferUsage::UNIFORM,
-        };
-        let buffer = ntg
-            .buffer_cpu_visible_create(&[create_info])
-            .remove(0)
-            .unwrap();
-
-        let upload_data = nitrogen::buffer::BufferUploadInfo {
-            offset: 0,
-            data: &[uniform_data],
-        };
-
-        submit
-            .buffer_cpu_visible_upload(&mut ntg, &[(buffer, upload_data)])
-            .remove(0)
-            .unwrap();
-
-        buffer
-    };
+    let mat_instance = unsafe { ctx.material_create_instance(&[material]).remove(0) }.unwrap();
 
     unsafe {
-        ntg.material_write_instance(
-            mat_example_instance,
+        ctx.material_write_instance(
+            mat_instance,
             &[
                 nitrogen::material::InstanceWrite {
                     binding: 0,
-                    data: nitrogen::material::InstanceWriteData::Image { image },
+                    data: nitrogen::material::InstanceWriteData::Image { image: img },
                 },
                 nitrogen::material::InstanceWrite {
                     binding: 1,
                     data: nitrogen::material::InstanceWriteData::Sampler { sampler },
                 },
-                nitrogen::material::InstanceWrite {
-                    binding: 2,
-                    data: nitrogen::material::InstanceWriteData::Buffer {
-                        buffer: uniform_buffer,
-                        region: None..None,
-                    },
-                },
             ],
         );
     }
 
-    let mut submits = vec![submit, unsafe { ntg.create_submit_group() }];
+    let graph = setup_graphs(
+        ctx,
+        Some(vertex_attrib),
+        buf_pos,
+        buf_uv,
+        material,
+        mat_instance,
+    );
 
-    let mut frame_num = 0;
-    let mut frame_idx = 0;
+    Some(Data {
+        graph,
 
-    let exec_context = nitrogen::graph::ExecutionContext {
-        reference_size: (1920, 1080),
-    };
+        bufs: vec![buf_pos, buf_uv],
+        img,
+        sampler,
+        vtx_def: vertex_attrib,
+        mat: material,
+    })
+}
 
-    let store = graph::Store::new();
+fn main() {
+    std::env::set_var("RUST_LOG", "debug");
+    env_logger::init();
 
-    while running {
-        events.poll_events(|event| match event {
-            winit::Event::WindowEvent { event, .. } => match event {
-                winit::WindowEvent::CloseRequested => {
-                    running = false;
-                }
-                winit::WindowEvent::Resized(_size) => {
-                    resized = true;
-                }
-                _ => {}
-            },
-            _ => {}
-        });
+    let mut ml = unsafe { MainLoop::new("Multi Target", init) }.unwrap();
 
-        // ntg.graph_compile(graph);
-        if let Err(errs) = ntg.graph_compile(graph) {
-            println!("Errors occured while compiling the old_graph");
-            println!("{:?}", errs);
-        }
-
-        // wait for previous frame
-        {
-            let last_idx = (frame_num + (submits.len() - 1)) % submits.len();
-
-            unsafe {
-                submits[last_idx].wait(&mut ntg);
-            }
-        }
-
+    while ml.running() {
         unsafe {
-            if resized {
-                submits[frame_idx].display_setup_swapchain(&mut ntg, display);
-                resized = false;
-            }
-
-            submits[frame_idx].graph_execute(&mut ntg, graph, &store, &exec_context);
-
-            let img = ntg.graph_get_output_image(graph, "Output").unwrap();
-
-            submits[frame_idx].display_present(&mut ntg, display, img);
-        }
-
-        frame_num += 1;
-        frame_idx = frame_num % submits.len();
-    }
-
-    submits[0].buffer_destroy(&mut ntg, &[buffer_pos, buffer_uv, uniform_buffer]);
-    submits[0].image_destroy(&mut ntg, &[image]);
-    submits[0].sampler_destroy(&mut ntg, &[sampler]);
-    submits[0].graph_destroy(&mut ntg, &[graph]);
-
-    for mut submit in submits {
-        unsafe {
-            submit.wait(&mut ntg);
-            submit.release(&mut ntg);
+            ml.iterate();
         }
     }
 
     unsafe {
-        ntg.material_destroy(&[material]);
-
-        ntg.release();
+        ml.release();
     }
 }
 
 fn setup_graphs(
-    ntg: &mut nitrogen::Context,
+    ctx: &mut nitrogen::Context,
     vertex_attrib: Option<nitrogen::vertex_attrib::VertexAttribHandle>,
     buffer_pos: nitrogen::buffer::BufferHandle,
     buffer_uv: nitrogen::buffer::BufferHandle,
     material: nitrogen::material::MaterialHandle,
     material_instance: nitrogen::material::MaterialInstanceHandle,
 ) -> graph::GraphHandle {
-    let graph = ntg.graph_create();
+    let graph = ctx.graph_create();
 
     fn image_create_info() -> graph::ImageCreateInfo {
         graph::ImageCreateInfo {
@@ -422,7 +272,7 @@ fn setup_graphs(
             3,
         );
 
-        ntg.graph_add_graphics_pass(graph, "Split", info, pass_impl);
+        ctx.graph_add_graphics_pass(graph, "Split", info, pass_impl);
     }
 
     {
@@ -467,10 +317,10 @@ fn setup_graphs(
             1,
         );
 
-        ntg.graph_add_graphics_pass(graph, "Read", info, pass_impl);
+        ctx.graph_add_graphics_pass(graph, "Read", info, pass_impl);
     }
 
-    ntg.graph_add_output(graph, "Output");
+    ctx.graph_add_output(graph, "Output");
 
     graph
 }

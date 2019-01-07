@@ -31,11 +31,6 @@ Texture2D t;
 [[vk::binding(1, 1)]]
 SamplerState s;
 
-[[vk::binding(2, 1)]]
-cbuffer {
-    float4 modulate;
-};
-
 VertexOut VertexMain(VertexIn input)
 {
     VertexOut output;
