@@ -6,7 +6,7 @@ use nitrogen::buffer::BufferUsage;
 use nitrogen::submit_group::SubmitGroup;
 use nitrogen::*;
 
-fn device_local_buffer_create<T: Sized>(
+unsafe fn device_local_buffer_create<T: Sized>(
     ctx: &mut Context,
     submit: &mut SubmitGroup,
     data: &[T],
@@ -40,7 +40,7 @@ fn device_local_buffer_create<T: Sized>(
     Some(buffer)
 }
 
-pub fn device_local_buffer_vertex<T: Sized>(
+pub unsafe fn device_local_buffer_vertex<T: Sized>(
     ctx: &mut Context,
     submit: &mut SubmitGroup,
     data: &[T],
@@ -50,7 +50,7 @@ pub fn device_local_buffer_vertex<T: Sized>(
     device_local_buffer_create(ctx, submit, data, usage)
 }
 
-pub fn device_local_buffer_index<T: Sized>(
+pub unsafe fn device_local_buffer_index<T: Sized>(
     ctx: &mut Context,
     submit: &mut SubmitGroup,
     data: &[T],
@@ -60,7 +60,7 @@ pub fn device_local_buffer_index<T: Sized>(
     device_local_buffer_create(ctx, submit, data, usage)
 }
 
-pub fn device_local_buffer_storage<T: Sized>(
+pub unsafe fn device_local_buffer_storage<T: Sized>(
     ctx: &mut Context,
     submit: &mut SubmitGroup,
     data: &[T],
@@ -70,7 +70,7 @@ pub fn device_local_buffer_storage<T: Sized>(
     device_local_buffer_create(ctx, submit, data, usage)
 }
 
-pub fn device_local_buffer<T: Sized>(
+pub unsafe fn device_local_buffer<T: Sized>(
     ctx: &mut Context,
     submit: &mut SubmitGroup,
     data: &[T],

@@ -6,8 +6,6 @@ use failure_derive::Fail;
 
 use gfx::image;
 use gfx::Device;
-use gfxm::Factory;
-use gfxm::SmartAllocator;
 
 use std;
 use std::borrow::Borrow;
@@ -17,14 +15,17 @@ use std::hash::{Hash, Hasher};
 use smallvec::smallvec;
 use smallvec::SmallVec;
 
+use crate::util::allocator::{
+    Allocator, AllocatorError, BufferRequest, Image as AllocImage, ImageRequest,
+};
 use crate::util::storage::{Handle, Storage};
 use crate::util::transfer;
 
 use crate::device::DeviceContext;
+use crate::resources::command_pool::CommandPoolTransfer;
 use crate::resources::semaphore_pool::SemaphoreList;
 use crate::resources::semaphore_pool::SemaphorePool;
 use crate::submit_group::ResourceList;
-use crate::types::CommandPool;
 
 #[derive(Copy, Clone, Debug)]
 pub enum ImageDimension {
@@ -240,11 +241,11 @@ impl From<ViewKind> for gfx::image::ViewKind {
     }
 }
 
-pub(crate) type ImageType = <SmartAllocator<back::Backend> as Factory<back::Backend>>::Image;
+pub(crate) type ImageType = AllocImage;
 type ImageView = <back::Backend as gfx::Backend>::ImageView;
 
 pub struct Image {
-    pub image: ImageType,
+    pub(crate) image: ImageType,
     pub view: ImageView,
     pub dimension: ImageDimension,
     pub format: gfx::format::Format,
@@ -259,7 +260,7 @@ pub enum ImageError {
     UploadDataInvalid,
 
     #[fail(display = "Failed to allocate image")]
-    CantCreate(#[cause] gfxm::FactoryError),
+    CantCreate(#[cause] AllocatorError),
 
     #[fail(display = "Failed to map memory")]
     MappingError(#[cause] gfx::mapping::Error),
@@ -271,8 +272,8 @@ pub enum ImageError {
     CantWriteToImage,
 }
 
-impl From<gfxm::FactoryError> for ImageError {
-    fn from(err: gfxm::FactoryError) -> Self {
+impl From<AllocatorError> for ImageError {
+    fn from(err: AllocatorError) -> Self {
         ImageError::CantCreate(err)
     }
 }
@@ -305,7 +306,7 @@ impl ImageStorage {
         }
     }
 
-    pub(crate) fn release(self, device: &DeviceContext) {
+    pub(crate) unsafe fn release(self, device: &DeviceContext) {
         let mut alloc = device.allocator();
 
         for (_, image) in self.storage.into_iter() {
@@ -314,7 +315,7 @@ impl ImageStorage {
         }
     }
 
-    pub(crate) fn create<T: Into<gfx::image::Usage> + Clone>(
+    pub(crate) unsafe fn create<T: Into<gfx::image::Usage> + Clone>(
         &mut self,
         device: &DeviceContext,
         create_infos: &[ImageCreateInfo<T>],
@@ -366,22 +367,18 @@ impl ImageStorage {
 
                 let usage_flags = create_info.usage.clone().into();
 
-                let alloc_type = if create_info.is_transient {
-                    gfxm::Type::ShortLived
-                } else {
-                    gfxm::Type::General
+                let req = ImageRequest {
+                    transient: create_info.is_transient,
+                    properties: Properties::DEVICE_LOCAL,
+                    kind: image_kind,
+                    level: 1,
+                    format,
+                    tiling: image::Tiling::Optimal,
+                    usage: usage_flags,
+                    view_caps: image::ViewCapabilities::empty(),
                 };
 
-                let image = allocator.create_image(
-                    &device.device,
-                    (alloc_type, Properties::DEVICE_LOCAL),
-                    image_kind,
-                    1,
-                    format,
-                    image::Tiling::Optimal,
-                    usage_flags,
-                    image::ViewCapabilities::empty(),
-                );
+                let image = allocator.create_image(&device.device, req);
 
                 match image {
                     Err(e) => {
@@ -431,12 +428,12 @@ impl ImageStorage {
         result
     }
 
-    pub(crate) fn upload_data(
+    pub(crate) unsafe fn upload_data(
         &self,
         device: &DeviceContext,
         sem_pool: &SemaphorePool,
         sem_list: &mut SemaphoreList,
-        cmd_pool: &mut CommandPool<gfx::Transfer>,
+        cmd_pool: &CommandPoolTransfer,
         res_list: &mut ResourceList,
         images: &[(ImageHandle, ImageUploadInfo)],
     ) -> SmallVec<[Result<()>; 16]> {
@@ -541,15 +538,15 @@ impl ImageStorage {
                     upload_size >= upload_width as u64 * upload_height as u64 * texel_size as u64
                 );
 
-                let staging_buffer = match allocator.create_buffer(
-                    &device.device,
-                    (
-                        gfxm::Type::ShortLived,
-                        Properties::CPU_VISIBLE | Properties::COHERENT,
-                    ),
-                    upload_size,
-                    gfx::buffer::Usage::TRANSFER_SRC | gfx::buffer::Usage::TRANSFER_DST,
-                ) {
+                let buf_req = BufferRequest {
+                    transient: true,
+                    persistently_mappable: false,
+                    properties: Properties::CPU_VISIBLE | Properties::COHERENT,
+                    usage: gfx::buffer::Usage::TRANSFER_SRC | gfx::buffer::Usage::TRANSFER_DST,
+                    size: upload_size,
+                };
+
+                let staging_buffer = match allocator.create_buffer(&device.device, buf_req) {
                     Err(e) => {
                         results[idx] = Err(e.into());
                         return None;
@@ -579,13 +576,13 @@ impl ImageStorage {
 
                     // write to staging buffer
                     {
-                        use gfxm::Block;
+                        use crate::util::allocator::Block;
 
-                        let range = staging.range();
+                        let range = staging.block().range();
 
                         let mut writer = match device
                             .device
-                            .acquire_mapping_writer(staging.memory(), range)
+                            .acquire_mapping_writer(staging.block().memory(), range)
                         {
                             Err(e) => {
                                 results[*idx] = Err(e.into());

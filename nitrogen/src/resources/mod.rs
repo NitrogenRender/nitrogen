@@ -5,6 +5,7 @@
 pub use super::*;
 
 pub mod buffer;
+pub(crate) mod command_pool;
 pub mod image;
 pub mod material;
 pub(crate) mod pipeline;

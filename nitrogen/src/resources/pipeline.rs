@@ -118,7 +118,7 @@ impl PipelineStorage {
         }
     }
 
-    pub(crate) fn create_graphics_pipelines(
+    pub(crate) unsafe fn create_graphics_pipelines(
         &mut self,
         device: &DeviceContext,
         render_pass_storage: &RenderPassStorage,
@@ -141,7 +141,7 @@ impl PipelineStorage {
     }
 
     // I'm sorry Mike Acton
-    fn create_graphics_pipeline(
+    unsafe fn create_graphics_pipeline(
         &mut self,
         device: &DeviceContext,
         render_pass_storage: &RenderPassStorage,
@@ -316,7 +316,7 @@ impl PipelineStorage {
         Ok(handle)
     }
 
-    pub(crate) fn create_compute_pipelines(
+    pub(crate) unsafe fn create_compute_pipelines(
         &mut self,
         device: &DeviceContext,
         create_infos: &[ComputePipelineCreateInfo],
@@ -327,7 +327,7 @@ impl PipelineStorage {
             .collect()
     }
 
-    pub(crate) fn create_compute_pipeline(
+    pub(crate) unsafe fn create_compute_pipeline(
         &mut self,
         device: &DeviceContext,
         create_info: &ComputePipelineCreateInfo,

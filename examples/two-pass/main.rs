@@ -33,13 +33,13 @@ fn main() {
     let mut events = winit::EventsLoop::new();
     let window = winit::Window::new(&events).unwrap();
 
-    let mut ntg = nitrogen::Context::new("nitrogen test", 1);
+    let mut ntg = unsafe { nitrogen::Context::new("nitrogen test", 1) };
 
-    let mut submit = ntg.create_submit_group();
+    let mut submit = unsafe { ntg.create_submit_group() };
 
     let display = ntg.display_add(&window);
 
-    let material = {
+    let material = unsafe {
         let create_info = nitrogen::material::MaterialCreateInfo {
             parameters: &[
                 (0, nitrogen::material::MaterialParameterType::SampledImage),
@@ -51,7 +51,8 @@ fn main() {
         ntg.material_create(&[create_info]).remove(0).unwrap()
     };
 
-    let mat_example_instance = { ntg.material_create_instance(&[material]).remove(0).unwrap() };
+    let mat_example_instance =
+        unsafe { ntg.material_create_instance(&[material]).remove(0).unwrap() };
 
     let (image, sampler) = {
         let image_data = include_bytes!("assets/test.png");
@@ -81,11 +82,11 @@ fn main() {
             ..Default::default()
         };
 
-        let img = ntg.image_create(&[create_info]).remove(0).unwrap();
+        let img = unsafe { ntg.image_create(&[create_info]).remove(0).unwrap() };
 
         debug!("width {}, height {}", width, height);
 
-        {
+        unsafe {
             let data = image::ImageUploadInfo {
                 data: &(*image),
                 format: image::ImageFormat::RgbaUnorm,
@@ -101,7 +102,7 @@ fn main() {
 
         drop(image);
 
-        let sampler = {
+        let sampler = unsafe {
             use nitrogen::sampler::{Filter, WrapMode};
 
             let sampler_create = nitrogen::sampler::SamplerCreateInfo {
@@ -117,9 +118,11 @@ fn main() {
         (img, sampler)
     };
 
-    submit.display_setup_swapchain(&mut ntg, display);
+    unsafe {
+        submit.display_setup_swapchain(&mut ntg, display);
+    }
 
-    let buffer_pos = {
+    let buffer_pos = unsafe {
         let create_info = nitrogen::buffer::CpuVisibleCreateInfo {
             size: std::mem::size_of_val(&TRIANGLE_POS) as u64,
             is_transient: false,
@@ -144,7 +147,7 @@ fn main() {
         buffer
     };
 
-    let buffer_uv = {
+    let buffer_uv = unsafe {
         let create_info = nitrogen::buffer::CpuVisibleCreateInfo {
             size: std::mem::size_of_val(&TRIANGLE_UV) as u64,
             is_transient: false,
@@ -219,7 +222,7 @@ fn main() {
         _color: [0.3, 0.5, 1.0, 1.0],
     };
 
-    let uniform_buffer = {
+    let uniform_buffer = unsafe {
         let create_info = nitrogen::buffer::CpuVisibleCreateInfo {
             size: std::mem::size_of::<UniformData>() as u64,
             is_transient: false,
@@ -244,7 +247,7 @@ fn main() {
         buffer
     };
 
-    {
+    unsafe {
         ntg.material_write_instance(
             mat_example_instance,
             &[
@@ -267,7 +270,7 @@ fn main() {
         );
     }
 
-    let mut submits = vec![submit, ntg.create_submit_group()];
+    let mut submits = vec![submit, unsafe { ntg.create_submit_group() }];
 
     let mut frame_num = 0;
     let mut frame_idx = 0;
@@ -302,10 +305,12 @@ fn main() {
         {
             let last_idx = (frame_num + (submits.len() - 1)) % submits.len();
 
-            submits[last_idx].wait(&mut ntg);
+            unsafe {
+                submits[last_idx].wait(&mut ntg);
+            }
         }
 
-        {
+        unsafe {
             if resized {
                 submits[frame_idx].display_setup_swapchain(&mut ntg, display);
                 resized = false;
@@ -328,13 +333,17 @@ fn main() {
     submits[0].graph_destroy(&mut ntg, &[graph]);
 
     for mut submit in submits {
-        submit.wait(&mut ntg);
-        submit.release(&mut ntg);
+        unsafe {
+            submit.wait(&mut ntg);
+            submit.release(&mut ntg);
+        }
     }
 
-    ntg.material_destroy(&[material]);
+    unsafe {
+        ntg.material_destroy(&[material]);
 
-    ntg.release();
+        ntg.release();
+    }
 }
 
 fn setup_graphs(
@@ -386,7 +395,7 @@ fn setup_graphs(
 
                 builder.enable();
             },
-            move |cmd| {
+            move |cmd| unsafe {
                 cmd.bind_vertex_buffers(&[(buffer_pos, 0), (buffer_uv, 0)]);
 
                 cmd.bind_material(1, material_instance);
@@ -430,7 +439,7 @@ fn setup_graphs(
 
                 builder.enable();
             },
-            move |cmd| {
+            move |cmd| unsafe {
                 cmd.bind_vertex_buffers(&[(buffer_pos, 0), (buffer_uv, 0)]);
 
                 cmd.draw(0..4, 0..1);

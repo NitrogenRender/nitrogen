@@ -48,9 +48,11 @@
 //!
 //! [`Context`]: ./struct.Context.html
 
-extern crate gfx_backend_vulkan as back;
-pub extern crate gfx_hal as gfx;
-extern crate gfx_memory as gfxm;
+// extern crate gfx_backend_vulkan as back;
+// pub extern crate gfx_hal as gfx;
+// extern crate gfx_memory as gfxm;
+
+pub use gfx;
 
 use smallvec::SmallVec;
 
@@ -130,7 +132,7 @@ impl Context {
     ///
     /// The `name` and `version` fields are passed down to the graphics driver. They don't have any
     /// special meaning attached to them (as far as I know)
-    pub fn new(name: &str, version: u32) -> Self {
+    pub unsafe fn new(name: &str, version: u32) -> Self {
         let instance = back::Instance::create(name, version);
         let device_ctx = Arc::new(DeviceContext::new(&instance));
 
@@ -208,7 +210,7 @@ impl Context {
     }
 
     /// Detach a display from the `Context`
-    pub fn display_remove(&mut self, display: DisplayHandle) -> bool {
+    pub unsafe fn display_remove(&mut self, display: DisplayHandle) -> bool {
         match self.displays.remove(display) {
             None => false,
             Some(display) => {
@@ -219,7 +221,7 @@ impl Context {
     }
 
     /// Free all resources and release the `Context`
-    pub fn release(self) {
+    pub unsafe fn release(self) {
         self.buffer_storage.release(&self.device_ctx);
         self.image_storage.release(&self.device_ctx);
 
@@ -235,7 +237,7 @@ impl Context {
     // image
 
     /// Create image objects and retrieve handles for them.
-    pub fn image_create(
+    pub unsafe fn image_create(
         &mut self,
         create_infos: &[image::ImageCreateInfo<image::ImageUsage>],
     ) -> SmallVec<[image::Result<image::ImageHandle>; 16]> {
@@ -245,7 +247,7 @@ impl Context {
     // sampler
 
     /// Create sampler objects and retrieve handles for them.
-    pub fn sampler_create(
+    pub unsafe fn sampler_create(
         &mut self,
         create_infos: &[sampler::SamplerCreateInfo],
     ) -> SmallVec<[sampler::SamplerHandle; 16]> {
@@ -255,7 +257,7 @@ impl Context {
     // buffer
 
     /// Create buffer objects and retrieve handles for them.
-    pub fn buffer_cpu_visible_create<U>(
+    pub unsafe fn buffer_cpu_visible_create<U>(
         &mut self,
         create_infos: &[buffer::CpuVisibleCreateInfo<U>],
     ) -> SmallVec<[buffer::Result<buffer::BufferHandle>; 16]>
@@ -266,7 +268,7 @@ impl Context {
             .cpu_visible_create(&self.device_ctx, create_infos)
     }
 
-    pub fn buffer_device_local_create<U>(
+    pub unsafe fn buffer_device_local_create<U>(
         &mut self,
         create_infos: &[buffer::DeviceLocalCreateInfo<U>],
     ) -> SmallVec<[buffer::Result<buffer::BufferHandle>; 16]>
@@ -304,7 +306,7 @@ impl Context {
     /// For more information about materials, see the [`material` module] documentation.
     ///
     /// [`material` module]: ./resources/material/index.html
-    pub fn material_create(
+    pub unsafe fn material_create(
         &mut self,
         create_infos: &[material::MaterialCreateInfo],
     ) -> SmallVec<[Result<material::MaterialHandle, material::MaterialError>; 16]> {
@@ -312,7 +314,7 @@ impl Context {
     }
 
     /// Destroy material objects.
-    pub fn material_destroy(&mut self, materials: &[material::MaterialHandle]) {
+    pub unsafe fn material_destroy(&mut self, materials: &[material::MaterialHandle]) {
         self.material_storage.destroy(&self.device_ctx, materials)
     }
 
@@ -321,7 +323,7 @@ impl Context {
     /// For more information about material instances, see the [`material` module] documentation.
     ///
     /// [`material` module]: ./resources/material/index.html
-    pub fn material_create_instance(
+    pub unsafe fn material_create_instance(
         &mut self,
         materials: &[material::MaterialHandle],
     ) -> SmallVec<[Result<material::MaterialInstanceHandle, material::MaterialError>; 16]> {
@@ -330,12 +332,15 @@ impl Context {
     }
 
     /// Destroy material instance objects.
-    pub fn material_destroy_instance(&mut self, instances: &[material::MaterialInstanceHandle]) {
+    pub unsafe fn material_destroy_instance(
+        &mut self,
+        instances: &[material::MaterialInstanceHandle],
+    ) {
         self.material_storage.destroy_instances(instances)
     }
 
     /// Update a material instance with resource handles.
-    pub fn material_write_instance<T>(
+    pub unsafe fn material_write_instance<T>(
         &mut self,
         instance: material::MaterialInstanceHandle,
         data: T,
@@ -447,7 +452,13 @@ impl Context {
     /// Create a new [`SubmitGroup`] to record and execute commands
     ///
     /// [`SubmitGroup`]: ./util/submit_group/struct.SubmitGroup.html
-    pub fn create_submit_group(&self) -> submit_group::SubmitGroup {
+    pub unsafe fn create_submit_group(&self) -> submit_group::SubmitGroup {
         submit_group::SubmitGroup::new(self.device_ctx.clone())
+    }
+
+    pub unsafe fn wait_idle(&self) {
+        use gfx::Device;
+        // TODO handle this error?
+        let _ = self.device_ctx.device.wait_idle();
     }
 }

@@ -27,13 +27,19 @@ fn main() {
     std::env::set_var("RUST_LOG", "debug");
     env_logger::init();
 
-    let mut ml = main_loop::MainLoop::new("Nitrogen - Opaque-Alpha example", init_resources);
+    let mut ml =
+        unsafe { main_loop::MainLoop::new("Nitrogen - Opaque-Alpha example", init_resources) };
 
     while ml.running() {
-        ml.iterate();
+        println!("frame start");
+        unsafe {
+            ml.iterate();
+        }
     }
 
-    ml.release();
+    unsafe {
+        ml.release();
+    }
 }
 
 struct Resources {
@@ -181,17 +187,21 @@ fn create_graph(ctx: &mut Context) -> graph::GraphHandle {
                 let size = store.get::<main_loop::CanvasSize>().unwrap();
                 let quads = store.get::<Quads>().unwrap();
 
-                cmd.push_constant::<[f32; 2]>(0, [size.0, size.1]);
+                unsafe {
+                    cmd.push_constant::<[f32; 2]>(0, [size.0, size.1]);
+                }
 
                 for quad in &quads.quads {
-                    cmd.push_constant::<[f32; 2]>(2, quad.pos);
-                    cmd.push_constant::<[f32; 2]>(4, quad.size);
+                    unsafe {
+                        cmd.push_constant::<[f32; 2]>(2, quad.pos);
+                        cmd.push_constant::<[f32; 2]>(4, quad.size);
 
-                    cmd.push_constant::<f32>(6, quad.depth);
+                        cmd.push_constant::<f32>(6, quad.depth);
 
-                    cmd.push_constant::<[f32; 4]>(8, quad.color);
+                        cmd.push_constant::<[f32; 4]>(8, quad.color);
 
-                    cmd.draw(0..4, 0..1);
+                        cmd.draw(0..4, 0..1);
+                    }
                 }
             }
         }
@@ -256,17 +266,21 @@ fn create_graph(ctx: &mut Context) -> graph::GraphHandle {
                 let size = store.get::<main_loop::CanvasSize>().unwrap();
                 let quads = store.get::<QuadsAlpha>().unwrap();
 
-                cmd.push_constant::<[f32; 2]>(0, [size.0, size.1]);
+                unsafe {
+                    cmd.push_constant::<[f32; 2]>(0, [size.0, size.1]);
+                }
 
                 for quad in &quads.quads {
-                    cmd.push_constant::<[f32; 2]>(2, quad.pos);
-                    cmd.push_constant::<[f32; 2]>(4, quad.size);
+                    unsafe {
+                        cmd.push_constant::<[f32; 2]>(2, quad.pos);
+                        cmd.push_constant::<[f32; 2]>(4, quad.size);
 
-                    cmd.push_constant::<f32>(6, quad.depth);
+                        cmd.push_constant::<f32>(6, quad.depth);
 
-                    cmd.push_constant::<[f32; 4]>(8, quad.color);
+                        cmd.push_constant::<[f32; 4]>(8, quad.color);
 
-                    cmd.draw(0..4, 0..1);
+                        cmd.draw(0..4, 0..1);
+                    }
                 }
             }
         }

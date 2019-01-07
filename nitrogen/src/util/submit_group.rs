@@ -10,6 +10,9 @@ use crate::image::ImageType;
 use crate::device::DeviceContext;
 use crate::*;
 
+use crate::resources::command_pool::{
+    CommandPoolCompute, CommandPoolGraphics, CommandPoolTransfer,
+};
 use crate::resources::semaphore_pool::{SemaphoreList, SemaphorePool};
 
 use smallvec::SmallVec;
@@ -34,43 +37,47 @@ use std::sync::Arc;
 pub struct SubmitGroup {
     sem_pool: SemaphorePool,
 
-    pool_graphics: types::CommandPool<gfx::Graphics>,
-    pool_compute: types::CommandPool<gfx::Compute>,
-    pool_transfer: types::CommandPool<gfx::Transfer>,
+    pool_graphics: CommandPoolGraphics,
+    pool_compute: CommandPoolCompute,
+    pool_transfer: CommandPoolTransfer,
 
     sem_list: SemaphoreList,
     res_destroys: ResourceList,
 }
 
 impl SubmitGroup {
-    pub(crate) fn new(device: Arc<DeviceContext>) -> Self {
+    pub(crate) unsafe fn new(device: Arc<DeviceContext>) -> Self {
         let (gfx, cmpt, trns) = {
             let gfx = device
                 .device
                 .create_command_pool_typed(
                     device.graphics_queue_group(),
+                    // gfx::pool::CommandPoolCreateFlags::RESET_INDIVIDUAL,
                     gfx::pool::CommandPoolCreateFlags::empty(),
-                    0,
                 )
                 .unwrap();
             let cmpt = device
                 .device
                 .create_command_pool_typed(
                     device.compute_queue_group(),
+                    // gfx::pool::CommandPoolCreateFlags::RESET_INDIVIDUAL,
                     gfx::pool::CommandPoolCreateFlags::empty(),
-                    0,
                 )
                 .unwrap();
             let trns = device
                 .device
                 .create_command_pool_typed(
                     device.transfer_queue_group(),
+                    // gfx::pool::CommandPoolCreateFlags::RESET_INDIVIDUAL,
                     gfx::pool::CommandPoolCreateFlags::empty(),
-                    0,
                 )
                 .unwrap();
 
-            (gfx, cmpt, trns)
+            (
+                CommandPoolGraphics::new(gfx),
+                CommandPoolCompute::new(cmpt),
+                CommandPoolTransfer::new(trns),
+            )
         };
 
         SubmitGroup {
@@ -85,13 +92,51 @@ impl SubmitGroup {
         }
     }
 
+    pub unsafe fn wait(&mut self, ctx: &mut Context) {
+        let mut fence = ctx.device_ctx.device.create_fence(false).unwrap();
+
+        {
+            let submit = gfx::Submission {
+                command_buffers: None,
+                wait_semaphores: self
+                    .sem_pool
+                    .list_prev_sems(&self.sem_list)
+                    .map(|sem| (sem, gfx::pso::PipelineStage::BOTTOM_OF_PIPE)),
+                signal_semaphores: self.sem_pool.list_next_sems(&self.sem_list),
+            };
+
+            ctx.device_ctx
+                .transfer_queue()
+                .submit::<gfx::command::CommandBuffer<
+                    back::Backend,
+                    gfx::Transfer,
+                    gfx::command::OneShot,
+                    gfx::command::Primary,
+                >, _, _, _, _>(submit, Some(&mut fence));
+
+            ctx.device_ctx.device.wait_for_fence(&fence, !0).unwrap();
+        }
+
+        self.sem_list.advance();
+
+        self.res_destroys.free_resources();
+
+        self.pool_graphics.reset();
+        self.pool_compute.reset();
+        self.pool_transfer.reset();
+
+        ctx.device_ctx.device.destroy_fence(fence);
+
+        self.sem_pool.clear();
+    }
+
     /// Present an image to a display.
     ///
     /// If the image to be presented is a result of a graph execution, use
     /// [`Context::graph_get_output_image`] to retrieve the `ImageHandle`.
     ///
     /// [`Context::graph_get_output_image`]: ../../struct.Context.html#method.graph_get_output_image
-    pub fn display_present(
+    pub unsafe fn display_present(
         &mut self,
         ctx: &mut Context,
         display: DisplayHandle,
@@ -101,17 +146,17 @@ impl SubmitGroup {
             &ctx.device_ctx,
             &mut self.sem_pool,
             &mut self.sem_list,
-            &mut self.pool_graphics,
+            &self.pool_graphics,
             &ctx.image_storage,
             image,
         )
     }
 
-    pub fn display_setup_swapchain(&mut self, ctx: &mut Context, display: DisplayHandle) {
+    pub unsafe fn display_setup_swapchain(&mut self, ctx: &mut Context, display: DisplayHandle) {
         ctx.displays[display].setup_swapchain(&ctx.device_ctx, &mut self.res_destroys);
     }
 
-    pub fn graph_execute(
+    pub unsafe fn graph_execute(
         &mut self,
         ctx: &mut Context,
         graph: graph::GraphHandle,
@@ -132,8 +177,8 @@ impl SubmitGroup {
             &ctx.device_ctx,
             &mut self.sem_pool,
             &mut self.sem_list,
-            &mut self.pool_graphics,
-            &mut self.pool_compute,
+            &self.pool_graphics,
+            &self.pool_compute,
             &mut self.res_destroys,
             &mut storages,
             store,
@@ -167,7 +212,7 @@ impl SubmitGroup {
         }
     }
 
-    pub fn image_upload_data(
+    pub unsafe fn image_upload_data(
         &mut self,
         ctx: &mut Context,
         images: &[(image::ImageHandle, image::ImageUploadInfo)],
@@ -176,7 +221,7 @@ impl SubmitGroup {
             &ctx.device_ctx,
             &self.sem_pool,
             &mut self.sem_list,
-            &mut self.pool_transfer,
+            &self.pool_transfer,
             &mut self.res_destroys,
             images,
         )
@@ -186,7 +231,7 @@ impl SubmitGroup {
         ctx.image_storage.destroy(&mut self.res_destroys, images)
     }
 
-    pub fn buffer_cpu_visible_upload<T>(
+    pub unsafe fn buffer_cpu_visible_upload<T>(
         &mut self,
         ctx: &mut Context,
         data: &[(buffer::BufferHandle, buffer::BufferUploadInfo<T>)],
@@ -194,7 +239,7 @@ impl SubmitGroup {
         ctx.buffer_storage.cpu_visible_upload(&ctx.device_ctx, data)
     }
 
-    pub fn buffer_cpu_visible_read<T>(
+    pub unsafe fn buffer_cpu_visible_read<T>(
         &mut self,
         ctx: &Context,
         buffer: buffer::BufferHandle,
@@ -204,7 +249,7 @@ impl SubmitGroup {
             .cpu_visible_read(&ctx.device_ctx, buffer, data);
     }
 
-    pub fn buffer_device_local_upload<T>(
+    pub unsafe fn buffer_device_local_upload<T>(
         &mut self,
         ctx: &mut Context,
         data: &[(buffer::BufferHandle, buffer::BufferUploadInfo<T>)],
@@ -213,7 +258,7 @@ impl SubmitGroup {
             &ctx.device_ctx,
             &self.sem_pool,
             &mut self.sem_list,
-            &mut self.pool_transfer,
+            &self.pool_transfer,
             &mut self.res_destroys,
             data,
         )
@@ -228,46 +273,25 @@ impl SubmitGroup {
             .destroy(&mut self.res_destroys, samplers)
     }
 
-    pub fn wait(&mut self, ctx: &mut Context) {
-        let mut fence = ctx.device_ctx.device.create_fence(false).unwrap();
-
+    pub unsafe fn release(mut self, ctx: &mut Context) {
         {
-            let submit = gfx::Submission::new().wait_on(
-                self.sem_pool
-                    .list_prev_sems(&self.sem_list)
-                    .map(|sem| (sem, gfx::pso::PipelineStage::BOTTOM_OF_PIPE)),
-            );
-
+            let pool = self.pool_graphics.0.into_impl();
             ctx.device_ctx
-                .transfer_queue()
-                .submit(submit, Some(&mut fence));
-
-            ctx.device_ctx.device.wait_for_fence(&fence, !0).unwrap();
+                .device
+                .destroy_command_pool(pool.pool.into_raw());
         }
-
-        self.sem_list.advance();
-
-        ctx.device_ctx.device.destroy_fence(fence);
-
-        self.res_destroys.free_resources();
-
-        self.sem_pool.clear();
-
-        self.pool_graphics.reset();
-        self.pool_compute.reset();
-        self.pool_transfer.reset();
-    }
-
-    pub fn release(mut self, ctx: &mut Context) {
-        ctx.device_ctx
-            .device
-            .destroy_command_pool(self.pool_graphics.into_raw());
-        ctx.device_ctx
-            .device
-            .destroy_command_pool(self.pool_compute.into_raw());
-        ctx.device_ctx
-            .device
-            .destroy_command_pool(self.pool_transfer.into_raw());
+        {
+            let pool = self.pool_compute.0.into_impl();
+            ctx.device_ctx
+                .device
+                .destroy_command_pool(pool.pool.into_raw());
+        }
+        {
+            let pool = self.pool_transfer.0.into_impl();
+            ctx.device_ctx
+                .device
+                .destroy_command_pool(pool.pool.into_raw());
+        }
 
         self.sem_pool.reset();
     }
@@ -351,8 +375,8 @@ impl ResourceList {
         self.desc_pools.push(pool);
     }
 
-    fn free_resources(&mut self) {
-        use gfxm::Factory;
+    unsafe fn free_resources(&mut self) {
+        use crate::util::allocator::Allocator;
 
         let mut alloc = self.device.allocator();
 

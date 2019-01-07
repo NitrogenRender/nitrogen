@@ -13,15 +13,15 @@ fn main() {
     std::env::set_var("RUST_LOG", "debug");
     env_logger::init();
 
-    let mut ctx = Context::new("compute example", 1);
+    let mut ctx = unsafe { Context::new("compute example", 1) };
 
-    let mut submit = ctx.create_submit_group();
+    let mut submit = unsafe { ctx.create_submit_group() };
 
     let material = {
         let create_info = material::MaterialCreateInfo {
             parameters: &[(0, material::MaterialParameterType::StorageBuffer)],
         };
-        ctx.material_create(&[create_info]).remove(0).unwrap()
+        unsafe { ctx.material_create(&[create_info]).remove(0).unwrap() }
     };
 
     let buffer = {
@@ -43,38 +43,43 @@ fn main() {
                 | buffer::BufferUsage::UNIFORM,
         };
 
-        let buffer = ctx
-            .buffer_cpu_visible_create(&[create_info])
-            .remove(0)
-            .unwrap();
+        let buffer = unsafe {
+            ctx.buffer_cpu_visible_create(&[create_info])
+                .remove(0)
+                .unwrap()
+        };
 
         let upload_data = buffer::BufferUploadInfo {
             offset: 0,
             data: &buffer_data[..],
         };
 
-        submit
-            .buffer_cpu_visible_upload(&mut ctx, &[(buffer, upload_data)])
-            .remove(0)
-            .unwrap();
+        unsafe {
+            submit
+                .buffer_cpu_visible_upload(&mut ctx, &[(buffer, upload_data)])
+                .remove(0)
+                .unwrap();
 
-        submit.wait(&mut ctx);
+            submit.wait(&mut ctx);
+        }
 
         buffer
     };
 
-    let material_instance = ctx.material_create_instance(&[material]).remove(0).unwrap();
+    let material_instance = unsafe { ctx.material_create_instance(&[material]).remove(0).unwrap() };
 
-    ctx.material_write_instance(
-        material_instance,
-        &[material::InstanceWrite {
-            binding: 0,
-            data: material::InstanceWriteData::Buffer {
-                buffer,
-                region: None..None,
-            },
-        }],
-    );
+    unsafe {
+        ctx.material_write_instance(
+            material_instance,
+            &[material::InstanceWrite {
+                binding: 0,
+                data: material::InstanceWriteData::Buffer {
+                    buffer,
+                    region: None..None,
+                },
+            }],
+        );
+    }
 
     let graph = create_graph(&mut ctx, material_instance);
 
@@ -82,23 +87,27 @@ fn main() {
 
     let _res = ctx.graph_compile(graph);
 
-    submit.graph_execute(
-        &mut ctx,
-        graph,
-        &store,
-        &ExecutionContext {
-            reference_size: (1, 1),
-        },
-    );
+    unsafe {
+        submit.graph_execute(
+            &mut ctx,
+            graph,
+            &store,
+            &ExecutionContext {
+                reference_size: (1, 1),
+            },
+        );
 
-    submit.wait(&mut ctx);
+        submit.wait(&mut ctx);
+    }
 
     {
         let mut out: [f32; NUM_ELEMS as usize] = unsafe { std::mem::uninitialized() };
 
-        submit.buffer_cpu_visible_read(&ctx, buffer, &mut out[..]);
+        unsafe {
+            submit.buffer_cpu_visible_read(&ctx, buffer, &mut out[..]);
 
-        submit.wait(&mut ctx);
+            submit.wait(&mut ctx);
+        }
 
         println!("output {:?}", &out[..]);
     }
@@ -106,12 +115,16 @@ fn main() {
     submit.buffer_destroy(&mut ctx, &[buffer]);
     submit.graph_destroy(&mut ctx, &[graph]);
 
-    submit.wait(&mut ctx);
+    unsafe {
+        ctx.wait_idle();
 
-    submit.release(&mut ctx);
+        submit.wait(&mut ctx);
 
-    ctx.material_destroy(&[material]);
-    ctx.release();
+        submit.release(&mut ctx);
+
+        ctx.material_destroy(&[material]);
+        ctx.release();
+    }
 }
 
 fn create_graph(
@@ -145,10 +158,12 @@ fn create_graph(
             }
 
             fn execute(&self, _: &Store, command_buffer: &mut ComputeCommandBuffer<'_>) {
-                command_buffer.bind_material(1, self.mat);
-                command_buffer.push_constant(0, 1_f32);
+                unsafe {
+                    command_buffer.bind_material(1, self.mat);
+                    command_buffer.push_constant(0, 1_f32);
 
-                command_buffer.dispatch([NUM_ELEMS as _, 1, 1]);
+                    command_buffer.dispatch([NUM_ELEMS as _, 1, 1]);
+                }
             }
         }
 
@@ -184,10 +199,12 @@ fn create_graph(
             }
 
             fn execute(&self, _: &Store, command_buffer: &mut ComputeCommandBuffer<'_>) {
-                command_buffer.bind_material(1, self.mat);
-                command_buffer.push_constant(0, 10.0_f32);
+                unsafe {
+                    command_buffer.bind_material(1, self.mat);
+                    command_buffer.push_constant(0, 10.0_f32);
 
-                command_buffer.dispatch([NUM_ELEMS as _, 1, 1]);
+                    command_buffer.dispatch([NUM_ELEMS as _, 1, 1]);
+                }
             }
         }
 

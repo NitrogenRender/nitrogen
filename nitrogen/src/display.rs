@@ -9,6 +9,7 @@ use crate::image;
 
 use crate::types::*;
 
+use crate::resources::command_pool::CommandPoolGraphics;
 use crate::resources::semaphore_pool::{SemaphoreList, SemaphorePool};
 
 use crate::submit_group::ResourceList;
@@ -30,7 +31,7 @@ impl Display {
     pub(crate) fn new(surface: Surface, device: &DeviceContext) -> Self {
         use gfx::Surface;
 
-        let (_, formats, _) = surface.compatibility(&device.adapter.physical_device);
+        let (_, formats, _, _) = surface.compatibility(&device.adapter.physical_device);
 
         let format = formats.unwrap().remove(0);
 
@@ -46,7 +47,11 @@ impl Display {
     /// Setup the swapchain and associated framebuffers/images.
     ///
     /// Destroys the old swapchain, so the caller needs to make sure that it's no longer in use
-    pub(crate) fn setup_swapchain(&mut self, device: &DeviceContext, res_list: &mut ResourceList) {
+    pub(crate) unsafe fn setup_swapchain(
+        &mut self,
+        device: &DeviceContext,
+        res_list: &mut ResourceList,
+    ) {
         use gfx::Surface;
 
         {
@@ -66,12 +71,19 @@ impl Display {
             }
         }
 
-        let (surface_capability, _, _) =
+        let (surface_capability, _, _, _) =
             self.surface.compatibility(&device.adapter.physical_device);
 
         let format = self.display_format;
 
-        let mut config = gfx::SwapchainConfig::from_caps(&surface_capability, format);
+        let default_extent = gfx::window::Extent2D {
+            width: 100,
+            height: 100,
+        };
+
+        let mut config =
+            gfx::SwapchainConfig::from_caps(&surface_capability, format, default_extent);
+
         config.image_usage |= gfx::image::Usage::TRANSFER_DST;
         config.image_layers = 1;
 
@@ -128,12 +140,12 @@ impl Display {
     /// Present an image to the screen.
     ///
     /// The image has to be the same size as the swapchain images in order to preserve aspect ratio.
-    pub(crate) fn present<'a>(
+    pub(crate) unsafe fn present<'a>(
         &'a mut self,
         device: &DeviceContext,
         sem_pool: &mut SemaphorePool,
         sem_list: &mut SemaphoreList,
-        command_pool: &mut CommandPool<gfx::Graphics>,
+        command_pool: &CommandPoolGraphics,
         image_storage: &image::ImageStorage,
         image: image::ImageHandle,
     ) -> bool {
@@ -160,7 +172,7 @@ impl Display {
             sem_list.add_prev_semaphore(sem_acquire);
 
             let submit = {
-                let mut cmd = command_pool.acquire_command_buffer(false);
+                let mut cmd = command_pool.alloc();
 
                 let src_image = image.image.raw();
                 let dst_image = &self.images[index as usize].0;
@@ -178,15 +190,17 @@ impl Display {
                     use gfx::pso::PipelineStage;
 
                     let src_barrier = gfx::memory::Barrier::Image {
-                        states: (Access::empty(), Layout::Undefined)
-                            ..(Access::TRANSFER_WRITE, Layout::TransferSrcOptimal),
+                        states: (Access::empty(), Layout::General)
+                            ..(Access::TRANSFER_READ, Layout::TransferSrcOptimal),
                         target: src_image,
+                        families: None,
                         range: subres_range.clone(),
                     };
                     let dst_barrier = gfx::memory::Barrier::Image {
                         states: (Access::empty(), Layout::Undefined)
                             ..(Access::TRANSFER_WRITE, Layout::TransferDstOptimal),
                         target: dst_image,
+                        families: None,
                         range: subres_range.clone(),
                     };
 
@@ -248,15 +262,17 @@ impl Display {
                     use gfx::pso::PipelineStage;
 
                     let src_barrier = gfx::memory::Barrier::Image {
-                        states: (Access::TRANSFER_WRITE, Layout::TransferSrcOptimal)
+                        states: (Access::empty(), Layout::TransferSrcOptimal)
                             ..(Access::empty(), Layout::General),
                         target: src_image,
+                        families: None,
                         range: subres_range.clone(),
                     };
                     let dst_barrier = gfx::memory::Barrier::Image {
-                        states: (Access::TRANSFER_WRITE, Layout::TransferDstOptimal)
+                        states: (Access::empty(), Layout::TransferDstOptimal)
                             ..(Access::empty(), Layout::Present),
                         target: dst_image,
+                        families: None,
                         range: subres_range.clone(),
                     };
 
@@ -267,7 +283,9 @@ impl Display {
                     );
                 }
 
-                cmd.finish()
+                cmd.finish();
+
+                cmd
             };
 
             let sem_blit = sem_pool.alloc();
@@ -278,20 +296,18 @@ impl Display {
             let mut queue = device.graphics_queue();
 
             {
-                let submission = gfx::Submission::new()
-                    .wait_on(
-                        sem_pool
-                            .list_prev_sems(sem_list)
-                            .map(|sem| (sem, pso::PipelineStage::BOTTOM_OF_PIPE)),
-                    )
-                    .signal(&[&*sem_present])
-                    .signal(sem_pool.list_next_sems(sem_list))
-                    .submit(Some(submit));
+                let submission = gfx::Submission {
+                    command_buffers: Some(&*submit),
+                    wait_semaphores: sem_pool
+                        .list_prev_sems(sem_list)
+                        .map(|sem| (sem, pso::PipelineStage::BOTTOM_OF_PIPE)),
+                    signal_semaphores: sem_pool.list_next_sems(sem_list).chain(Some(&*sem_present)),
+                };
                 queue.submit(submission, None);
             }
 
             let res = swapchain
-                .present(&mut *queue, index, std::iter::once(sem_present))
+                .present(&mut *queue, index, std::iter::once(&*sem_present))
                 .is_ok();
 
             sem_list.advance();
@@ -303,7 +319,7 @@ impl Display {
     }
 
     /// Release the display context, destroys all associated graphics resources.
-    pub(crate) fn release(self, device: &DeviceContext) {
+    pub(crate) unsafe fn release(self, device: &DeviceContext) {
         for (_, image_view) in self.images {
             device.device.destroy_image_view(image_view);
         }

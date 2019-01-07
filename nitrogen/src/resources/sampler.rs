@@ -92,7 +92,7 @@ impl SamplerStorage {
         }
     }
 
-    pub(crate) fn create(
+    pub(crate) unsafe fn create(
         &mut self,
         device: &DeviceContext,
         create_infos: &[SamplerCreateInfo],

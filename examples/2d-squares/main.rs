@@ -45,12 +45,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // cool and fun nitrogen stuff
 
-    let mut ctx = Context::new("2d-squares", 1);
+    let mut ctx = unsafe { Context::new("2d-squares", 1) };
     let display = ctx.display_add(&window);
 
-    let mut submit = ctx.create_submit_group();
+    let mut submit = unsafe { ctx.create_submit_group() };
 
-    let material = {
+    let material = unsafe {
         let create_info = material::MaterialCreateInfo {
             parameters: &[
                 // positions
@@ -77,7 +77,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ctx.vertex_attribs_create(&[create_info]).remove(0)
     };
 
-    let vertex_buffer = {
+    let vertex_buffer = unsafe {
         use crate::buffer::BufferUsage;
 
         create_buffer(
@@ -93,9 +93,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let instance_data = create_instance_data(num_squares);
     let instance_vel = create_instance_velocity(num_squares);
 
-    let instance_material = ctx.material_create_instance(&[material]).remove(0).unwrap();
+    let instance_material = unsafe { ctx.material_create_instance(&[material]).remove(0).unwrap() };
 
-    let instance_buffer = {
+    let instance_buffer = unsafe {
         use crate::buffer::BufferUsage;
 
         create_buffer(
@@ -106,7 +106,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
     };
 
-    let velocity_buffer = {
+    let velocity_buffer = unsafe {
         use crate::buffer::BufferUsage;
 
         create_buffer(
@@ -117,7 +117,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
     };
 
-    submit.wait(&mut ctx);
+    unsafe {
+        submit.wait(&mut ctx);
+    }
 
     drop(instance_data);
     drop(instance_vel);
@@ -140,7 +142,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
         ];
 
-        ctx.material_write_instance(instance_material, writes);
+        unsafe {
+            ctx.material_write_instance(instance_material, writes);
+        }
     }
 
     let graph = create_graph(
@@ -161,7 +165,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let mut submits = vec![submit, ctx.create_submit_group()];
+    let mut submits = vec![submit, unsafe { ctx.create_submit_group() }];
 
     let mut frame_num = 0;
     let mut frame_idx = 0;
@@ -202,7 +206,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         {
             let last_idx = frame_idx;
 
-            submits[last_idx].wait(&mut ctx);
+            unsafe {
+                submits[last_idx].wait(&mut ctx);
+            }
         }
 
         // update delta time
@@ -222,7 +228,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         store.insert(Delta(delta));
 
-        {
+        unsafe {
             if resized {
                 submits[frame_idx].display_setup_swapchain(&mut ctx, display);
                 resized = false;
@@ -242,16 +248,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     submits[0].buffer_destroy(&mut ctx, &[vertex_buffer, instance_buffer, velocity_buffer]);
     submits[0].graph_destroy(&mut ctx, &[graph]);
 
+    // wait until all work is done
+    unsafe {
+        ctx.wait_idle();
+    }
+
     for mut submit in submits {
-        submit.wait(&mut ctx);
-        submit.release(&mut ctx);
+        unsafe {
+            submit.wait(&mut ctx);
+            submit.release(&mut ctx);
+        }
     }
 
     ctx.vertex_attribs_destroy(&[vtx_def]);
-    ctx.material_destroy(&[material]);
-    ctx.display_remove(display);
 
-    ctx.release();
+    unsafe {
+        ctx.material_destroy(&[material]);
+        ctx.display_remove(display);
+
+        ctx.release();
+    }
 
     Ok(())
 }
@@ -303,16 +319,18 @@ fn create_graph(
                     }
                 }
 
-                cmd.push_constant::<u32>(0, wide);
-                cmd.push_constant::<u32>(1, NUM_THINGS as u32);
+                unsafe {
+                    cmd.push_constant::<u32>(0, wide);
+                    cmd.push_constant::<u32>(1, NUM_THINGS as u32);
 
-                let Delta(delta) = store.get::<Delta>().unwrap();
+                    let Delta(delta) = store.get::<Delta>().unwrap();
 
-                cmd.push_constant::<f32>(2, *delta as f32);
+                    cmd.push_constant::<f32>(2, *delta as f32);
 
-                cmd.bind_material(1, self.mat_instance);
+                    cmd.bind_material(1, self.mat_instance);
 
-                cmd.dispatch([wide, batch_size, 1]);
+                    cmd.dispatch([wide, batch_size, 1]);
+                }
             }
         }
 
@@ -378,15 +396,17 @@ fn create_graph(
             fn execute(&self, store: &graph::Store, cmd: &mut graph::GraphicsCommandBuffer<'_>) {
                 let things = NUM_THINGS;
 
-                cmd.push_constant::<[f32; 4]>(0, [1.0, 1.0, 1.0, 1.0]);
+                unsafe {
+                    cmd.push_constant::<[f32; 4]>(0, [1.0, 1.0, 1.0, 1.0]);
 
-                let Scale(s) = store.get().unwrap();
-                cmd.push_constant(4, *s);
+                    let Scale(s) = store.get().unwrap();
+                    cmd.push_constant(4, *s);
 
-                cmd.bind_vertex_buffers(&[(self.buffer, 0)]);
-                cmd.bind_material(1, self.mat_instance);
+                    cmd.bind_vertex_buffers(&[(self.buffer, 0)]);
+                    cmd.bind_material(1, self.mat_instance);
 
-                cmd.draw(0..4, 0..things as u32);
+                    cmd.draw(0..4, 0..things as u32);
+                }
             }
         }
 
@@ -448,7 +468,7 @@ fn create_instance_velocity(num: u32) -> Vec<[f32; 2]> {
     result
 }
 
-fn create_buffer<T>(
+unsafe fn create_buffer<T>(
     ctx: &mut Context,
     submit: &mut SubmitGroup,
     data: &[T],

@@ -113,7 +113,7 @@ impl MaterialStorage {
         }
     }
 
-    pub(crate) fn create(
+    pub(crate) unsafe fn create(
         &mut self,
         device: &DeviceContext,
         create_infos: &[MaterialCreateInfo],
@@ -165,7 +165,7 @@ impl MaterialStorage {
         results
     }
 
-    pub(crate) fn destroy(&mut self, device: &DeviceContext, materials: &[MaterialHandle]) {
+    pub(crate) unsafe fn destroy(&mut self, device: &DeviceContext, materials: &[MaterialHandle]) {
         for handle in materials {
             if let Some(mat) = self.storage.remove(*handle) {
                 mat.release(device);
@@ -177,7 +177,7 @@ impl MaterialStorage {
         self.storage.get(material)
     }
 
-    pub(crate) fn create_instances(
+    pub(crate) unsafe fn create_instances(
         &mut self,
         device: &DeviceContext,
         materials: &[MaterialHandle],
@@ -212,7 +212,7 @@ impl MaterialStorage {
         results
     }
 
-    pub(crate) fn write_instance<I>(
+    pub(crate) unsafe fn write_instance<I>(
         &self,
         device: &DeviceContext,
         sampler_storage: &SamplerStorage,
@@ -262,7 +262,7 @@ impl MaterialStorage {
         Some(())
     }
 
-    pub(crate) fn destroy_instances(&mut self, instances: &[MaterialInstanceHandle]) {
+    pub(crate) unsafe fn destroy_instances(&mut self, instances: &[MaterialInstanceHandle]) {
         for (mat_handle, inst) in instances {
             let mat = match self.storage.get_mut(*mat_handle) {
                 Some(mat) => mat,
@@ -273,7 +273,7 @@ impl MaterialStorage {
         }
     }
 
-    pub(crate) fn release(self, device: &DeviceContext) {
+    pub(crate) unsafe fn release(self, device: &DeviceContext) {
         for (_id, mat) in self.storage {
             mat.release(device);
         }
@@ -291,7 +291,7 @@ impl Material {
         None
     }
 
-    fn create_new_pool(&mut self, device: &DeviceContext) -> usize {
+    unsafe fn create_new_pool(&mut self, device: &DeviceContext) -> usize {
         use gfx::Device;
 
         let descriptors = self
@@ -316,7 +316,7 @@ impl Material {
         new_pool_idx
     }
 
-    fn release(self, device: &DeviceContext) {
+    unsafe fn release(self, device: &DeviceContext) {
         use gfx::Device;
 
         for pool in self.pools {
@@ -328,7 +328,7 @@ impl Material {
             .destroy_descriptor_set_layout(self.desc_set_layout);
     }
 
-    fn create_instance(
+    unsafe fn create_instance(
         &mut self,
         device: &DeviceContext,
     ) -> Result<Handle<MaterialInstance>, gfx::pso::AllocationError> {
@@ -351,7 +351,7 @@ impl Material {
         Ok(self.instances.insert(instance))
     }
 
-    fn free_instance(&mut self, handle: Handle<MaterialInstance>) -> Option<()> {
+    unsafe fn free_instance(&mut self, handle: Handle<MaterialInstance>) -> Option<()> {
         use gfx::pso::DescriptorPool;
         use std;
 

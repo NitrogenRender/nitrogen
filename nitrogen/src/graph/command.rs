@@ -5,7 +5,6 @@
 use std::ops::Range;
 
 use gfx;
-use gfx::command;
 
 use crate::types;
 
@@ -25,19 +24,23 @@ pub(crate) struct ReadStorages<'a> {
 }
 
 pub struct GraphicsCommandBuffer<'a> {
-    pub(crate) encoder:
-        gfx::command::RenderPassInlineEncoder<'a, back::Backend, gfx::command::Primary>,
+    pub(crate) encoder: gfx::command::RenderPassInlineEncoder<'a, back::Backend>,
     pub(crate) storages: &'a ReadStorages<'a>,
 
     pub(crate) pipeline_layout: &'a types::PipelineLayout,
 }
 
 impl<'a> GraphicsCommandBuffer<'a> {
-    pub fn draw(&mut self, vertices: Range<u32>, instances: Range<u32>) {
+    pub unsafe fn draw(&mut self, vertices: Range<u32>, instances: Range<u32>) {
         self.encoder.draw(vertices, instances);
     }
 
-    pub fn draw_indexed(&mut self, indices: Range<u32>, base_vertex: i32, instances: Range<u32>) {
+    pub unsafe fn draw_indexed(
+        &mut self,
+        indices: Range<u32>,
+        base_vertex: i32,
+        instances: Range<u32>,
+    ) {
         self.encoder.draw_indexed(indices, base_vertex, instances);
     }
 
@@ -45,7 +48,7 @@ impl<'a> GraphicsCommandBuffer<'a> {
     /// The provided pairs of buffer and `usize` represent the buffer to bind
     /// and the **offset into the buffer**.
     /// The first pair will be bound to vertex buffer 0, the second to 1, etc...
-    pub fn bind_vertex_buffers<T, I>(&mut self, buffers: T)
+    pub unsafe fn bind_vertex_buffers<T, I>(&mut self, buffers: T)
     where
         T: IntoIterator<Item = I>,
         T::Item: std::borrow::Borrow<(BufferHandle, usize)>,
@@ -63,7 +66,12 @@ impl<'a> GraphicsCommandBuffer<'a> {
         self.encoder.bind_vertex_buffers(0, bufs);
     }
 
-    pub fn bind_index_buffer(&mut self, buffer: BufferHandle, offset: u64, index_type: IndexType) {
+    pub unsafe fn bind_index_buffer(
+        &mut self,
+        buffer: BufferHandle,
+        offset: u64,
+        index_type: IndexType,
+    ) {
         let stores = self.storages.clone();
 
         let buffer_raw = stores.buffer.raw(buffer).map(|buf| buf.buffer.raw());
@@ -84,7 +92,7 @@ impl<'a> GraphicsCommandBuffer<'a> {
             });
     }
 
-    pub fn bind_material(
+    pub unsafe fn bind_material(
         &mut self,
         binding: usize,
         material: MaterialInstanceHandle,
@@ -102,7 +110,7 @@ impl<'a> GraphicsCommandBuffer<'a> {
         Some(())
     }
 
-    pub fn push_constant_raw(&mut self, offset: u32, data: &[u32]) {
+    pub unsafe fn push_constant_raw(&mut self, offset: u32, data: &[u32]) {
         self.encoder.push_graphics_constants(
             self.pipeline_layout,
             gfx::pso::ShaderStageFlags::ALL,
@@ -111,35 +119,32 @@ impl<'a> GraphicsCommandBuffer<'a> {
         )
     }
 
-    pub fn push_constant<T: Sized>(&mut self, offset: u32, data: T) {
+    pub unsafe fn push_constant<T: Sized>(&mut self, offset: u32, data: T) {
         use smallvec::SmallVec;
         let mut buf = SmallVec::<[u8; 1024]>::new();
 
-        unsafe {
-            buf.set_len(1024);
-        }
+        buf.set_len(1024);
 
         {
-            let u32_slice = unsafe { data_to_u32_slice(data, &mut buf[..]) };
+            let u32_slice = data_to_u32_slice(data, &mut buf[..]);
             self.push_constant_raw(offset, u32_slice);
         }
     }
 }
 
 pub struct ComputeCommandBuffer<'a> {
-    pub(crate) buf:
-        command::CommandBuffer<'a, back::Backend, gfx::Compute, command::OneShot, command::Primary>,
+    pub(crate) buf: &'a mut crate::resources::command_pool::CmdBufType<gfx::Compute>,
     pub(crate) storages: &'a ReadStorages<'a>,
 
     pub(crate) pipeline_layout: &'a types::PipelineLayout,
 }
 
 impl<'a> ComputeCommandBuffer<'a> {
-    pub fn dispatch(&mut self, workgroup_count: [u32; 3]) {
+    pub unsafe fn dispatch(&mut self, workgroup_count: [u32; 3]) {
         self.buf.dispatch(workgroup_count)
     }
 
-    pub fn bind_material(
+    pub unsafe fn bind_material(
         &mut self,
         binding: usize,
         material: MaterialInstanceHandle,
@@ -157,21 +162,19 @@ impl<'a> ComputeCommandBuffer<'a> {
         Some(())
     }
 
-    pub fn push_constant_raw(&mut self, offset: u32, data: &[u32]) {
+    pub unsafe fn push_constant_raw(&mut self, offset: u32, data: &[u32]) {
         self.buf
             .push_compute_constants(self.pipeline_layout, offset, data);
     }
 
-    pub fn push_constant<T: Sized>(&mut self, offset: u32, data: T) {
+    pub unsafe fn push_constant<T: Sized>(&mut self, offset: u32, data: T) {
         use smallvec::SmallVec;
         let mut buf = SmallVec::<[u8; 1024]>::new();
 
-        unsafe {
-            buf.set_len(1024);
-        }
+        buf.set_len(1024);
 
         {
-            let u32_slice = unsafe { data_to_u32_slice(data, &mut buf[..]) };
+            let u32_slice = data_to_u32_slice(data, &mut buf[..]);
 
             self.push_constant_raw(offset, u32_slice);
         }
