@@ -12,8 +12,6 @@ use crate::graph::{
     ResourceWriteType,
 };
 
-use crate::types::CommandPool;
-
 use gfx::Device;
 
 use smallvec::SmallVec;

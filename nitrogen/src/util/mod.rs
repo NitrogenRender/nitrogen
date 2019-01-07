@@ -2,11 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+pub(crate) mod allocator;
 pub(crate) mod pool;
 pub mod storage;
 pub mod submit_group;
 pub(crate) mod transfer;
-pub(crate) mod allocator;
 
 use std::borrow::Cow;
 

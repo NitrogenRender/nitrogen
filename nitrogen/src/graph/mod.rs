@@ -22,8 +22,6 @@ use crate::resources::{
     vertex_attrib::VertexAttribStorage,
 };
 
-use crate::types::CommandPool;
-
 pub mod pass;
 pub use self::pass::*;
 

@@ -11,9 +11,8 @@ use std::collections::BTreeSet;
 
 use crate::device::DeviceContext;
 
+use crate::util::allocator::{Allocator, AllocatorError, Buffer as AllocBuffer, BufferRequest};
 use crate::util::storage::{Handle, Storage};
-use crate::util::allocator::{Allocator, DefaultAlloc, AllocatorError, BufferRequest, Buffer as AllocBuffer};
-
 
 use smallvec::SmallVec;
 
@@ -21,7 +20,6 @@ use crate::resources::command_pool::CommandPoolTransfer;
 use crate::resources::semaphore_pool::SemaphoreList;
 use crate::resources::semaphore_pool::SemaphorePool;
 use crate::submit_group::ResourceList;
-use crate::types::CommandPool;
 
 pub(crate) type BufferTypeInternal = AllocBuffer;
 
@@ -200,16 +198,13 @@ impl BufferStorage {
                 size: create_info.size,
             };
 
-
-            let raw_buffer =
-                match allocator.create_buffer(&device.device, req)
-                {
-                    Ok(buf) => buf,
-                    Err(err) => {
-                        results.push(Err(err.into()));
-                        continue;
-                    }
-                };
+            let raw_buffer = match allocator.create_buffer(&device.device, req) {
+                Ok(buf) => buf,
+                Err(err) => {
+                    results.push(Err(err.into()));
+                    continue;
+                }
+            };
 
             let buffer = Buffer {
                 size: create_info.size,
@@ -320,15 +315,13 @@ impl BufferStorage {
                 size: create_info.size,
             };
 
-            let raw_buffer =
-                match allocator.create_buffer(&device.device, req)
-                {
-                    Ok(buf) => buf,
-                    Err(err) => {
-                        results.push(Err(err.into()));
-                        continue;
-                    }
-                };
+            let raw_buffer = match allocator.create_buffer(&device.device, req) {
+                Ok(buf) => buf,
+                Err(err) => {
+                    results.push(Err(err.into()));
+                    continue;
+                }
+            };
 
             let buffer = Buffer {
                 size: create_info.size,
@@ -405,10 +398,7 @@ impl BufferStorage {
                 size: u8_slice.len() as u64,
             };
 
-            let staging_res = alloc.create_buffer(
-                &device.device,
-                req,
-            );
+            let staging_res = alloc.create_buffer(&device.device, req);
 
             let staging_buffer = match staging_res {
                 Err(err) => {
@@ -535,8 +525,8 @@ unsafe fn read_data_from_buffer(
     offset: u64,
     data: &mut [u8],
 ) -> Result<()> {
-    use gfx::Device;
     use crate::util::allocator::Block;
+    use gfx::Device;
 
     let offset = offset as usize;
 

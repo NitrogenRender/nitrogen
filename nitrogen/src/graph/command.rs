@@ -5,7 +5,6 @@
 use std::ops::Range;
 
 use gfx;
-use gfx::command;
 
 use crate::types;
 

@@ -15,22 +15,17 @@ use std::hash::{Hash, Hasher};
 use smallvec::smallvec;
 use smallvec::SmallVec;
 
+use crate::util::allocator::{
+    Allocator, AllocatorError, BufferRequest, Image as AllocImage, ImageRequest,
+};
 use crate::util::storage::{Handle, Storage};
 use crate::util::transfer;
-use crate::util::allocator::{
-    Allocator,
-    AllocatorError,
-    Image as AllocImage,
-    ImageRequest,
-    BufferRequest,
-};
 
 use crate::device::DeviceContext;
 use crate::resources::command_pool::CommandPoolTransfer;
 use crate::resources::semaphore_pool::SemaphoreList;
 use crate::resources::semaphore_pool::SemaphorePool;
 use crate::submit_group::ResourceList;
-use crate::types::CommandPool;
 
 #[derive(Copy, Clone, Debug)]
 pub enum ImageDimension {
@@ -383,10 +378,7 @@ impl ImageStorage {
                     view_caps: image::ViewCapabilities::empty(),
                 };
 
-                let image = allocator.create_image(
-                    &device.device,
-                    req,
-                );
+                let image = allocator.create_image(&device.device, req);
 
                 match image {
                     Err(e) => {
@@ -554,10 +546,7 @@ impl ImageStorage {
                     size: upload_size,
                 };
 
-                let staging_buffer = match allocator.create_buffer(
-                    &device.device,
-                    buf_req,
-                ) {
+                let staging_buffer = match allocator.create_buffer(&device.device, buf_req) {
                     Err(e) => {
                         results[idx] = Err(e.into());
                         return None;

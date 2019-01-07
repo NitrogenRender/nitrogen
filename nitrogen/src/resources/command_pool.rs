@@ -2,12 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use crate::device::DeviceContext;
-use crate::types;
 use crate::util::pool::{Pool, PoolElem, PoolImpl};
 
 use gfx::command::Primary;
-use gfx::command::Shot;
 use gfx::queue::capability::Capability;
 
 pub(crate) type CmdBufType<C> =

@@ -5,8 +5,8 @@
 use gfx::Device;
 use gfx::Instance;
 
-use crate::util::allocator::{Allocator, DefaultAlloc};
 use crate::types;
+use crate::util::allocator::{Allocator, DefaultAlloc};
 
 use smallvec::SmallVec;
 
@@ -33,7 +33,6 @@ impl DeviceContext {
 
         // TODO select best fitting adapter
         let adapter = adapters.remove(0);
-
 
         let (device, mut queue_groups, graphics_idx, compute_idx) = {
             use gfx::QueueFamily;

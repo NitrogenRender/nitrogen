@@ -35,11 +35,11 @@ impl<A: Allocator> ImageType<A> {
         &self.image
     }
 
+    #[allow(unused)]
     pub(crate) fn block(&self) -> &A::Block {
         &self.block
     }
 }
-
 
 /// Errors that can occur when allocating memory from a device
 #[derive(Debug, Fail, Clone)]
@@ -72,7 +72,7 @@ pub enum AllocatorError {
 /// An allocation request
 pub(crate) struct Request {
     pub(crate) transient: bool,
-    pub(crate) persistently_mappable: bool,
+    pub(crate) _persistently_mappable: bool,
     pub(crate) properties: gfx::memory::Properties,
     pub(crate) size: u64,
     pub(crate) alignment: u64,
@@ -100,7 +100,6 @@ pub(crate) struct ImageRequest {
 
 /// The interface any memory allocator has to implement
 pub(crate) trait Allocator: std::fmt::Debug + Sized {
-
     type Block: Block;
 
     /// Allocate a block of memory from `device` that satisfies `reqs` and `request`
@@ -111,11 +110,7 @@ pub(crate) trait Allocator: std::fmt::Debug + Sized {
     ) -> Result<Self::Block, AllocationError>;
 
     /// Free a block of memory so it can be used in a later allocation
-    unsafe fn free(
-        &mut self,
-        device: &back::Device,
-        block: Self::Block,
-    );
+    unsafe fn free(&mut self, device: &back::Device, block: Self::Block);
 
     unsafe fn create_buffer(
         &mut self,
@@ -124,7 +119,8 @@ pub(crate) trait Allocator: std::fmt::Debug + Sized {
     ) -> Result<BufferType<Self>, AllocatorError> {
         use gfx::Device;
 
-        let mut buf = device.create_buffer(request.size, request.usage)
+        let mut buf = device
+            .create_buffer(request.size, request.usage)
             .map_err(AllocatorError::BufferCreationError)?;
         let reqs = device.get_buffer_requirements(&buf);
 
@@ -134,7 +130,7 @@ pub(crate) trait Allocator: std::fmt::Debug + Sized {
             type_mask: reqs.type_mask,
             properties: request.properties,
             transient: request.transient,
-            persistently_mappable: request.persistently_mappable,
+            _persistently_mappable: request.persistently_mappable,
         };
 
         let block = self
@@ -145,10 +141,7 @@ pub(crate) trait Allocator: std::fmt::Debug + Sized {
             .bind_buffer_memory(block.memory(), block.range().start, &mut buf)
             .map_err(AllocatorError::BindError)?;
 
-        Ok(BufferType {
-            buffer: buf,
-            block,
-        })
+        Ok(BufferType { buffer: buf, block })
     }
 
     unsafe fn create_image(
@@ -157,14 +150,16 @@ pub(crate) trait Allocator: std::fmt::Debug + Sized {
         request: ImageRequest,
     ) -> Result<ImageType<Self>, AllocatorError> {
         use gfx::Device;
-        let mut img = device.create_image(
-            request.kind,
-            request.level,
-            request.format,
-            request.tiling,
-            request.usage,
-            request.view_caps,
-        ).map_err(AllocatorError::ImageCreationError)?;
+        let mut img = device
+            .create_image(
+                request.kind,
+                request.level,
+                request.format,
+                request.tiling,
+                request.usage,
+                request.view_caps,
+            )
+            .map_err(AllocatorError::ImageCreationError)?;
 
         let reqs = device.get_image_requirements(&img);
 
@@ -174,7 +169,7 @@ pub(crate) trait Allocator: std::fmt::Debug + Sized {
             type_mask: reqs.type_mask,
             properties: request.properties,
             transient: request.transient,
-            persistently_mappable: false,
+            _persistently_mappable: false,
         };
 
         let block = self
@@ -185,37 +180,25 @@ pub(crate) trait Allocator: std::fmt::Debug + Sized {
             .bind_image_memory(block.memory(), block.range().start, &mut img)
             .map_err(AllocatorError::BindError)?;
 
-        Ok(ImageType {
-            image: img,
-            block,
-        })
+        Ok(ImageType { image: img, block })
     }
 
-    unsafe fn destroy_buffer(
-        &mut self,
-        device: &back::Device,
-        buffer: BufferType<Self>,
-    ) {
+    unsafe fn destroy_buffer(&mut self, device: &back::Device, buffer: BufferType<Self>) {
         use gfx::Device;
         device.destroy_buffer(buffer.buffer);
         self.free(device, buffer.block);
     }
 
-    unsafe fn destroy_image(
-        &mut self,
-        device: &back::Device,
-        image: ImageType<Self>,
-    ) {
+    unsafe fn destroy_image(&mut self, device: &back::Device, image: ImageType<Self>) {
         use gfx::Device;
         device.destroy_image(image.image);
         self.free(device, image.block);
     }
 
     unsafe fn dispose(self, device: &back::Device) -> Result<(), Self>
-        where
-            Self: Sized;
+    where
+        Self: Sized;
 }
-
 
 #[cfg(feature = "alloc_gfxm")]
 pub(crate) use self::alloc_gfxm::reexport::*;
@@ -223,19 +206,12 @@ pub(crate) use self::alloc_gfxm::reexport::*;
 #[cfg(not(feature = "alloc_gfxm"))]
 pub(crate) use self::alloc_empty::reexport::*;
 
-
 #[cfg(feature = "alloc_gfxm")]
 mod alloc_gfxm {
 
     use super::*;
 
-    use gfx_memory::{
-        MemoryAllocator,
-        SmartAllocator,
-        SmartBlock,
-        Factory,
-        Block as GfxmBlock,
-    };
+    use gfx_memory::{Block as GfxmBlock, MemoryAllocator, SmartAllocator, SmartBlock};
 
     pub(crate) mod reexport {
         use super::*;
@@ -266,7 +242,6 @@ mod alloc_gfxm {
     }
 
     fn gfxm_err_to_alloc_err(err: gfx_memory::MemoryError) -> AllocationError {
-
         println!("Encountered an error! {:?}", err);
 
         use gfx_memory::MemoryError;
@@ -279,13 +254,11 @@ mod alloc_gfxm {
 
     impl AllocatorGfxm {
         pub(crate) unsafe fn new(
-            device: &back::Device,
+            _device: &back::Device,
             props: gfx::adapter::MemoryProperties,
         ) -> Self {
             let alloc = SmartAllocator::new(props, 256, 64, 1024, 256 * 1024 * 1024);
-            Self {
-                alloc,
-            }
+            Self { alloc }
         }
     }
 
@@ -297,11 +270,6 @@ mod alloc_gfxm {
             device: &back::Device,
             request: Request,
         ) -> Result<BlockGfxm, AllocationError> {
-
-            println!("alloc");
-            println!("used {}", self.alloc.used());
-            println!("requested {}", request.size);
-
             let ty = if request.transient {
                 gfx_memory::Type::ShortLived
             } else {
@@ -316,26 +284,16 @@ mod alloc_gfxm {
                 type_mask: request.type_mask,
             };
 
-            let block = self.alloc.alloc(
-                device,
-                (ty, prop),
-                reqs,
-            ).map_err(gfxm_err_to_alloc_err)?;
+            let block = self
+                .alloc
+                .alloc(device, (ty, prop), reqs)
+                .map_err(gfxm_err_to_alloc_err)?;
 
-            Ok(BlockGfxm {
-                block,
-            })
+            Ok(BlockGfxm { block })
         }
 
-        unsafe fn free(
-            &mut self,
-            device: &back::Device,
-            block: BlockGfxm,
-        ) {
-            self.alloc.free(
-                device,
-                block.block,
-            )
+        unsafe fn free(&mut self, device: &back::Device, block: BlockGfxm) {
+            self.alloc.free(device, block.block)
         }
 
         unsafe fn dispose(self, device: &back::Device) -> Result<(), Self> {
@@ -344,7 +302,6 @@ mod alloc_gfxm {
     }
 
 }
-
 
 #[cfg(not(feature = "alloc_gfxm"))]
 mod alloc_empty {
@@ -384,11 +341,7 @@ mod alloc_empty {
             unimplemented!("empty memory allocator used")
         }
 
-        unsafe fn free(
-            &mut self,
-            _: &back::Device,
-            _: BlockEmpty,
-        ) {
+        unsafe fn free(&mut self, _: &back::Device, _: BlockEmpty) {
             unimplemented!("empty memory allocator used")
         }
 

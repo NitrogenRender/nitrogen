@@ -12,7 +12,6 @@ use crate::device::DeviceContext;
 use crate::resources::command_pool::CommandPoolTransfer;
 use crate::resources::semaphore_pool::SemaphoreList;
 use crate::resources::semaphore_pool::SemaphorePool;
-use crate::types::CommandPool;
 
 pub(crate) struct BufferTransfer<'a> {
     pub(crate) src: &'a BufferTypeInternal,
