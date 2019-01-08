@@ -29,11 +29,21 @@ pub struct Display {
 impl Display {
     /// Create a new `DisplayContext` which uses the provided surface.
     pub(crate) fn new(surface: Surface, device: &DeviceContext) -> Self {
+        use gfx::format::Format;
         use gfx::Surface;
 
         let (_, formats, _, _) = surface.compatibility(&device.adapter.physical_device);
 
-        let format = formats.unwrap().remove(0);
+        println!("{:?}", formats);
+        let format = formats
+            .unwrap()
+            .into_iter()
+            .find(|format| match format {
+                Format::Rgba8Unorm => true,
+                Format::Bgra8Unorm => true,
+                _ => false,
+            })
+            .expect("No suitable display format found");
 
         Display {
             surface,

@@ -39,14 +39,7 @@ pub(crate) struct GraphBaseResources {
 
     pipelines_graphic: HashMap<PassId, PipelineHandle>,
     pipelines_compute: HashMap<PassId, PipelineHandle>,
-    pipelines_desc_set: HashMap<
-        PassId,
-        (
-            types::DescriptorSetLayout,
-            types::DescriptorPool,
-            types::DescriptorSet,
-        ),
-    >,
+    pub(crate) pipelines_mat: HashMap<PassId, crate::material::MaterialHandle>,
 }
 
 impl GraphBaseResources {
@@ -63,21 +56,22 @@ impl GraphBaseResources {
             .pipeline
             .destroy(res_list, self.pipelines_compute.values());
 
-        for (_, (layout, pool, _)) in self.pipelines_desc_set {
-            res_list.queue_desc_set_layout(layout);
-            // implicitly frees all descriptors allocated from pool
-            res_list.queue_desc_pool(pool);
-        }
+        // TODO free pass materials
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct GraphResources {
+    pub(crate) exec_version: usize,
+    pub(crate) exec_context: super::ExecutionContext,
+
     pub(crate) images: HashMap<ResourceId, ImageHandle>,
     samplers: HashMap<ResourceId, SamplerHandle>,
     pub(crate) buffers: HashMap<ResourceId, BufferHandle>,
 
     framebuffers: HashMap<PassId, (types::Framebuffer, gfx::image::Extent)>,
+
+    pass_mats: HashMap<PassId, crate::material::MaterialInstanceHandle>,
 
     pub(crate) outputs: SmallVec<[ResourceId; 16]>,
 }
@@ -92,6 +86,10 @@ impl GraphResources {
 
         for (_, (fb, _)) in self.framebuffers {
             res_list.queue_framebuffer(fb);
+        }
+
+        for mat_instance in self.pass_mats.values() {
+            res_list.queue_material_instance(*mat_instance);
         }
     }
 }

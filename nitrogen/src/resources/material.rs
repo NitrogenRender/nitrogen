@@ -18,7 +18,7 @@ use failure_derive::Fail;
 
 pub type MaterialHandle = Handle<Material>;
 
-const MAX_SETS_PER_POOL: usize = 64;
+const MAX_SETS_PER_POOL: u8 = 16;
 
 pub type MaterialInstanceHandle = (MaterialHandle, Handle<MaterialInstance>);
 
@@ -28,7 +28,8 @@ pub type MaterialInstanceHandle = (MaterialHandle, Handle<MaterialInstance>);
 pub struct Material {
     parameters: Vec<(u32, MaterialParameterType)>,
     pub(crate) desc_set_layout: types::DescriptorSetLayout,
-    pool_occupancy: Vec<u8>,
+    pool_allocated: Vec<u8>,
+    pool_used: Vec<u8>,
     pools: Vec<types::DescriptorPool>,
 
     instances: Storage<MaterialInstance>,
@@ -150,7 +151,8 @@ impl MaterialStorage {
                         parameters,
                         desc_set_layout: set,
                         instances: Storage::new(),
-                        pool_occupancy: Vec::new(),
+                        pool_allocated: Vec::new(),
+                        pool_used: Vec::new(),
                         pools: Vec::new(),
                     };
                     let handle = self.storage.insert(mat);
@@ -163,6 +165,23 @@ impl MaterialStorage {
         }
 
         results
+    }
+
+    pub(crate) unsafe fn create_raw(
+        &mut self,
+        device: &DeviceContext,
+        layout: types::DescriptorSetLayout,
+    ) -> MaterialHandle {
+        let mat = Material {
+            parameters: vec![],
+            desc_set_layout: layout,
+            instances: Storage::new(),
+            pool_allocated: vec![],
+            pool_used: vec![],
+            pools: vec![],
+        };
+
+        self.storage.insert(mat)
     }
 
     pub(crate) unsafe fn destroy(&mut self, device: &DeviceContext, materials: &[MaterialHandle]) {
@@ -282,8 +301,8 @@ impl MaterialStorage {
 
 impl Material {
     fn next_nonempty_pool(&self) -> Option<usize> {
-        for (i, occupancy) in self.pool_occupancy.iter().enumerate() {
-            if (*occupancy as usize) < MAX_SETS_PER_POOL {
+        for (i, allocd) in self.pool_allocated.iter().enumerate() {
+            if *allocd < MAX_SETS_PER_POOL {
                 return Some(i);
             }
         }
@@ -305,12 +324,13 @@ impl Material {
 
         let pool = device
             .device
-            .create_descriptor_pool(MAX_SETS_PER_POOL, descriptors.as_slice())
+            .create_descriptor_pool(MAX_SETS_PER_POOL as usize, descriptors.as_slice())
             .expect("Can't allocate new descriptor pool, out of memory");
 
-        let new_pool_idx = self.pool_occupancy.len();
+        let new_pool_idx = self.pools.len();
 
-        self.pool_occupancy.push(0);
+        self.pool_used.push(0);
+        self.pool_allocated.push(0);
         self.pools.push(pool);
 
         new_pool_idx
@@ -341,7 +361,8 @@ impl Material {
         let pool = &mut self.pools[pool_idx];
         let set = pool.allocate_set(&self.desc_set_layout)?;
 
-        self.pool_occupancy[pool_idx] += 1;
+        self.pool_used[pool_idx] += 1;
+        self.pool_allocated[pool_idx] += 1;
 
         let instance = MaterialInstance {
             pool: pool_idx,
@@ -357,8 +378,14 @@ impl Material {
 
         let instance = self.instances.remove(handle)?;
 
-        self.pools[instance.pool].free_sets(std::iter::once(instance.set));
-        self.pool_occupancy[instance.pool] -= 1;
+        // mark as no longer used
+        self.pool_used[instance.pool] -= 1;
+
+        if self.pool_used[instance.pool] == 0 {
+            // the whole thing is full, so we can reset the whole pool
+            self.pools[instance.pool].reset();
+            self.pool_allocated[instance.pool] = 0;
+        }
 
         Some(())
     }

@@ -318,7 +318,9 @@ fn main() {
 
             submits[frame_idx].graph_execute(&mut ntg, graph, &store, &exec_context);
 
-            let img = ntg.graph_get_output_image(graph, "IOutput").unwrap();
+            let img = submits[frame_idx]
+                .graph_get_image(&ntg, graph, "IOutput")
+                .unwrap();
 
             submits[frame_idx].display_present(&mut ntg, display, img);
         }
@@ -331,6 +333,7 @@ fn main() {
     submits[0].image_destroy(&mut ntg, &[image]);
     submits[0].sampler_destroy(&mut ntg, &[sampler]);
     submits[0].graph_destroy(&mut ntg, &[graph]);
+    submits[0].material_destroy(&[material]);
 
     for mut submit in submits {
         unsafe {
@@ -340,8 +343,6 @@ fn main() {
     }
 
     unsafe {
-        ntg.material_destroy(&[material]);
-
         ntg.release();
     }
 }

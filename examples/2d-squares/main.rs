@@ -33,7 +33,7 @@ const VERTEX_DATA: [VertexData; 4] = [
     VertexData { pos: [1.0, 1.0] },
 ];
 
-const NUM_THINGS: usize = 1_024 * 1_024 * 4;
+const NUM_THINGS: usize = 1_024;
 
 struct Data2dSquares {
     graph: graph::GraphHandle,
@@ -68,10 +68,10 @@ impl UserData for Data2dSquares {
             &[self.buf_vertex, self.buf_instance, self.buf_velocity],
         );
 
+        submit.material_destroy(&[self.mat]);
+
         unsafe {
             submit.wait(ctx);
-
-            ctx.material_destroy(&[self.mat]);
         }
 
         ctx.vertex_attribs_destroy(&[self.vtx_def]);

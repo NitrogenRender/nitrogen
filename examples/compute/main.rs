@@ -114,6 +114,7 @@ fn main() {
 
     submit.buffer_destroy(&mut ctx, &[buffer]);
     submit.graph_destroy(&mut ctx, &[graph]);
+    submit.material_destroy(&[material]);
 
     unsafe {
         ctx.wait_idle();
@@ -122,7 +123,6 @@ fn main() {
 
         submit.release(&mut ctx);
 
-        ctx.material_destroy(&[material]);
         ctx.release();
     }
 }

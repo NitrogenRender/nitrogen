@@ -17,6 +17,7 @@ use crate::resources::semaphore_pool::{SemaphoreList, SemaphorePool};
 
 use smallvec::SmallVec;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /// `SubmitGroup`s are used to synchronize access to resources and ensure
@@ -43,6 +44,8 @@ pub struct SubmitGroup {
 
     sem_list: SemaphoreList,
     res_destroys: ResourceList,
+
+    graph_resources: HashMap<graph::GraphHandle, graph::GraphResources>,
 }
 
 impl SubmitGroup {
@@ -52,7 +55,6 @@ impl SubmitGroup {
                 .device
                 .create_command_pool_typed(
                     device.graphics_queue_group(),
-                    // gfx::pool::CommandPoolCreateFlags::RESET_INDIVIDUAL,
                     gfx::pool::CommandPoolCreateFlags::empty(),
                 )
                 .unwrap();
@@ -60,7 +62,6 @@ impl SubmitGroup {
                 .device
                 .create_command_pool_typed(
                     device.compute_queue_group(),
-                    // gfx::pool::CommandPoolCreateFlags::RESET_INDIVIDUAL,
                     gfx::pool::CommandPoolCreateFlags::empty(),
                 )
                 .unwrap();
@@ -68,7 +69,6 @@ impl SubmitGroup {
                 .device
                 .create_command_pool_typed(
                     device.transfer_queue_group(),
-                    // gfx::pool::CommandPoolCreateFlags::RESET_INDIVIDUAL,
                     gfx::pool::CommandPoolCreateFlags::empty(),
                 )
                 .unwrap();
@@ -89,6 +89,8 @@ impl SubmitGroup {
             sem_list: SemaphoreList::new(),
 
             res_destroys: ResourceList::new(device),
+
+            graph_resources: HashMap::new(),
         }
     }
 
@@ -119,7 +121,7 @@ impl SubmitGroup {
 
         self.sem_list.advance();
 
-        self.res_destroys.free_resources();
+        self.res_destroys.free_resources(ctx);
 
         self.pool_graphics.reset();
         self.pool_compute.reset();
@@ -170,10 +172,12 @@ impl SubmitGroup {
             buffer: &mut ctx.buffer_storage,
             vertex_attrib: &ctx.vertex_attrib_storage,
             sampler: &mut ctx.sampler_storage,
-            material: &ctx.material_storage,
+            material: &mut ctx.material_storage,
         };
 
-        ctx.graph_storage.execute(
+        let res = self.graph_resources.remove(&graph);
+
+        if let Some(res) = ctx.graph_storage.execute(
             &ctx.device_ctx,
             &mut self.sem_pool,
             &mut self.sem_list,
@@ -183,8 +187,13 @@ impl SubmitGroup {
             &mut storages,
             store,
             graph,
+            res,
             exec_context,
-        )
+        ) {
+            self.graph_resources.insert(graph, res);
+        } else {
+            println!("Weeeeeird!!");
+        }
     }
 
     pub fn graph_destroy<G>(&mut self, ctx: &mut Context, graph: G)
@@ -201,7 +210,7 @@ impl SubmitGroup {
             buffer: &mut ctx.buffer_storage,
             vertex_attrib: &ctx.vertex_attrib_storage,
             sampler: &mut ctx.sampler_storage,
-            material: &ctx.material_storage,
+            material: &mut ctx.material_storage,
         };
 
         for handle in graph.into_iter() {
@@ -210,6 +219,21 @@ impl SubmitGroup {
             ctx.graph_storage
                 .destroy(&mut self.res_destroys, &mut storages, handle);
         }
+    }
+
+    pub fn graph_get_image<I: Into<graph::ResourceName>>(
+        &self,
+        ctx: &Context,
+        graph: graph::GraphHandle,
+        image: I,
+    ) -> Option<image::ImageHandle> {
+        let g = ctx.graph_storage.storage.get(graph)?;
+        let input_num = g.last_input?;
+        let (resolve, _) = g.resolve_cache.get(&input_num)?;
+        let id = resolve.name_lookup.get(&image.into())?;
+
+        let res = self.graph_resources.get(&graph)?;
+        res.images.get(id).cloned()
     }
 
     pub unsafe fn image_upload_data(
@@ -273,6 +297,18 @@ impl SubmitGroup {
             .destroy(&mut self.res_destroys, samplers)
     }
 
+    pub fn material_destroy(&mut self, materials: &[material::MaterialHandle]) {
+        for m in materials {
+            self.res_destroys.queue_material(*m);
+        }
+    }
+
+    pub fn material_instance_destroy(&mut self, instances: &[material::MaterialInstanceHandle]) {
+        for i in instances {
+            self.res_destroys.queue_material_instance(*i);
+        }
+    }
+
     pub unsafe fn release(mut self, ctx: &mut Context) {
         {
             let pool = self.pool_graphics.0.into_impl();
@@ -311,6 +347,9 @@ pub(crate) struct ResourceList {
     pipelines_layout: SmallVec<[types::PipelineLayout; 16]>,
     desc_set_layouts: SmallVec<[types::DescriptorSetLayout; 16]>,
     desc_pools: SmallVec<[types::DescriptorPool; 16]>,
+
+    materials: SmallVec<[material::MaterialHandle; 16]>,
+    material_instances: SmallVec<[material::MaterialInstanceHandle; 16]>,
 }
 
 impl ResourceList {
@@ -328,6 +367,9 @@ impl ResourceList {
             pipelines_layout: SmallVec::new(),
             desc_set_layouts: SmallVec::new(),
             desc_pools: SmallVec::new(),
+
+            materials: SmallVec::new(),
+            material_instances: SmallVec::new(),
         }
     }
 
@@ -375,8 +417,17 @@ impl ResourceList {
         self.desc_pools.push(pool);
     }
 
-    unsafe fn free_resources(&mut self) {
+    pub(crate) fn queue_material(&mut self, mat: material::MaterialHandle) {
+        self.materials.push(mat);
+    }
+
+    pub(crate) fn queue_material_instance(&mut self, mat: material::MaterialInstanceHandle) {
+        self.material_instances.push(mat);
+    }
+
+    unsafe fn free_resources(&mut self, ctx: &mut Context) {
         use crate::util::allocator::Allocator;
+        use gfx::DescriptorPool;
 
         let mut alloc = self.device.allocator();
 
@@ -416,6 +467,14 @@ impl ResourceList {
 
         for layout in self.pipelines_layout.drain() {
             device.destroy_pipeline_layout(layout);
+        }
+
+        for mat in self.materials.drain() {
+            ctx.material_storage.destroy(&ctx.device_ctx, &[mat]);
+        }
+
+        for mat in self.material_instances.drain() {
+            ctx.material_storage.destroy_instances(&[mat]);
         }
 
         for desc_pool in self.desc_pools.drain() {

@@ -58,11 +58,10 @@ impl UserData for Data {
         submit.buffer_destroy(ctx, &self.bufs);
         submit.image_destroy(ctx, &[self.img]);
         submit.sampler_destroy(ctx, &[self.sampler]);
+        submit.material_destroy(&[self.mat]);
 
         unsafe {
             submit.wait(ctx);
-
-            ctx.material_destroy(&[self.mat]);
         }
 
         ctx.vertex_attribs_destroy(&[self.vtx_def]);

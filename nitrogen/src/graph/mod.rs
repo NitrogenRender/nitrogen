@@ -48,7 +48,7 @@ pub(crate) struct Storages<'a> {
     pub buffer: &'a mut BufferStorage,
     pub vertex_attrib: &'a VertexAttribStorage,
     pub sampler: &'a mut SamplerStorage,
-    pub material: &'a MaterialStorage,
+    pub material: &'a mut MaterialStorage,
 }
 
 pub type GraphHandle = Handle<Graph>;
@@ -63,16 +63,15 @@ pub struct Graph {
     passes_cmpt_impl: HashMap<usize, Box<dyn ComputePassImpl>>,
     pub(crate) output_resources: Vec<ResourceName>,
 
-    resolve_cache: HashMap<u64, (GraphResourcesResolved, usize)>,
+    pub(crate) resolve_cache: HashMap<u64, (GraphResourcesResolved, usize)>,
     exec_id_cache: HashMap<(usize, Vec<ResourceName>), usize>,
     exec_graph_cache: HashMap<usize, ExecutionGraph>,
 
     exec_usages: HashMap<usize, ResourceUsages>,
-    exec_base_resources: HashMap<usize, GraphBaseResources>,
-    pub(crate) exec_resources: Option<(ExecutionContext, GraphResources)>,
+    pub(crate) exec_base_resources: HashMap<usize, GraphBaseResources>,
 
     last_exec: Option<usize>,
-    last_input: Option<u64>,
+    pub(crate) last_input: Option<u64>,
 }
 
 pub(crate) struct GraphStorage {
@@ -100,10 +99,6 @@ impl GraphStorage {
 
         if let Some(graph) = graph {
             for (_, res) in graph.exec_base_resources {
-                res.release(res_list, storages);
-            }
-
-            if let Some((_, res)) = graph.exec_resources {
                 res.release(res_list, storages);
             }
         }
@@ -260,22 +255,22 @@ impl GraphStorage {
         res_list: &mut ResourceList,
         storages: &mut Storages,
         store: &Store,
-        graph: GraphHandle,
+        graph_handle: GraphHandle,
+        prev_res: Option<GraphResources>,
         context: &ExecutionContext,
-    ) {
+    ) -> Option<GraphResources> {
         // TODO error handling !!!
         // TODO
-        // TODO
-        let graph = self.storage.get_mut(graph).expect("Invalid graph!");
+        // TODO change this ^ into Result<>
+        let graph = self.storage.get_mut(graph_handle)?;
 
-        let input_hash = graph.last_input.unwrap();
+        let input_hash = graph.last_input?;
 
-        let (resolved, id) = graph.resolve_cache.get(&input_hash).unwrap();
+        let (resolved, id) = graph.resolve_cache.get(&input_hash)?;
 
         let exec_id = graph
             .exec_id_cache
-            .get(&(*id, graph.output_resources.clone()))
-            .unwrap();
+            .get(&(*id, graph.output_resources.clone()))?;
 
         let exec = &graph.exec_graph_cache[exec_id];
 
@@ -286,57 +281,74 @@ impl GraphStorage {
             .map(|n| resolved.name_lookup[n])
             .collect::<SmallVec<[_; 16]>>();
 
-        let (base_resources, usages) = {
-            let passes = &graph.passes[..];
+        let resources = {
+            let (base_resources, usages) = {
+                let passes = &graph.passes[..];
 
-            graph
-                .exec_base_resources
-                .entry(*exec_id)
-                .or_insert_with(|| {
-                    execution::prepare_base(device, storages, exec, resolved, passes)
+                let base = graph
+                    .exec_base_resources
+                    .entry(*exec_id)
+                    .or_insert_with(|| {
+                        execution::prepare_base(device, storages, exec, resolved, passes)
+                    });
+
+                let base = graph.exec_base_resources.get_mut(exec_id)?;
+
+                graph.exec_usages.entry(*exec_id).or_insert_with(|| {
+                    execution::derive_resource_usage(exec, resolved, outputs.as_slice())
                 });
 
-            // TODO Aaaargh there's no immutable insert_with for HashMap :/
-            let base = &graph.exec_base_resources[exec_id];
+                let usages = &graph.exec_usages[exec_id];
 
-            graph.exec_usages.entry(*exec_id).or_insert_with(|| {
-                execution::derive_resource_usage(exec, resolved, outputs.as_slice())
-            });
-
-            let usages = &graph.exec_usages[exec_id];
-
-            (base, usages)
-        };
-
-        let resources = {
-            let res = graph.exec_resources.take();
-
-            let new_res = if res.as_ref().map(|(ctx, _)| ctx == context).unwrap_or(false) {
-                res.unwrap().1
-            } else {
-                if let Some((_, old_res)) = res {
-                    // queue deletion of old resources
-                    old_res.release(res_list, storages);
-                }
-                let mut res = prepare(
-                    usages,
-                    base_resources,
-                    device,
-                    storages,
-                    exec,
-                    resolved,
-                    graph.passes.as_slice(),
-                    context,
-                );
-
-                // add the resolved outputs
-                res.outputs = outputs;
-
-                res
+                (base, usages)
             };
 
-            graph.exec_resources = Some((context.clone(), new_res));
-            graph.exec_resources.as_ref().map(|(_, res)| res).unwrap()
+            match prev_res {
+                None => {
+                    // create new completely!
+                    let mut res = prepare(
+                        usages,
+                        base_resources,
+                        device,
+                        storages,
+                        exec,
+                        resolved,
+                        graph.passes.as_slice(),
+                        context.clone(),
+                    )?;
+
+                    // add the resolved outputs
+                    res.outputs = outputs;
+                    res.exec_version = *exec_id;
+                    res
+                }
+                Some(res) => {
+                    if Some(res.exec_version) == graph.last_exec && &res.exec_context == context {
+                        // same old resources, we can keep them!
+
+                        res
+                    } else {
+                        // recreate resources
+                        res.release(res_list, storages);
+
+                        let mut res = prepare(
+                            usages,
+                            base_resources,
+                            device,
+                            storages,
+                            exec,
+                            resolved,
+                            graph.passes.as_slice(),
+                            context.clone(),
+                        )?;
+
+                        // add the resolved outputs
+                        res.outputs = outputs;
+                        res.exec_version = *exec_id;
+                        res
+                    }
+                }
+            }
         };
 
         execution::execute(
@@ -350,10 +362,12 @@ impl GraphStorage {
             exec,
             resolved,
             graph,
-            base_resources,
-            resources,
+            &graph.exec_base_resources[exec_id],
+            &resources,
             context,
-        )
+        );
+
+        Some(resources)
     }
 
     pub(crate) fn add_output<T: Into<ResourceName>>(&mut self, handle: GraphHandle, image: T) {
@@ -362,6 +376,7 @@ impl GraphStorage {
         });
     }
 
+    /*
     pub(crate) fn output_buffer<T: Into<ResourceName>>(
         &self,
         handle: GraphHandle,
@@ -375,21 +390,7 @@ impl GraphStorage {
 
         res.buffers.get(&id).map(|x| *x)
     }
-
-    pub(crate) fn output_image<T: Into<ResourceName>>(
-        &self,
-        handle: GraphHandle,
-        image: T,
-    ) -> Option<crate::image::ImageHandle> {
-        let graph = self.storage.get(handle)?;
-        let in_num = graph.last_input?;
-        let (resolve, _exec_num) = graph.resolve_cache.get(&in_num)?;
-        let id = *resolve.name_lookup.get(&image.into())?;
-        let id = resolve.moved_from(id)?;
-        let (_, res) = graph.exec_resources.as_ref()?;
-
-        res.images.get(&id).map(|x| *x)
-    }
+    */
 }
 
 #[derive(Debug, Clone, Ord, PartialOrd, PartialEq, Eq)]

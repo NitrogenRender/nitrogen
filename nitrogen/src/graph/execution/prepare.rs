@@ -61,20 +61,19 @@ pub(crate) unsafe fn prepare_pass_base(
             res.render_passes.insert(pass, render_pass);
 
             // create pipeline object
-            let (pipe, layout, pool, set) =
+            let (pipe, mat) =
                 create_pipeline_graphics(device, storages, resolved, render_pass, pass, info)?;
 
             res.pipelines_graphic.insert(pass, pipe);
-            res.pipelines_desc_set.insert(pass, (layout, pool, set));
+            res.pipelines_mat.insert(pass, mat);
 
             Some(())
         }
         PassInfo::Compute(info) => {
-            let (pipeline, layout, pool, set) =
-                create_pipeline_compute(device, storages, resolved, pass, info)?;
+            let (pipeline, mat) = create_pipeline_compute(device, storages, resolved, pass, info)?;
 
             res.pipelines_compute.insert(pass, pipeline);
-            res.pipelines_desc_set.insert(pass, (layout, pool, set));
+            res.pipelines_mat.insert(pass, mat);
 
             Some(())
         }
@@ -83,15 +82,26 @@ pub(crate) unsafe fn prepare_pass_base(
 
 pub(crate) unsafe fn prepare(
     usages: &ResourceUsages,
-    base: &GraphBaseResources,
+    base: &mut GraphBaseResources,
     device: &DeviceContext,
     storages: &mut Storages,
     exec: &ExecutionGraph,
     resolved: &GraphResourcesResolved,
     passes: &[(PassName, PassInfo)],
-    context: &ExecutionContext,
-) -> GraphResources {
-    let mut res = GraphResources::default();
+    context: ExecutionContext,
+) -> Option<GraphResources> {
+    use gfx::DescriptorPool;
+
+    let mut res = GraphResources {
+        exec_version: 0, // will be filled by the caller
+        exec_context: context.clone(),
+        images: HashMap::new(),
+        samplers: HashMap::new(),
+        buffers: HashMap::new(),
+        framebuffers: HashMap::new(),
+        pass_mats: HashMap::new(),
+        outputs: SmallVec::new(), // will be filled by the caller
+    };
 
     for batch in &exec.pass_execution {
         // TODO this should probably be moved into the execution phase once a better
@@ -100,7 +110,7 @@ pub(crate) unsafe fn prepare(
         for create in &batch.resource_create {
             let res_info = &resolved.infos[create];
             create_resource(
-                usages, device, context, storages, *create, res_info, &mut res,
+                usages, device, &context, storages, *create, res_info, &mut res,
             );
         }
 
@@ -111,11 +121,20 @@ pub(crate) unsafe fn prepare(
         for pass in &batch.passes {
             let info = &passes[pass.0].1;
 
+            let mat = base.pipelines_mat.get(pass)?;
+            let instance = storages
+                .material
+                .create_instances(device, &[*mat])
+                .remove(0)
+                .unwrap();
+
+            res.pass_mats.insert(*pass, instance);
+
             prepare_pass(base, device, storages, resolved, *pass, info, &mut res);
         }
     }
 
-    res
+    Some(res)
 }
 
 pub(crate) unsafe fn prepare_pass(
@@ -409,22 +428,14 @@ unsafe fn create_pipeline_compute(
     resolved: &GraphResourcesResolved,
     pass: PassId,
     info: &ComputePassInfo,
-) -> Option<(
-    PipelineHandle,
-    types::DescriptorSetLayout,
-    types::DescriptorPool,
-    types::DescriptorSet,
-)> {
-    let (mut layouts, pass_stuff) = create_pipeline_base(
+) -> Option<(PipelineHandle, MaterialHandle)> {
+    let (mut layouts, pass_mat) = create_pipeline_base(
         device,
         resolved,
         storages.material,
         pass,
         &info.materials[..],
     )?;
-
-    // insert the pass set layout
-    layouts.insert(0, &pass_stuff.0);
 
     let layouts = layouts
         .into_iter()
@@ -446,7 +457,7 @@ unsafe fn create_pipeline_compute(
         .remove(0)
         .ok();
 
-    pipeline_handle.map(move |handle| (handle, pass_stuff.0, pass_stuff.1, pass_stuff.2))
+    pipeline_handle.map(|handle| (handle, pass_mat))
 }
 
 unsafe fn create_pipeline_graphics(
@@ -456,24 +467,16 @@ unsafe fn create_pipeline_graphics(
     render_pass: RenderPassHandle,
     pass: PassId,
     info: &GraphicsPassInfo,
-) -> Option<(
-    PipelineHandle,
-    types::DescriptorSetLayout,
-    types::DescriptorPool,
-    types::DescriptorSet,
-)> {
+) -> Option<(PipelineHandle, MaterialHandle)> {
     use crate::pipeline;
 
-    let (mut layouts, pass_stuff) = create_pipeline_base(
+    let (mut layouts, pass_mat) = create_pipeline_base(
         device,
         resolved_graph,
         storages.material,
         pass,
         &info.materials[..],
     )?;
-
-    // insert the pass set layout
-    layouts.insert(0, &pass_stuff.0);
 
     let layouts = layouts
         .into_iter()
@@ -515,7 +518,7 @@ unsafe fn create_pipeline_graphics(
         .remove(0)
         .ok();
 
-    pipeline_handle.map(move |handle| (handle, pass_stuff.0, pass_stuff.1, pass_stuff.2))
+    pipeline_handle.map(|handle| (handle, pass_mat))
 }
 
 unsafe fn create_resource(
@@ -638,16 +641,12 @@ unsafe fn create_resource(
 unsafe fn create_pipeline_base<'a>(
     device: &DeviceContext,
     resolved: &GraphResourcesResolved,
-    material_storage: &'a MaterialStorage,
+    material_storage: &'a mut MaterialStorage,
     pass: PassId,
     materials: &[(usize, MaterialHandle)],
 ) -> Option<(
     BTreeMap<usize, &'a types::DescriptorSetLayout>,
-    (
-        types::DescriptorSetLayout,
-        types::DescriptorPool,
-        types::DescriptorSet,
-    ),
+    MaterialHandle,
 )> {
     let mut sets = BTreeMap::new();
 
@@ -801,6 +800,24 @@ unsafe fn create_pipeline_base<'a>(
         (descriptors, range)
     };
 
+    // pass material
+    let pass_mat = {
+        use gfx::DescriptorPool;
+        use gfx::Device;
+
+        let pass_set_layout = device
+            .device
+            .create_descriptor_set_layout(core_desc, &[])
+            .ok()?;
+
+        let pass_mat = material_storage.create_raw(device, pass_set_layout);
+
+        let raw_mat = material_storage.raw(pass_mat).unwrap();
+        sets.insert(0, &raw_mat.desc_set_layout);
+
+        pass_mat
+    };
+
     // material sets
     {
         for (set, material) in materials {
@@ -815,17 +832,5 @@ unsafe fn create_pipeline_base<'a>(
         }
     }
 
-    use gfx::DescriptorPool;
-    use gfx::Device;
-
-    let pass_set_layout = device
-        .device
-        .create_descriptor_set_layout(core_desc, &[])
-        .ok()?;
-
-    let mut pass_set_pool = device.device.create_descriptor_pool(1, core_range).ok()?;
-
-    let pass_set = pass_set_pool.allocate_set(&pass_set_layout).ok()?;
-
-    Some((sets, (pass_set_layout, pass_set_pool, pass_set)))
+    Some((sets, pass_mat))
 }

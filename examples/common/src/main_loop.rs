@@ -67,7 +67,12 @@ impl<U: UserData> MainLoop<U> {
 
         store.insert(CanvasSize(size.0, size.1));
 
-        let mut submits = vec![ctx.create_submit_group()];
+        let mut submits = vec![
+            ctx.create_submit_group(),
+            ctx.create_submit_group(),
+            ctx.create_submit_group(),
+            ctx.create_submit_group(),
+        ];
 
         let user_data = match f(&mut store, &mut ctx, &mut submits[0]) {
             Some(d) => d,
@@ -169,7 +174,7 @@ impl<U: UserData> MainLoop<U> {
 
             submit.graph_execute(&mut self.ctx, graph, &mut self.store, &context);
 
-            let image = self.ctx.graph_get_output_image(graph, image).unwrap();
+            let image = submit.graph_get_image(&self.ctx, graph, image).unwrap();
 
             submit.display_present(&mut self.ctx, self.display, image);
         }
