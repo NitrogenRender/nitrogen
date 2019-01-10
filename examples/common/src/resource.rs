@@ -72,12 +72,10 @@ pub unsafe fn buffer_device_local_storage<T: Sized>(
 
 pub unsafe fn image_create(
     ctx: &mut Context,
-    submit: &mut SubmitGroup,
-    content: &[u8],
     dimensions: (u32, u32),
     format: image::ImageFormat,
     usage: gfx::image::Usage,
-) -> Option<(image::ImageHandle, sampler::SamplerHandle)> {
+) -> Option<image::ImageHandle> {
     let dimension = image::ImageDimension::D2 {
         x: dimensions.0,
         y: dimensions.1,
@@ -96,7 +94,23 @@ pub unsafe fn image_create(
         usage,
     };
 
-    let img = ctx.image_create(&[create_info]).remove(0).ok()?;
+    ctx.image_create(&[create_info]).remove(0).ok()
+}
+
+pub unsafe fn image_create_with_content(
+    ctx: &mut Context,
+    submit: &mut SubmitGroup,
+    content: &[u8],
+    dimensions: (u32, u32),
+    format: image::ImageFormat,
+    usage: gfx::image::Usage,
+) -> Option<(image::ImageHandle, sampler::SamplerHandle)> {
+    let dimension = image::ImageDimension::D2 {
+        x: dimensions.0,
+        y: dimensions.1,
+    };
+
+    let img = image_create(ctx, dimensions, format, usage)?;
 
     let upload = image::ImageUploadInfo {
         data: content,
@@ -133,12 +147,27 @@ pub unsafe fn image_color(
     dimensions: (u32, u32),
     format: image::ImageFormat,
 ) -> Option<(image::ImageHandle, sampler::SamplerHandle)> {
-    image_create(
+    image_create_with_content(
         ctx,
         submit,
         content,
         dimensions,
         format,
         gfx::image::Usage::TRANSFER_DST | gfx::image::Usage::SAMPLED,
+    )
+}
+
+pub unsafe fn image_color_empty(
+    ctx: &mut Context,
+    dimensions: (u32, u32),
+    format: image::ImageFormat,
+) -> Option<image::ImageHandle> {
+    image_create(
+        ctx,
+        dimensions,
+        format,
+        gfx::image::Usage::TRANSFER_DST
+            | gfx::image::Usage::TRANSFER_SRC
+            | gfx::image::Usage::SAMPLED,
     )
 }

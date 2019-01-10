@@ -100,7 +100,7 @@ pub struct ImageCreateInfo<T: Into<gfx::image::Usage>> {
     pub is_transient: bool,
 }
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, Hash)]
 pub struct ImageUsage {
     pub transfer_src: bool,
     pub transfer_dst: bool,
@@ -158,6 +158,8 @@ pub enum ImageFormat {
     RgbUnorm,
     RgbaUnorm,
 
+    Rgba32Float,
+
     E5b9g9r9Float,
 
     D32Float,
@@ -179,6 +181,8 @@ impl From<ImageFormat> for gfx::format::Format {
             ImageFormat::RgUnorm => Format::Rg8Unorm,
             ImageFormat::RgbUnorm => Format::Rgb8Unorm,
             ImageFormat::RgbaUnorm => Format::Rgba8Unorm,
+
+            ImageFormat::Rgba32Float => Format::Rgba32Float,
 
             ImageFormat::E5b9g9r9Float => Format::E5b9g9r9Ufloat,
 
@@ -246,6 +250,7 @@ type ImageView = <back::Backend as gfx::Backend>::ImageView;
 
 pub struct Image {
     pub(crate) image: ImageType,
+    pub(crate) aspect: gfx::format::Aspects,
     pub view: ImageView,
     pub dimension: ImageDimension,
     pub format: gfx::format::Format,
@@ -412,6 +417,7 @@ impl ImageStorage {
             let img_store = Image {
                 image,
                 format,
+                aspect,
                 dimension: create_info.dimension,
                 view: image_view,
             };

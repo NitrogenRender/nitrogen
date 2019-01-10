@@ -36,6 +36,8 @@ pub(crate) use self::compilation::*;
 pub(crate) mod execution;
 pub(crate) use self::execution::*;
 
+pub use self::execution::Backbuffer;
+
 pub mod store;
 pub use self::store::*;
 
@@ -150,7 +152,12 @@ impl GraphStorage {
     ///
     /// With that in place, any gfx resources are created that won't change across execution
     /// (like pipelines and render passes)
-    pub(crate) fn compile(&mut self, handle: GraphHandle) -> Result<(), Vec<GraphCompileError>> {
+    pub(crate) fn compile(
+        &mut self,
+        backbuffer_usage: &mut BackbufferUsage,
+        store: &mut Store,
+        handle: GraphHandle,
+    ) -> Result<(), Vec<GraphCompileError>> {
         let graph = self
             .storage
             .get_mut(handle)
@@ -160,7 +167,7 @@ impl GraphStorage {
 
         for (i, pass) in graph.passes_gfx_impl.iter_mut() {
             let mut builder = GraphBuilder::new();
-            pass.setup(&mut builder);
+            pass.setup(store, &mut builder);
 
             let id = PassId(*i);
 
@@ -171,7 +178,7 @@ impl GraphStorage {
 
         for (i, pass) in graph.passes_cmpt_impl.iter_mut() {
             let mut builder = GraphBuilder::new();
-            pass.setup(&mut builder);
+            pass.setup(store, &mut builder);
 
             let id = PassId(*i);
 
@@ -221,6 +228,13 @@ impl GraphStorage {
             .entry((*resolved_id, graph.output_resources.clone()))
             .or_insert(exec_id);
 
+        // if this backbuffer has not been used with this kind of graph yet,
+        // set it up to work with it!
+        if backbuffer_usage.exec_ids.contains(&exec_id) {
+            backbuffer_usage.exec_ids.insert(exec_id);
+            backbuffer_usage.add_graph(resolved);
+        }
+
         let output_slice = graph.output_resources.as_slice();
 
         for output in output_slice {
@@ -256,6 +270,7 @@ impl GraphStorage {
         storages: &mut Storages,
         store: &Store,
         graph_handle: GraphHandle,
+        backbuffer: &mut Backbuffer,
         prev_res: Option<GraphResources>,
         context: &ExecutionContext,
     ) -> Option<GraphResources> {
@@ -271,6 +286,28 @@ impl GraphStorage {
         let exec_id = graph
             .exec_id_cache
             .get(&(*id, graph.output_resources.clone()))?;
+
+        let mut remake_resources = false;
+
+        // The backbuffer has not been used with this kind of graph yet,
+        // make sure it works!
+        if !backbuffer.usage.exec_ids.contains(exec_id) {
+            backbuffer.usage.exec_ids.insert(*exec_id);
+            backbuffer.usage.add_graph(resolved);
+            remake_resources = true;
+        }
+
+        // At this point the backbuffer is compatible with the current graph
+        // but it might not have been made working with the currently *existing*
+        // graph configuration (exec + context).
+        //
+        // So we mark the graph as compatible and remove all resources
+        // and remake them.
+        if backbuffer.exec_contexts.get(exec_id) != Some(context) {
+            backbuffer.exec_contexts.insert(*exec_id, context.clone());
+            backbuffer.clear(storages, res_list);
+            remake_resources = true;
+        }
 
         let exec = &graph.exec_graph_cache[exec_id];
 
@@ -290,14 +327,26 @@ impl GraphStorage {
                     .exec_base_resources
                     .entry(*exec_id)
                     .or_insert_with(|| {
-                        execution::prepare_base(device, storages, exec, resolved, passes)
+                        execution::prepare_base(
+                            device,
+                            &backbuffer.usage,
+                            storages,
+                            exec,
+                            resolved,
+                            passes,
+                        )
                     });
 
                 // now read base again (some kind of reborrowing, need to investigate...)
                 let base = graph.exec_base_resources.get_mut(exec_id)?;
 
                 graph.exec_usages.entry(*exec_id).or_insert_with(|| {
-                    execution::derive_resource_usage(exec, resolved, outputs.as_slice())
+                    execution::derive_resource_usage(
+                        &backbuffer.usage,
+                        exec,
+                        resolved,
+                        outputs.as_slice(),
+                    )
                 });
 
                 let usages = &graph.exec_usages[exec_id];
@@ -310,6 +359,7 @@ impl GraphStorage {
                     // create new completely!
                     let mut res = prepare(
                         usages,
+                        backbuffer,
                         base_resources,
                         device,
                         storages,
@@ -325,7 +375,10 @@ impl GraphStorage {
                     res
                 }
                 Some(res) => {
-                    if Some(res.exec_version) == graph.last_exec && &res.exec_context == context {
+                    if Some(res.exec_version) == graph.last_exec
+                        && &res.exec_context == context
+                        && !remake_resources
+                    {
                         // same old resources, we can keep them!
 
                         res
@@ -335,6 +388,7 @@ impl GraphStorage {
 
                         let mut res = prepare(
                             usages,
+                            backbuffer,
                             base_resources,
                             device,
                             storages,

@@ -83,13 +83,15 @@ fn main() {
 
     let graph = create_graph(&mut ctx, material_instance);
 
-    let store = Store::new();
+    let mut store = Store::new();
+    let mut backbuffer = Backbuffer::new();
 
-    let _res = ctx.graph_compile(graph);
+    let _res = ctx.graph_compile(graph, &mut backbuffer, &mut store);
 
     unsafe {
         submit.graph_execute(
             &mut ctx,
+            &mut backbuffer,
             graph,
             &store,
             &ExecutionContext {
@@ -112,6 +114,7 @@ fn main() {
         println!("output {:?}", &out[..]);
     }
 
+    submit.backbuffer_destroy(&mut ctx, backbuffer);
     submit.buffer_destroy(&mut ctx, &[buffer]);
     submit.graph_destroy(&mut ctx, &[graph]);
     submit.material_destroy(&[material]);
@@ -151,8 +154,8 @@ fn create_graph(
         }
 
         impl ComputePassImpl for Adder {
-            fn setup(&mut self, builder: &mut GraphBuilder) {
-                builder.extern_create("Test");
+            fn setup(&mut self, _: &mut Store, builder: &mut GraphBuilder) {
+                builder.virtual_create("Test");
 
                 builder.enable();
             }
@@ -192,8 +195,8 @@ fn create_graph(
         }
 
         impl ComputePassImpl for Adder {
-            fn setup(&mut self, builder: &mut GraphBuilder) {
-                builder.extern_move("Test", "TestFinal");
+            fn setup(&mut self, _: &mut Store, builder: &mut GraphBuilder) {
+                builder.virtual_move("Test", "TestFinal");
 
                 builder.enable();
             }

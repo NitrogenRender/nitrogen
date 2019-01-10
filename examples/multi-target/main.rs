@@ -44,12 +44,12 @@ struct Data {
 }
 
 impl UserData for Data {
-    fn graph(&self) -> graph::GraphHandle {
-        self.graph
+    fn graph(&self) -> Option<graph::GraphHandle> {
+        Some(self.graph)
     }
 
-    fn output_image(&self) -> graph::ResourceName {
-        "Output".into()
+    fn output_image(&self) -> Option<graph::ResourceName> {
+        Some("Output".into())
     }
 
     fn release(self, ctx: &mut nit::Context, submit: &mut submit_group::SubmitGroup) {
@@ -212,7 +212,6 @@ fn setup_graphs(
                 width: 1.0,
                 height: 1.0,
             },
-            clear: graph::ImageClearValue::Color([0.0, 0.0, 0.0, 1.0]),
         }
     }
 
@@ -223,7 +222,6 @@ fn setup_graphs(
                 width: 1.0,
                 height: 1.0,
             },
-            clear: graph::ImageClearValue::Color([0.0, 0.0, 0.0, 1.0]),
         }
     }
 
@@ -334,7 +332,7 @@ fn create_test_pass<FSetUp, FExec>(
 ) -> (impl GraphicsPassImpl, graph::GraphicsPassInfo)
 where
     FSetUp: FnMut(&mut graph::GraphBuilder),
-    FExec: Fn(&mut graph::GraphicsCommandBuffer),
+    FExec: Fn(&mut graph::RenderPassEncoder),
 {
     let pass_info = nitrogen::graph::GraphicsPassInfo {
         vertex_attrib: vert,
@@ -350,25 +348,36 @@ where
     struct TestPass<FSetUp, FExec> {
         setup: FSetUp,
         exec: FExec,
+
+        num_attachments: usize,
     }
 
     impl<FSetUp, FExec> GraphicsPassImpl for TestPass<FSetUp, FExec>
     where
         FSetUp: FnMut(&mut graph::GraphBuilder),
-        FExec: Fn(&mut graph::GraphicsCommandBuffer),
+        FExec: Fn(&mut graph::RenderPassEncoder),
     {
-        fn setup(&mut self, builder: &mut graph::GraphBuilder) {
+        fn setup(&mut self, _: &mut graph::Store, builder: &mut graph::GraphBuilder) {
             (self.setup)(builder);
         }
 
         fn execute(&self, _: &graph::Store, command_buffer: &mut graph::GraphicsCommandBuffer) {
-            (self.exec)(command_buffer);
+            let mut cmd = unsafe {
+                command_buffer
+                    .begin_render_pass(
+                        std::iter::repeat(graph::ImageClearValue::Color([0.0, 0.0, 0.0, 1.0]))
+                            .take(self.num_attachments),
+                    )
+                    .unwrap()
+            };
+            (self.exec)(&mut cmd);
         }
     }
 
     let pass = TestPass {
         setup,
         exec: execute,
+        num_attachments,
     };
 
     (pass, pass_info)

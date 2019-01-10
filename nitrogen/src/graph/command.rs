@@ -12,6 +12,10 @@ use crate::material::{MaterialInstanceHandle, MaterialStorage};
 
 use crate::buffer::{BufferHandle, BufferStorage};
 
+use crate::graph::ImageClearValue;
+use crate::image::{ImageHandle, ImageStorage};
+
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum IndexType {
     U16,
     U32,
@@ -21,16 +25,128 @@ pub enum IndexType {
 pub(crate) struct ReadStorages<'a> {
     pub(crate) buffer: &'a BufferStorage,
     pub(crate) material: &'a MaterialStorage,
+    pub(crate) image: &'a ImageStorage,
 }
 
 pub struct GraphicsCommandBuffer<'a> {
+    pub(crate) buf: &'a mut crate::resources::command_pool::CmdBufType<gfx::Graphics>,
+    pub(crate) storages: &'a ReadStorages<'a>,
+
+    pub(crate) framebuffer: Option<&'a types::Framebuffer>,
+    pub(crate) viewport_rect: gfx::pso::Rect,
+
+    pub(crate) render_pass: &'a types::RenderPass,
+    pub(crate) pipeline_layout: &'a types::PipelineLayout,
+}
+
+impl<'a> GraphicsCommandBuffer<'a> {
+    pub unsafe fn begin_render_pass<C>(&mut self, clear_values: C) -> Option<RenderPassEncoder<'_>>
+    where
+        C: IntoIterator,
+        C::Item: std::borrow::Borrow<ImageClearValue>,
+    {
+        let encoder = self.buf.begin_render_pass_inline(
+            self.render_pass,
+            self.framebuffer?,
+            self.viewport_rect,
+            clear_values.into_iter().map(|clear_value| {
+                use std::borrow::Borrow;
+                match clear_value.borrow() {
+                    ImageClearValue::Color(color) => gfx::command::ClearValue::Color(
+                        gfx::command::ClearColor::Float(color.clone()),
+                    ),
+                    ImageClearValue::DepthStencil(depth, stencil) => {
+                        gfx::command::ClearValue::DepthStencil(gfx::command::ClearDepthStencil(
+                            *depth, *stencil,
+                        ))
+                    }
+                }
+            }),
+        );
+
+        Some(RenderPassEncoder {
+            encoder,
+            storages: self.storages,
+            pipeline_layout: self.pipeline_layout,
+        })
+    }
+
+    pub unsafe fn clear_image(&mut self, image: ImageHandle, clear: ImageClearValue) -> Option<()> {
+        let img = self.storages.image.raw(image)?;
+
+        let entry_barrier = gfx::memory::Barrier::Image {
+            states: (gfx::image::Access::empty(), gfx::image::Layout::Undefined)
+                ..(
+                    gfx::image::Access::TRANSFER_WRITE,
+                    gfx::image::Layout::TransferDstOptimal,
+                ),
+            target: img.image.raw(),
+            families: None,
+            range: gfx::image::SubresourceRange {
+                aspects: img.aspect,
+                levels: 0..1,
+                layers: 0..1,
+            },
+        };
+
+        self.buf.pipeline_barrier(
+            gfx::pso::PipelineStage::TOP_OF_PIPE..gfx::pso::PipelineStage::TRANSFER,
+            gfx::memory::Dependencies::empty(),
+            &[entry_barrier],
+        );
+
+        self.buf.clear_image(
+            img.image.raw(),
+            gfx::image::Layout::TransferDstOptimal,
+            match clear {
+                ImageClearValue::Color(color) => gfx::command::ClearColor::Float(color),
+                _ => gfx::command::ClearColor::Float([0.0; 4]),
+            },
+            match clear {
+                ImageClearValue::DepthStencil(depth, stencil) => {
+                    gfx::command::ClearDepthStencil(depth, stencil)
+                }
+                _ => gfx::command::ClearDepthStencil(1.0, 0),
+            },
+            &[gfx::image::SubresourceRange {
+                aspects: img.aspect,
+                levels: 0..1,
+                layers: 0..1,
+            }],
+        );
+
+        let exit_barrier = gfx::memory::Barrier::Image {
+            states: (
+                gfx::image::Access::TRANSFER_WRITE,
+                gfx::image::Layout::TransferDstOptimal,
+            )..(gfx::image::Access::empty(), gfx::image::Layout::General),
+            target: img.image.raw(),
+            families: None,
+            range: gfx::image::SubresourceRange {
+                aspects: img.aspect,
+                levels: 0..1,
+                layers: 0..1,
+            },
+        };
+
+        self.buf.pipeline_barrier(
+            gfx::pso::PipelineStage::TRANSFER..gfx::pso::PipelineStage::BOTTOM_OF_PIPE,
+            gfx::memory::Dependencies::empty(),
+            &[exit_barrier],
+        );
+
+        Some(())
+    }
+}
+
+pub struct RenderPassEncoder<'a> {
     pub(crate) encoder: gfx::command::RenderPassInlineEncoder<'a, back::Backend>,
     pub(crate) storages: &'a ReadStorages<'a>,
 
     pub(crate) pipeline_layout: &'a types::PipelineLayout,
 }
 
-impl<'a> GraphicsCommandBuffer<'a> {
+impl<'a> RenderPassEncoder<'a> {
     pub unsafe fn draw(&mut self, vertices: Range<u32>, instances: Range<u32>) {
         self.encoder.draw(vertices, instances);
     }

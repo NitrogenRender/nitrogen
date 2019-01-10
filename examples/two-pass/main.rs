@@ -279,7 +279,9 @@ fn main() {
         reference_size: (1920, 1080),
     };
 
-    let store = graph::Store::new();
+    let mut store = graph::Store::new();
+
+    let mut backbuffer = graph::Backbuffer::new();
 
     while running {
         events.poll_events(|event| match event {
@@ -296,8 +298,8 @@ fn main() {
         });
 
         // ntg.graph_compile(graph);
-        if let Err(errs) = ntg.graph_compile(graph) {
-            println!("Errors occured while compiling the old_graph");
+        if let Err(errs) = ntg.graph_compile(graph, &mut backbuffer, &mut store) {
+            println!("Errors occured while compiling the graph");
             println!("{:?}", errs);
         }
 
@@ -316,7 +318,13 @@ fn main() {
                 resized = false;
             }
 
-            submits[frame_idx].graph_execute(&mut ntg, graph, &store, &exec_context);
+            submits[frame_idx].graph_execute(
+                &mut ntg,
+                &mut backbuffer,
+                graph,
+                &store,
+                &exec_context,
+            );
 
             let img = submits[frame_idx]
                 .graph_get_image(&ntg, graph, "IOutput")
@@ -329,6 +337,11 @@ fn main() {
         frame_idx = frame_num % submits.len();
     }
 
+    unsafe {
+        ntg.wait_idle();
+    }
+
+    submits[0].backbuffer_destroy(&mut ntg, backbuffer);
     submits[0].buffer_destroy(&mut ntg, &[buffer_pos, buffer_uv, uniform_buffer]);
     submits[0].image_destroy(&mut ntg, &[image]);
     submits[0].sampler_destroy(&mut ntg, &[sampler]);
@@ -364,7 +377,6 @@ fn setup_graphs(
                 width: 1.0,
                 height: 1.0,
             },
-            clear: graph::ImageClearValue::Color([0.0, 0.0, 0.0, 1.0]),
         }
     }
 
@@ -466,7 +478,7 @@ fn create_test_pass<FSetUp, FExec>(
 ) -> (impl GraphicsPassImpl, graph::GraphicsPassInfo)
 where
     FSetUp: FnMut(&mut graph::GraphBuilder),
-    FExec: Fn(&mut graph::GraphicsCommandBuffer),
+    FExec: Fn(&mut graph::RenderPassEncoder),
 {
     let pass_info = nitrogen::graph::GraphicsPassInfo {
         vertex_attrib: vert,
@@ -487,14 +499,19 @@ where
     impl<FSetUp, FExec> GraphicsPassImpl for TestPass<FSetUp, FExec>
     where
         FSetUp: FnMut(&mut graph::GraphBuilder),
-        FExec: Fn(&mut graph::GraphicsCommandBuffer),
+        FExec: Fn(&mut graph::RenderPassEncoder),
     {
-        fn setup(&mut self, builder: &mut graph::GraphBuilder) {
+        fn setup(&mut self, _: &mut graph::Store, builder: &mut graph::GraphBuilder) {
             (self.setup)(builder);
         }
 
         fn execute(&self, _: &graph::Store, command_buffer: &mut graph::GraphicsCommandBuffer) {
-            (self.exec)(command_buffer);
+            let mut cmd = unsafe {
+                command_buffer
+                    .begin_render_pass(&[graph::ImageClearValue::Color([0.0, 0.0, 0.0, 1.0])])
+                    .unwrap()
+            };
+            (self.exec)(&mut cmd);
         }
     }
 

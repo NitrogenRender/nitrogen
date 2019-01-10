@@ -52,12 +52,12 @@ impl UserData for Data2dSquares {
         store.insert(Delta(delta));
     }
 
-    fn graph(&self) -> graph::GraphHandle {
-        self.graph
+    fn graph(&self) -> Option<graph::GraphHandle> {
+        Some(self.graph)
     }
 
-    fn output_image(&self) -> graph::ResourceName {
-        "Canvas".into()
+    fn output_image(&self) -> Option<graph::ResourceName> {
+        Some("Canvas".into())
     }
 
     fn release(self, ctx: &mut nit::Context, submit: &mut submit_group::SubmitGroup) {
@@ -241,8 +241,8 @@ fn create_graph(
         }
 
         impl graph::ComputePassImpl for MovePass {
-            fn setup(&mut self, builder: &mut graph::GraphBuilder) {
-                builder.extern_create("Positions");
+            fn setup(&mut self, _: &mut graph::Store, builder: &mut graph::GraphBuilder) {
+                builder.virtual_create("Positions");
 
                 builder.enable();
             }
@@ -313,8 +313,8 @@ fn create_graph(
         }
 
         impl graph::GraphicsPassImpl for Pass2D {
-            fn setup(&mut self, builder: &mut graph::GraphBuilder) {
-                builder.extern_read("Positions");
+            fn setup(&mut self, _: &mut graph::Store, builder: &mut graph::GraphBuilder) {
+                builder.virtual_read("Positions");
 
                 builder.image_create(
                     "Canvas",
@@ -324,7 +324,6 @@ fn create_graph(
                             height: 1.0,
                         },
                         format: image::ImageFormat::RgbaUnorm,
-                        clear: graph::ImageClearValue::Color([0.1, 0.1, 0.2, 1.0]),
                     },
                 );
 
@@ -335,6 +334,11 @@ fn create_graph(
 
             fn execute(&self, store: &graph::Store, cmd: &mut graph::GraphicsCommandBuffer<'_>) {
                 let things = NUM_THINGS;
+
+                let mut cmd = unsafe {
+                    cmd.begin_render_pass(&[graph::ImageClearValue::Color([0.1, 0.1, 0.2, 1.0])])
+                        .unwrap()
+                };
 
                 unsafe {
                     cmd.push_constant::<[f32; 4]>(0, [1.0, 1.0, 1.0, 1.0]);

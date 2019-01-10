@@ -99,8 +99,6 @@ impl<T> Storage<T> {
 
             if needs_to_grow {
                 self.generations.push(0);
-            } else {
-                self.generations[key] += 1;
             }
 
             let generation = self.generations[key];
@@ -127,6 +125,7 @@ impl<T> Storage<T> {
     pub(crate) fn remove(&mut self, handle: Handle<T>) -> Option<T> {
         if self.is_alive(handle) {
             let data = self.entries.remove(handle.id());
+            self.generations[handle.id()] += 1;
             Some(data)
         } else {
             None

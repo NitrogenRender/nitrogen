@@ -21,7 +21,7 @@ use crate::types;
 
 use crate::submit_group::ResourceList;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use smallvec::SmallVec;
 
@@ -67,6 +67,7 @@ pub(crate) struct GraphResources {
     pub(crate) exec_version: usize,
     pub(crate) exec_context: super::ExecutionContext,
 
+    pub(crate) external_resources: HashSet<ResourceId>,
     pub(crate) images: HashMap<ResourceId, ImageHandle>,
     samplers: HashMap<ResourceId, SamplerHandle>,
     pub(crate) buffers: HashMap<ResourceId, BufferHandle>,
@@ -80,7 +81,16 @@ pub(crate) struct GraphResources {
 
 impl GraphResources {
     pub(crate) fn release(self, res_list: &mut ResourceList, storages: &mut Storages) {
-        storages.image.destroy(res_list, self.images.values());
+        storages.image.destroy(
+            res_list,
+            self.images.iter().filter_map(|(res, handle)| {
+                if self.external_resources.contains(res) {
+                    None
+                } else {
+                    Some(*handle)
+                }
+            }),
+        );
 
         storages.sampler.destroy(res_list, self.samplers.values());
 
@@ -92,6 +102,71 @@ impl GraphResources {
 
         for mat_instance in self.pass_mats.values() {
             res_list.queue_material_instance(*mat_instance);
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Backbuffer {
+    pub(crate) usage: BackbufferUsage,
+
+    //
+    pub(crate) exec_contexts: HashMap<usize, super::ExecutionContext>,
+
+    pub(crate) images: HashMap<super::ResourceName, ImageHandle>,
+    pub(crate) samplers: HashMap<super::ResourceName, SamplerHandle>,
+}
+
+impl Backbuffer {
+    pub fn new() -> Self {
+        Backbuffer {
+            usage: BackbufferUsage::new(),
+            exec_contexts: HashMap::new(),
+
+            images: HashMap::new(),
+            samplers: HashMap::new(),
+        }
+    }
+
+    pub(crate) fn clear(&mut self, stores: &mut Storages, res_list: &mut ResourceList) {
+        stores.image.destroy(res_list, self.images.values());
+        stores.sampler.destroy(res_list, self.samplers.values());
+
+        self.images.clear();
+        self.samplers.clear();
+    }
+
+    pub fn image_get<T: Into<super::ResourceName>>(&self, name: T) -> Option<ImageHandle> {
+        self.images.get(&name.into()).cloned()
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct BackbufferUsage {
+    pub(crate) exec_ids: HashSet<usize>,
+
+    pub(crate) images: HashMap<super::ResourceName, gfx::format::Format>,
+}
+
+impl BackbufferUsage {
+    pub(crate) fn new() -> Self {
+        BackbufferUsage {
+            exec_ids: HashSet::new(),
+            images: HashMap::new(),
+        }
+    }
+
+    pub(crate) fn add_graph(&mut self, graph: &crate::graph::GraphResourcesResolved) {
+        use crate::graph::ImageInfo;
+        use crate::graph::ResourceCreateInfo;
+
+        for (name, id) in &graph.backbuffer {
+            match &graph.infos[id] {
+                ResourceCreateInfo::Image(ImageInfo::BackbufferCreate(_, create, _usage)) => {
+                    self.images.insert(name.clone(), create.format.into());
+                }
+                _ => unreachable!(),
+            }
         }
     }
 }
