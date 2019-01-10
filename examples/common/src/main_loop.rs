@@ -183,6 +183,12 @@ impl<U: UserData> MainLoop<U> {
     }
 
     pub unsafe fn release(mut self) {
+        for submit_group in &mut self.submits {
+            submit_group.wait(&mut self.ctx);
+        }
+
+        self.ctx.wait_idle();
+
         self.user_data
             .release(&mut self.ctx, &mut self.submits[self.submit_idx]);
 

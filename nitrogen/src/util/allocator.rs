@@ -10,6 +10,7 @@ pub(crate) trait Block: Sized {
     fn memory(&self) -> &crate::types::Memory;
 }
 
+#[derive(Debug)]
 pub(crate) struct BufferType<A: Allocator> {
     buffer: crate::types::Buffer,
     block: A::Block,

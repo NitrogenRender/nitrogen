@@ -51,7 +51,6 @@ pub(crate) unsafe fn prepare_pass_base(
     info: &PassInfo,
     res: &mut GraphBaseResources,
 ) -> Option<()> {
-    // TODO compute
     match info {
         PassInfo::Graphics(info) => {
             // Create render pass
@@ -65,7 +64,9 @@ pub(crate) unsafe fn prepare_pass_base(
                 create_pipeline_graphics(device, storages, resolved, render_pass, pass, info)?;
 
             res.pipelines_graphic.insert(pass, pipe);
-            res.pipelines_mat.insert(pass, mat);
+            if let Some(mat) = mat {
+                res.pipelines_mat.insert(pass, mat);
+            }
 
             Some(())
         }
@@ -73,7 +74,9 @@ pub(crate) unsafe fn prepare_pass_base(
             let (pipeline, mat) = create_pipeline_compute(device, storages, resolved, pass, info)?;
 
             res.pipelines_compute.insert(pass, pipeline);
-            res.pipelines_mat.insert(pass, mat);
+            if let Some(mat) = mat {
+                res.pipelines_mat.insert(pass, mat);
+            }
 
             Some(())
         }
@@ -90,8 +93,6 @@ pub(crate) unsafe fn prepare(
     passes: &[(PassName, PassInfo)],
     context: ExecutionContext,
 ) -> Option<GraphResources> {
-    use gfx::DescriptorPool;
-
     let mut res = GraphResources {
         exec_version: 0, // will be filled by the caller
         exec_context: context.clone(),
@@ -121,14 +122,15 @@ pub(crate) unsafe fn prepare(
         for pass in &batch.passes {
             let info = &passes[pass.0].1;
 
-            let mat = base.pipelines_mat.get(pass)?;
-            let instance = storages
-                .material
-                .create_instances(device, &[*mat])
-                .remove(0)
-                .unwrap();
+            if let Some(mat) = base.pipelines_mat.get(pass) {
+                let instance = storages
+                    .material
+                    .create_instances(device, &[*mat])
+                    .remove(0)
+                    .unwrap();
 
-            res.pass_mats.insert(*pass, instance);
+                res.pass_mats.insert(*pass, instance);
+            }
 
             prepare_pass(base, device, storages, resolved, *pass, info, &mut res);
         }
@@ -428,8 +430,8 @@ unsafe fn create_pipeline_compute(
     resolved: &GraphResourcesResolved,
     pass: PassId,
     info: &ComputePassInfo,
-) -> Option<(PipelineHandle, MaterialHandle)> {
-    let (mut layouts, pass_mat) = create_pipeline_base(
+) -> Option<(PipelineHandle, Option<MaterialHandle>)> {
+    let (layouts, pass_mat) = create_pipeline_base(
         device,
         resolved,
         storages.material,
@@ -467,10 +469,10 @@ unsafe fn create_pipeline_graphics(
     render_pass: RenderPassHandle,
     pass: PassId,
     info: &GraphicsPassInfo,
-) -> Option<(PipelineHandle, MaterialHandle)> {
+) -> Option<(PipelineHandle, Option<MaterialHandle>)> {
     use crate::pipeline;
 
-    let (mut layouts, pass_mat) = create_pipeline_base(
+    let (layouts, pass_mat) = create_pipeline_base(
         device,
         resolved_graph,
         storages.material,
@@ -646,7 +648,7 @@ unsafe fn create_pipeline_base<'a>(
     materials: &[(usize, MaterialHandle)],
 ) -> Option<(
     BTreeMap<usize, &'a types::DescriptorSetLayout>,
-    MaterialHandle,
+    Option<MaterialHandle>,
 )> {
     let mut sets = BTreeMap::new();
 
@@ -802,7 +804,6 @@ unsafe fn create_pipeline_base<'a>(
 
     // pass material
     let pass_mat = {
-        use gfx::DescriptorPool;
         use gfx::Device;
 
         let pass_set_layout = device
@@ -810,10 +811,12 @@ unsafe fn create_pipeline_base<'a>(
             .create_descriptor_set_layout(core_desc, &[])
             .ok()?;
 
-        let pass_mat = material_storage.create_raw(device, pass_set_layout);
+        let pass_mat = material_storage.create_raw(device, pass_set_layout, core_range, 16);
 
-        let raw_mat = material_storage.raw(pass_mat).unwrap();
-        sets.insert(0, &raw_mat.desc_set_layout);
+        if let Some(pass_mat) = pass_mat {
+            let raw_mat = material_storage.raw(pass_mat).unwrap();
+            sets.insert(0, &raw_mat.desc_set_layout);
+        }
 
         pass_mat
     };

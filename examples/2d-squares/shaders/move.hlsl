@@ -21,10 +21,10 @@ struct Instance {
     float4 color;
 };
 
-[[vk::binding(0, 1)]]
+[[vk::binding(0, 0)]]
 RWStructuredBuffer<Instance> instances;
 
-[[vk::binding(1, 1)]]
+[[vk::binding(1, 0)]]
 RWStructuredBuffer<float2> velocities;
 
 

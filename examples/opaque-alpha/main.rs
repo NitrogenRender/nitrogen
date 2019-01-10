@@ -32,7 +32,6 @@ fn main() {
             .unwrap();
 
     while ml.running() {
-        println!("frame start");
         unsafe {
             ml.iterate();
         }

@@ -56,7 +56,9 @@ impl GraphBaseResources {
             .pipeline
             .destroy(res_list, self.pipelines_compute.values());
 
-        // TODO free pass materials
+        for (_, mat) in self.pipelines_mat {
+            res_list.queue_material(mat);
+        }
     }
 }
 

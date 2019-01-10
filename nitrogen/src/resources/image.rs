@@ -309,7 +309,7 @@ impl ImageStorage {
     pub(crate) unsafe fn release(self, device: &DeviceContext) {
         let mut alloc = device.allocator();
 
-        for (_, image) in self.storage.into_iter() {
+        for (_, image) in self.storage {
             alloc.destroy_image(&device.device, image.image);
             device.device.destroy_image_view(image.view);
         }

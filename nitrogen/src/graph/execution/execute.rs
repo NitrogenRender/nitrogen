@@ -57,7 +57,7 @@ pub(crate) unsafe fn execute(
                 let mat_raw = res.pass_mats.get(pass);
                 let set_raw = mat_raw
                     .and_then(|hndl| storages.material.raw(hndl.0).map(|mat| (hndl.1, mat)))
-                    .and_then(|(inst, mat)| mat.intance_raw(inst).map(|inst| &inst.set));
+                    .and_then(|(inst, mat)| mat.instance_raw(inst).map(|inst| &inst.set));
 
                 if let Some(set) = set_raw {
                     let reads = resolved_graph.pass_reads[pass]

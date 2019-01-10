@@ -262,12 +262,12 @@ fn setup_graphs(
             move |cmd| unsafe {
                 cmd.bind_vertex_buffers(&[(buffer_pos, 0), (buffer_uv, 0)]);
 
-                cmd.bind_material(1, material_instance);
+                cmd.bind_material(0, material_instance);
 
                 cmd.draw(0..4, 0..1);
             },
             vertex_attrib.clone(),
-            vec![(1, material)],
+            vec![(0, material)],
             3,
         );
 

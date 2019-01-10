@@ -232,7 +232,7 @@ fn create_graph(
                 ),)),
                 entry: "ComputeMain".into(),
             },
-            materials: vec![(1, material)],
+            materials: vec![(0, material)],
             push_constants: vec![(0..4)],
         };
 
@@ -267,7 +267,7 @@ fn create_graph(
 
                     cmd.push_constant::<f32>(2, *delta as f32);
 
-                    cmd.bind_material(1, self.mat_instance);
+                    cmd.bind_material(0, self.mat_instance);
 
                     cmd.dispatch([wide, batch_size, 1]);
                 }
@@ -303,7 +303,7 @@ fn create_graph(
             },
             primitive: graph::Primitive::TriangleStrip,
             blend_modes: vec![graph::BlendMode::Alpha],
-            materials: vec![(1, material)],
+            materials: vec![(0, material)],
             push_constants: vec![(0..5)],
         };
 
@@ -343,7 +343,7 @@ fn create_graph(
                     cmd.push_constant(4, *s);
 
                     cmd.bind_vertex_buffers(&[(self.buffer, 0)]);
-                    cmd.bind_material(1, self.mat_instance);
+                    cmd.bind_material(0, self.mat_instance);
 
                     cmd.draw(0..4, 0..things as u32);
                 }

@@ -26,9 +26,9 @@ struct FragmentOut {
     float color_blue;
 };
 
-[[vk::binding(0, 1)]]
+[[vk::binding(0, 0)]]
 Texture2D t;
-[[vk::binding(1, 1)]]
+[[vk::binding(1, 0)]]
 SamplerState s;
 
 VertexOut VertexMain(VertexIn input)

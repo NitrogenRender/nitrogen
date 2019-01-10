@@ -285,13 +285,15 @@ impl GraphStorage {
             let (base_resources, usages) = {
                 let passes = &graph.passes[..];
 
-                let base = graph
+                // insert into cache
+                graph
                     .exec_base_resources
                     .entry(*exec_id)
                     .or_insert_with(|| {
                         execution::prepare_base(device, storages, exec, resolved, passes)
                     });
 
+                // now read base again (some kind of reborrowing, need to investigate...)
                 let base = graph.exec_base_resources.get_mut(exec_id)?;
 
                 graph.exec_usages.entry(*exec_id).or_insert_with(|| {

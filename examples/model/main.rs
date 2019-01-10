@@ -30,6 +30,7 @@ fn main() {
 struct Data {
     buf_position: buffer::BufferHandle,
     buf_normal: buffer::BufferHandle,
+    buf_index: buffer::BufferHandle,
 
     vtx_def: vertex_attrib::VertexAttribHandle,
 
@@ -54,7 +55,7 @@ impl main_loop::UserData for Data {
     fn release(self, ctx: &mut Context, submit: &mut submit_group::SubmitGroup) {
         submit.graph_destroy(ctx, &[self.graph]);
 
-        submit.buffer_destroy(ctx, &[self.buf_normal, self.buf_position]);
+        submit.buffer_destroy(ctx, &[self.buf_normal, self.buf_position, self.buf_index]);
 
         unsafe {
             submit.wait(ctx);
@@ -124,6 +125,7 @@ fn init_resources(
     Some(Data {
         buf_position: b_position,
         buf_normal: b_normal,
+        buf_index: b_index,
 
         vtx_def: vertex_def,
 

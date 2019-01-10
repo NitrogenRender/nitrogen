@@ -54,6 +54,7 @@ impl<T> Handle<T> {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct Storage<T> {
     pub generations: Vec<Generation>,
     pub entries: Slab<T>,
@@ -172,20 +173,26 @@ impl<T> Iterator for StorageIter<T> {
     type Item = (usize, T);
 
     fn next(&mut self) -> Option<(usize, T)> {
-        let idx = self.index;
+        // In order to iterate we need to go over all possible indices.
+        // Because there can be holes in the entry list, we have to
+        // search until we find the next element OR we reached the end.
 
-        if idx >= self.storage.entries.len() {
-            return None;
+        let mut idx = self.index;
+
+        let len = self.storage.entries.capacity();
+
+        while idx < len {
+            if self.storage.entries.contains(idx) {
+                // start searching at the next one the next iteration
+                self.index = idx + 1;
+
+                let data = self.storage.entries.remove(idx);
+                return Some((idx, data));
+            }
+
+            idx += 1;
         }
 
-        if !self.storage.entries.contains(idx) {
-            return None;
-        }
-
-        let data = self.storage.entries.remove(idx);
-
-        self.index += 1;
-
-        Some((idx, data))
+        None
     }
 }

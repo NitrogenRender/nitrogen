@@ -231,9 +231,10 @@ impl SubmitGroup {
         let input_num = g.last_input?;
         let (resolve, _) = g.resolve_cache.get(&input_num)?;
         let id = resolve.name_lookup.get(&image.into())?;
+        let id = resolve.moved_from(*id)?;
 
         let res = self.graph_resources.get(&graph)?;
-        res.images.get(id).cloned()
+        res.images.get(&id).cloned()
     }
 
     pub unsafe fn image_upload_data(
@@ -310,6 +311,23 @@ impl SubmitGroup {
     }
 
     pub unsafe fn release(mut self, ctx: &mut Context) {
+        let mut storages = graph::Storages {
+            render_pass: &mut ctx.render_pass_storage,
+            pipeline: &mut ctx.pipeline_storage,
+            image: &mut ctx.image_storage,
+            buffer: &mut ctx.buffer_storage,
+            vertex_attrib: &ctx.vertex_attrib_storage,
+            sampler: &mut ctx.sampler_storage,
+            material: &mut ctx.material_storage,
+        };
+
+        for (_, graph_res) in self.graph_resources.drain() {
+            graph_res.release(&mut self.res_destroys, &mut storages);
+        }
+
+        self.wait(ctx);
+        ctx.wait_idle();
+
         {
             let pool = self.pool_graphics.0.into_impl();
             ctx.device_ctx
@@ -345,8 +363,6 @@ pub(crate) struct ResourceList {
     pipelines_graphic: SmallVec<[types::GraphicsPipeline; 16]>,
     pipelines_compute: SmallVec<[types::ComputePipeline; 16]>,
     pipelines_layout: SmallVec<[types::PipelineLayout; 16]>,
-    desc_set_layouts: SmallVec<[types::DescriptorSetLayout; 16]>,
-    desc_pools: SmallVec<[types::DescriptorPool; 16]>,
 
     materials: SmallVec<[material::MaterialHandle; 16]>,
     material_instances: SmallVec<[material::MaterialInstanceHandle; 16]>,
@@ -365,8 +381,6 @@ impl ResourceList {
             pipelines_graphic: SmallVec::new(),
             pipelines_compute: SmallVec::new(),
             pipelines_layout: SmallVec::new(),
-            desc_set_layouts: SmallVec::new(),
-            desc_pools: SmallVec::new(),
 
             materials: SmallVec::new(),
             material_instances: SmallVec::new(),
@@ -409,14 +423,6 @@ impl ResourceList {
         self.pipelines_layout.push(layout);
     }
 
-    pub(crate) fn queue_desc_set_layout(&mut self, layout: types::DescriptorSetLayout) {
-        self.desc_set_layouts.push(layout);
-    }
-
-    pub(crate) fn queue_desc_pool(&mut self, pool: types::DescriptorPool) {
-        self.desc_pools.push(pool);
-    }
-
     pub(crate) fn queue_material(&mut self, mat: material::MaterialHandle) {
         self.materials.push(mat);
     }
@@ -427,8 +433,6 @@ impl ResourceList {
 
     unsafe fn free_resources(&mut self, ctx: &mut Context) {
         use crate::util::allocator::Allocator;
-        use gfx::DescriptorPool;
-
         let mut alloc = self.device.allocator();
 
         let device = &self.device.device;
@@ -469,21 +473,16 @@ impl ResourceList {
             device.destroy_pipeline_layout(layout);
         }
 
-        for mat in self.materials.drain() {
-            ctx.material_storage.destroy(&ctx.device_ctx, &[mat]);
+        {
+            ctx.material_storage
+                .destroy(&ctx.device_ctx, self.materials.as_slice());
+            self.materials.clear();
         }
 
-        for mat in self.material_instances.drain() {
-            ctx.material_storage.destroy_instances(&[mat]);
-        }
-
-        for desc_pool in self.desc_pools.drain() {
-            // implicitly resets and frees all sets
-            device.destroy_descriptor_pool(desc_pool);
-        }
-
-        for desc_layout in self.desc_set_layouts.drain() {
-            device.destroy_descriptor_set_layout(desc_layout);
+        {
+            ctx.material_storage
+                .destroy_instances(self.material_instances.as_slice());
+            self.material_instances.clear();
         }
     }
 }

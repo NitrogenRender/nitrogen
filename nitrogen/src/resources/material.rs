@@ -26,6 +26,8 @@ pub type MaterialInstanceHandle = (MaterialHandle, Handle<MaterialInstance>);
 // Since the number of material instances is not always known at program startup,
 // a list of pools is maintained and expanded if needed.
 pub struct Material {
+    sets_per_pool: u8,
+
     parameters: Vec<(u32, MaterialParameterType)>,
     pub(crate) desc_set_layout: types::DescriptorSetLayout,
     pool_allocated: Vec<u8>,
@@ -49,7 +51,7 @@ pub(crate) struct MaterialStorage {
     storage: Storage<Material>,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum MaterialParameterType {
     Sampler,
     SampledImage,
@@ -138,6 +140,11 @@ impl MaterialStorage {
                 )
                 .collect::<SmallVec<[_; 16]>>();
 
+            if descriptors.len() == 0 {
+                results.push(Err(MaterialError::CreateEmptyMaterial));
+                continue;
+            }
+
             let res = device
                 .device
                 .create_descriptor_set_layout(descriptors.as_slice(), &[]);
@@ -148,6 +155,7 @@ impl MaterialStorage {
                     parameters.sort_by_key(|(binding, _)| *binding);
 
                     let mat = Material {
+                        sets_per_pool: MAX_SETS_PER_POOL,
                         parameters,
                         desc_set_layout: set,
                         instances: Storage::new(),
@@ -167,13 +175,48 @@ impl MaterialStorage {
         results
     }
 
-    pub(crate) unsafe fn create_raw(
+    pub(crate) unsafe fn create_raw<P>(
         &mut self,
         device: &DeviceContext,
         layout: types::DescriptorSetLayout,
-    ) -> MaterialHandle {
+        params: P,
+        sets_per_pool: u8,
+    ) -> Option<MaterialHandle>
+    where
+        P: Iterator<Item = gfx::pso::DescriptorRangeDesc>,
+    {
         let mat = Material {
-            parameters: vec![],
+            parameters: params
+                .map(|desc| {
+                    use gfx::pso::DescriptorType;
+                    // Since the binding is only used when creating a material
+                    // from a user-facing description, we can just put anything in here
+                    // since it will never be used afterwards.
+                    let ty = match desc.ty {
+                        DescriptorType::Sampler => MaterialParameterType::Sampler,
+                        DescriptorType::SampledImage => MaterialParameterType::SampledImage,
+                        DescriptorType::StorageImage => MaterialParameterType::StorageImage,
+                        DescriptorType::UniformTexelBuffer => {
+                            MaterialParameterType::UniformTexelBuffer
+                        }
+                        DescriptorType::StorageTexelBuffer => {
+                            MaterialParameterType::StorageTexelBuffer
+                        }
+                        DescriptorType::UniformBuffer => MaterialParameterType::UniformBuffer,
+                        DescriptorType::StorageBuffer => MaterialParameterType::StorageBuffer,
+                        DescriptorType::UniformBufferDynamic => {
+                            MaterialParameterType::UniformBufferDynamic
+                        }
+                        DescriptorType::StorageBufferDynamic => {
+                            MaterialParameterType::StorageBufferDynamic
+                        }
+                        _ => unreachable!(),
+                    };
+
+                    (0, ty)
+                })
+                .collect(),
+            sets_per_pool,
             desc_set_layout: layout,
             instances: Storage::new(),
             pool_allocated: vec![],
@@ -181,7 +224,16 @@ impl MaterialStorage {
             pools: vec![],
         };
 
-        self.storage.insert(mat)
+        if mat.parameters.len() == 0 {
+            use gfx::Device;
+
+            device
+                .device
+                .destroy_descriptor_set_layout(mat.desc_set_layout);
+            return None;
+        }
+
+        Some(self.storage.insert(mat))
     }
 
     pub(crate) unsafe fn destroy(&mut self, device: &DeviceContext, materials: &[MaterialHandle]) {
@@ -302,7 +354,7 @@ impl MaterialStorage {
 impl Material {
     fn next_nonempty_pool(&self) -> Option<usize> {
         for (i, allocd) in self.pool_allocated.iter().enumerate() {
-            if *allocd < MAX_SETS_PER_POOL {
+            if *allocd < self.sets_per_pool {
                 return Some(i);
             }
         }
@@ -317,14 +369,14 @@ impl Material {
             .parameters
             .iter()
             .map(|(_binding, ty)| gfx::pso::DescriptorRangeDesc {
-                count: 1,
+                count: self.sets_per_pool as usize,
                 ty: ty.clone().into(),
             })
             .collect::<SmallVec<[_; 16]>>();
 
         let pool = device
             .device
-            .create_descriptor_pool(MAX_SETS_PER_POOL as usize, descriptors.as_slice())
+            .create_descriptor_pool(self.sets_per_pool as usize, descriptors.as_slice())
             .expect("Can't allocate new descriptor pool, out of memory");
 
         let new_pool_idx = self.pools.len();
@@ -390,7 +442,7 @@ impl Material {
         Some(())
     }
 
-    pub(crate) fn intance_raw(
+    pub(crate) fn instance_raw(
         &self,
         handle: Handle<MaterialInstance>,
     ) -> Option<&MaterialInstance> {
@@ -402,6 +454,9 @@ impl Material {
 
 #[derive(Clone, Fail, Debug)]
 pub enum MaterialError {
+    #[fail(display = "Cannot create empty material")]
+    CreateEmptyMaterial,
+
     #[fail(display = "Invalid handle used")]
     InvalidHandle,
 
