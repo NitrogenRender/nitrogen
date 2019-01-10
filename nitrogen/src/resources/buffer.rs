@@ -23,6 +23,7 @@ use crate::submit_group::ResourceList;
 
 pub(crate) type BufferTypeInternal = AllocBuffer;
 
+#[derive(Debug)]
 pub struct Buffer {
     pub(crate) buffer: BufferTypeInternal,
     size: u64,
@@ -157,7 +158,7 @@ impl BufferStorage {
     pub(crate) unsafe fn release(self, device: &DeviceContext) {
         let mut alloc = device.allocator();
 
-        for (_, buffer) in self.buffers.into_iter() {
+        for (_, buffer) in self.buffers {
             alloc.destroy_buffer(&device.device, buffer.buffer);
         }
     }

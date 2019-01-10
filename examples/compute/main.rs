@@ -114,6 +114,7 @@ fn main() {
 
     submit.buffer_destroy(&mut ctx, &[buffer]);
     submit.graph_destroy(&mut ctx, &[graph]);
+    submit.material_destroy(&[material]);
 
     unsafe {
         ctx.wait_idle();
@@ -122,7 +123,6 @@ fn main() {
 
         submit.release(&mut ctx);
 
-        ctx.material_destroy(&[material]);
         ctx.release();
     }
 }
@@ -142,7 +142,7 @@ fn create_graph(
                     "/compute/add.hlsl.comp.spirv"
                 ),)),
             },
-            materials: vec![(1, material_instance.0)],
+            materials: vec![(0, material_instance.0)],
             push_constants: vec![0..1],
         };
 
@@ -159,7 +159,7 @@ fn create_graph(
 
             fn execute(&self, _: &Store, command_buffer: &mut ComputeCommandBuffer<'_>) {
                 unsafe {
-                    command_buffer.bind_material(1, self.mat);
+                    command_buffer.bind_material(0, self.mat);
                     command_buffer.push_constant(0, 1_f32);
 
                     command_buffer.dispatch([NUM_ELEMS as _, 1, 1]);
@@ -183,7 +183,7 @@ fn create_graph(
                     "/compute/add.hlsl.comp.spirv"
                 ),)),
             },
-            materials: vec![(1, material_instance.0)],
+            materials: vec![(0, material_instance.0)],
             push_constants: vec![0..1],
         };
 
@@ -200,7 +200,7 @@ fn create_graph(
 
             fn execute(&self, _: &Store, command_buffer: &mut ComputeCommandBuffer<'_>) {
                 unsafe {
-                    command_buffer.bind_material(1, self.mat);
+                    command_buffer.bind_material(0, self.mat);
                     command_buffer.push_constant(0, 10.0_f32);
 
                     command_buffer.dispatch([NUM_ELEMS as _, 1, 1]);

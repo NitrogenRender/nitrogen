@@ -10,6 +10,7 @@ pub(crate) trait Block: Sized {
     fn memory(&self) -> &crate::types::Memory;
 }
 
+#[derive(Debug)]
 pub(crate) struct BufferType<A: Allocator> {
     buffer: crate::types::Buffer,
     block: A::Block,
@@ -70,6 +71,7 @@ pub enum AllocatorError {
 }
 
 /// An allocation request
+#[derive(Debug)]
 pub(crate) struct Request {
     pub(crate) transient: bool,
     pub(crate) _persistently_mappable: bool,
@@ -79,6 +81,7 @@ pub(crate) struct Request {
     pub(crate) type_mask: u64,
 }
 
+#[derive(Debug)]
 pub(crate) struct BufferRequest {
     pub(crate) transient: bool,
     pub(crate) persistently_mappable: bool,
@@ -87,6 +90,7 @@ pub(crate) struct BufferRequest {
     pub(crate) size: u64,
 }
 
+#[derive(Debug)]
 pub(crate) struct ImageRequest {
     pub(crate) transient: bool,
     pub(crate) properties: gfx::memory::Properties,

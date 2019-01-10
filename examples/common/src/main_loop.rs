@@ -12,12 +12,16 @@ use std::time::Instant;
 
 pub struct CanvasSize(pub f32, pub f32);
 
-pub trait UserData {
+pub trait UserData: Sized {
     fn iteration(&mut self, _store: &mut graph::Store, _delta: f64) {}
 
     fn graph(&self) -> graph::GraphHandle;
 
     fn output_image(&self) -> graph::ResourceName;
+
+    fn release(self, ctx: &mut Context, submit: &mut SubmitGroup) {
+        submit.graph_destroy(ctx, &[self.graph()]);
+    }
 }
 
 pub struct MainLoop<U: UserData> {
@@ -40,15 +44,15 @@ pub struct MainLoop<U: UserData> {
 }
 
 impl<U: UserData> MainLoop<U> {
-    pub unsafe fn new<F>(name: &str, f: F) -> Self
+    pub unsafe fn new<F>(name: &str, f: F) -> Option<Self>
     where
-        F: FnOnce(&mut Store, &mut Context, &mut SubmitGroup) -> U,
+        F: FnOnce(&mut Store, &mut Context, &mut SubmitGroup) -> Option<U>,
     {
         let events_loop = EventsLoop::new();
         let window = WindowBuilder::new()
             .with_title(name)
             .build(&events_loop)
-            .unwrap();
+            .ok()?;
 
         let mut ctx = Context::new(name, 1);
         let display = ctx.display_add(&window);
@@ -63,13 +67,28 @@ impl<U: UserData> MainLoop<U> {
 
         store.insert(CanvasSize(size.0, size.1));
 
-        let mut submits = vec![ctx.create_submit_group(), ctx.create_submit_group()];
+        let mut submits = vec![
+            ctx.create_submit_group(),
+            ctx.create_submit_group(),
+            ctx.create_submit_group(),
+            ctx.create_submit_group(),
+        ];
 
-        let user_data = f(&mut store, &mut ctx, &mut submits[0]);
+        let user_data = match f(&mut store, &mut ctx, &mut submits[0]) {
+            Some(d) => d,
+            None => {
+                for s in submits {
+                    s.release(&mut ctx);
+                }
+
+                ctx.release();
+                return None;
+            }
+        };
 
         let instant = Instant::now();
 
-        MainLoop {
+        Some(MainLoop {
             events_loop,
             _window: window,
 
@@ -86,7 +105,7 @@ impl<U: UserData> MainLoop<U> {
 
             submits,
             submit_idx: 0,
-        }
+        })
     }
 
     pub fn running(&self) -> bool {
@@ -155,7 +174,7 @@ impl<U: UserData> MainLoop<U> {
 
             submit.graph_execute(&mut self.ctx, graph, &mut self.store, &context);
 
-            let image = self.ctx.graph_get_output_image(graph, image).unwrap();
+            let image = submit.graph_get_image(&self.ctx, graph, image).unwrap();
 
             submit.display_present(&mut self.ctx, self.display, image);
         }
@@ -164,7 +183,14 @@ impl<U: UserData> MainLoop<U> {
     }
 
     pub unsafe fn release(mut self) {
-        self.submits[self.submit_idx].graph_destroy(&mut self.ctx, &[self.user_data.graph()]);
+        for submit_group in &mut self.submits {
+            submit_group.wait(&mut self.ctx);
+        }
+
+        self.ctx.wait_idle();
+
+        self.user_data
+            .release(&mut self.ctx, &mut self.submits[self.submit_idx]);
 
         self.ctx.wait_idle();
 

@@ -28,10 +28,10 @@ fn main() {
     env_logger::init();
 
     let mut ml =
-        unsafe { main_loop::MainLoop::new("Nitrogen - Opaque-Alpha example", init_resources) };
+        unsafe { main_loop::MainLoop::new("Nitrogen - Opaque-Alpha example", init_resources) }
+            .unwrap();
 
     while ml.running() {
-        println!("frame start");
         unsafe {
             ml.iterate();
         }
@@ -60,7 +60,7 @@ fn init_resources(
     store: &mut graph::Store,
     ctx: &mut Context,
     _submit: &mut submit_group::SubmitGroup,
-) -> Resources {
+) -> Option<Resources> {
     store.insert(Quads::default());
     store.insert(QuadsAlpha::default());
 
@@ -100,7 +100,7 @@ fn init_resources(
     });
     let graph = create_graph(ctx);
 
-    Resources { graph }
+    Some(Resources { graph })
 }
 
 fn create_graph(ctx: &mut Context) -> graph::GraphHandle {

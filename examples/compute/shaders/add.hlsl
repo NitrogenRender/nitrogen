@@ -10,7 +10,7 @@ struct PushData {
 ConstantBuffer<PushData> push_data;
 
 
-[[vk::binding(0, 1)]]
+[[vk::binding(0, 0)]]
 RWStructuredBuffer<float> data;
 
 struct DispatchInput {

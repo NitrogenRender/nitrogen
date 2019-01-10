@@ -6,7 +6,7 @@ use nitrogen::buffer::BufferUsage;
 use nitrogen::submit_group::SubmitGroup;
 use nitrogen::*;
 
-unsafe fn device_local_buffer_create<T: Sized>(
+pub unsafe fn buffer_device_local_create<T: Sized>(
     ctx: &mut Context,
     submit: &mut SubmitGroup,
     data: &[T],
@@ -40,42 +40,105 @@ unsafe fn device_local_buffer_create<T: Sized>(
     Some(buffer)
 }
 
-pub unsafe fn device_local_buffer_vertex<T: Sized>(
+pub unsafe fn buffer_device_local_vertex<T: Sized>(
     ctx: &mut Context,
     submit: &mut SubmitGroup,
     data: &[T],
 ) -> Option<buffer::BufferHandle> {
     let usage = BufferUsage::VERTEX;
 
-    device_local_buffer_create(ctx, submit, data, usage)
+    buffer_device_local_create(ctx, submit, data, usage)
 }
 
-pub unsafe fn device_local_buffer_index<T: Sized>(
+pub unsafe fn buffer_device_local_index<T: Sized>(
     ctx: &mut Context,
     submit: &mut SubmitGroup,
     data: &[T],
 ) -> Option<buffer::BufferHandle> {
     let usage = BufferUsage::INDEX;
 
-    device_local_buffer_create(ctx, submit, data, usage)
+    buffer_device_local_create(ctx, submit, data, usage)
 }
 
-pub unsafe fn device_local_buffer_storage<T: Sized>(
+pub unsafe fn buffer_device_local_storage<T: Sized>(
     ctx: &mut Context,
     submit: &mut SubmitGroup,
     data: &[T],
 ) -> Option<buffer::BufferHandle> {
     let usage = BufferUsage::STORAGE;
 
-    device_local_buffer_create(ctx, submit, data, usage)
+    buffer_device_local_create(ctx, submit, data, usage)
 }
 
-pub unsafe fn device_local_buffer<T: Sized>(
+pub unsafe fn image_create(
     ctx: &mut Context,
     submit: &mut SubmitGroup,
-    data: &[T],
-) -> Option<buffer::BufferHandle> {
-    let usage = BufferUsage::empty();
+    content: &[u8],
+    dimensions: (u32, u32),
+    format: image::ImageFormat,
+    usage: gfx::image::Usage,
+) -> Option<(image::ImageHandle, sampler::SamplerHandle)> {
+    let dimension = image::ImageDimension::D2 {
+        x: dimensions.0,
+        y: dimensions.1,
+    };
 
-    device_local_buffer_create(ctx, submit, data, usage)
+    let create_info = image::ImageCreateInfo {
+        dimension,
+        num_layers: 1,
+        num_samples: 1,
+        num_mipmaps: 1,
+
+        format,
+        kind: image::ViewKind::D2,
+        is_transient: false,
+
+        usage,
+    };
+
+    let img = ctx.image_create(&[create_info]).remove(0).ok()?;
+
+    let upload = image::ImageUploadInfo {
+        data: content,
+        format,
+        dimension,
+        target_offset: (0, 0, 0),
+    };
+
+    submit
+        .image_upload_data(ctx, &[(img, upload)])
+        .remove(0)
+        .ok()?;
+
+    let sampler_create = sampler::SamplerCreateInfo {
+        min_filter: sampler::Filter::Linear,
+        mag_filter: sampler::Filter::Linear,
+        mip_filter: sampler::Filter::Linear,
+        wrap_mode: (
+            sampler::WrapMode::Clamp,
+            sampler::WrapMode::Clamp,
+            sampler::WrapMode::Clamp,
+        ),
+    };
+
+    let sampler = ctx.sampler_create(&[sampler_create]).remove(0);
+
+    Some((img, sampler))
+}
+
+pub unsafe fn image_color(
+    ctx: &mut Context,
+    submit: &mut SubmitGroup,
+    content: &[u8],
+    dimensions: (u32, u32),
+    format: image::ImageFormat,
+) -> Option<(image::ImageHandle, sampler::SamplerHandle)> {
+    image_create(
+        ctx,
+        submit,
+        content,
+        dimensions,
+        format,
+        gfx::image::Usage::TRANSFER_DST | gfx::image::Usage::SAMPLED,
+    )
 }

@@ -15,7 +15,8 @@ fn main() {
     std::env::set_var("RUST_LOG", "debug");
     env_logger::init();
 
-    let mut ml = unsafe { main_loop::MainLoop::new("Nitrogen - Model example", init_resources) };
+    let mut ml =
+        unsafe { main_loop::MainLoop::new("Nitrogen - Model example", init_resources) }.unwrap();
 
     while ml.running() {
         unsafe { ml.iterate() };
@@ -27,8 +28,12 @@ fn main() {
 }
 
 struct Data {
-    _b_position: buffer::BufferHandle,
-    _b_normal: buffer::BufferHandle,
+    buf_position: buffer::BufferHandle,
+    buf_normal: buffer::BufferHandle,
+    buf_index: buffer::BufferHandle,
+
+    vtx_def: vertex_attrib::VertexAttribHandle,
+
     graph: graph::GraphHandle,
 }
 
@@ -46,13 +51,25 @@ impl main_loop::UserData for Data {
     fn output_image(&self) -> graph::ResourceName {
         "Base".into()
     }
+
+    fn release(self, ctx: &mut Context, submit: &mut submit_group::SubmitGroup) {
+        submit.graph_destroy(ctx, &[self.graph]);
+
+        submit.buffer_destroy(ctx, &[self.buf_normal, self.buf_position, self.buf_index]);
+
+        unsafe {
+            submit.wait(ctx);
+        }
+
+        ctx.vertex_attribs_destroy(&[self.vtx_def]);
+    }
 }
 
 fn init_resources(
     store: &mut graph::Store,
     ctx: &mut Context,
     submit: &mut submit_group::SubmitGroup,
-) -> Data {
+) -> Option<Data> {
     store.insert(Rad(0 as f32));
 
     let mesh = {
@@ -64,11 +81,11 @@ fn init_resources(
     };
 
     let b_position =
-        unsafe { device_local_buffer_vertex(ctx, submit, &mesh.positions[..]).unwrap() };
+        unsafe { buffer_device_local_vertex(ctx, submit, &mesh.positions[..]).unwrap() };
 
-    let b_normal = unsafe { device_local_buffer_vertex(ctx, submit, &mesh.normals[..]).unwrap() };
+    let b_normal = unsafe { buffer_device_local_vertex(ctx, submit, &mesh.normals[..]).unwrap() };
 
-    let b_index = unsafe { device_local_buffer_index(ctx, submit, &mesh.indices[..]).unwrap() };
+    let b_index = unsafe { buffer_device_local_index(ctx, submit, &mesh.indices[..]).unwrap() };
 
     let vertex_def = {
         let create_info = vertex_attrib::VertexAttribInfo {
@@ -105,11 +122,15 @@ fn init_resources(
         mesh.indices.len(),
     );
 
-    Data {
-        _b_position: b_position,
-        _b_normal: b_normal,
+    Some(Data {
+        buf_position: b_position,
+        buf_normal: b_normal,
+        buf_index: b_index,
+
+        vtx_def: vertex_def,
+
         graph,
-    }
+    })
 }
 
 fn create_graph(

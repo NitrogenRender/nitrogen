@@ -37,7 +37,7 @@ struct InstanceData {
     float4 color;
 };
 
-[[vk::binding(0, 1)]]
+[[vk::binding(0, 0)]]
 StructuredBuffer<InstanceData> data;
 
 VertexOut VertexMain(VertexIn input)

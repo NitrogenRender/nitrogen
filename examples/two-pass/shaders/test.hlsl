@@ -22,12 +22,12 @@ struct FragmentOut {
     float4 color;
 };
 
-[[vk::binding(0, 1)]]
+[[vk::binding(0, 0)]]
 Texture2D t;
-[[vk::binding(1, 1)]]
+[[vk::binding(1, 0)]]
 SamplerState s;
 
-[[vk::binding(2, 1)]]
+[[vk::binding(2, 0)]]
 cbuffer {
     float4 modulate;
 };

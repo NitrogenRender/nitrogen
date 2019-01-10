@@ -54,9 +54,12 @@ pub(crate) unsafe fn execute(
             // TODO FEARLESS CONCURRENCY!!!
             for pass in &batch.passes {
                 // descriptor set stuff
-                let (_set_layout, _pool, set) = &base_res.pipelines_desc_set[pass];
+                let mat_raw = res.pass_mats.get(pass);
+                let set_raw = mat_raw
+                    .and_then(|hndl| storages.material.raw(hndl.0).map(|mat| (hndl.1, mat)))
+                    .and_then(|(inst, mat)| mat.instance_raw(inst).map(|inst| &inst.set));
 
-                {
+                if let Some(set) = set_raw {
                     let reads = resolved_graph.pass_reads[pass]
                         .iter()
                         .map(|(rid, ty, binding, samp)| match ty {
@@ -266,7 +269,14 @@ pub(crate) unsafe fn execute(
                         raw_cmd.set_viewports(0, &[viewport.clone()]);
                         raw_cmd.set_scissors(0, &[viewport.rect]);
 
-                        raw_cmd.bind_graphics_descriptor_sets(&pipeline.layout, 0, Some(set), &[]);
+                        if let Some(set) = set_raw {
+                            raw_cmd.bind_graphics_descriptor_sets(
+                                &pipeline.layout,
+                                0,
+                                Some(set),
+                                &[],
+                            );
+                        }
 
                         let pass_impl = &graph.passes_gfx_impl[&pass.0];
 
@@ -313,7 +323,14 @@ pub(crate) unsafe fn execute(
 
                         raw_cmd.bind_compute_pipeline(&pipeline.pipeline);
 
-                        raw_cmd.bind_compute_descriptor_sets(&pipeline.layout, 0, Some(set), &[]);
+                        if let Some(set) = set_raw {
+                            raw_cmd.bind_compute_descriptor_sets(
+                                &pipeline.layout,
+                                0,
+                                Some(set),
+                                &[],
+                            );
+                        }
 
                         let pass_impl = &graph.passes_cmpt_impl[&pass.0];
 

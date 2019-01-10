@@ -237,9 +237,9 @@ impl Context {
     // image
 
     /// Create image objects and retrieve handles for them.
-    pub unsafe fn image_create(
+    pub unsafe fn image_create<I: Into<gfx::image::Usage> + Clone>(
         &mut self,
-        create_infos: &[image::ImageCreateInfo<image::ImageUsage>],
+        create_infos: &[image::ImageCreateInfo<I>],
     ) -> SmallVec<[image::Result<image::ImageHandle>; 16]> {
         self.image_storage.create(&self.device_ctx, create_infos)
     }
@@ -313,11 +313,6 @@ impl Context {
         self.material_storage.create(&self.device_ctx, create_infos)
     }
 
-    /// Destroy material objects.
-    pub unsafe fn material_destroy(&mut self, materials: &[material::MaterialHandle]) {
-        self.material_storage.destroy(&self.device_ctx, materials)
-    }
-
     /// Create material instances and retrieve handles for them.
     ///
     /// For more information about material instances, see the [`material` module] documentation.
@@ -329,14 +324,6 @@ impl Context {
     ) -> SmallVec<[Result<material::MaterialInstanceHandle, material::MaterialError>; 16]> {
         self.material_storage
             .create_instances(&self.device_ctx, materials)
-    }
-
-    /// Destroy material instance objects.
-    pub unsafe fn material_destroy_instance(
-        &mut self,
-        instances: &[material::MaterialInstanceHandle],
-    ) {
-        self.material_storage.destroy_instances(instances)
     }
 
     /// Update a material instance with resource handles.
@@ -427,24 +414,6 @@ impl Context {
         graph: graph::GraphHandle,
     ) -> Result<(), Vec<graph::GraphCompileError>> {
         self.graph_storage.compile(graph)
-    }
-
-    /// Retrieve the `ImageHandle` of a graph output resource.
-    pub fn graph_get_output_image<T: Into<graph::ResourceName>>(
-        &self,
-        graph: graph::GraphHandle,
-        image: T,
-    ) -> Option<image::ImageHandle> {
-        self.graph_storage.output_image(graph, image)
-    }
-
-    /// Retrieve the `BufferHandle` of a graph output resource.
-    pub fn graph_get_output_buffer<T: Into<graph::ResourceName>>(
-        &self,
-        graph: graph::GraphHandle,
-        buffer: T,
-    ) -> Option<buffer::BufferHandle> {
-        self.graph_storage.output_buffer(graph, buffer)
     }
 
     // submit group

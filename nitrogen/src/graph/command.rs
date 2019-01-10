@@ -100,7 +100,7 @@ impl<'a> GraphicsCommandBuffer<'a> {
         let layout = self.pipeline_layout;
 
         let mat = self.storages.material.raw(material.0)?;
-        let instance = mat.intance_raw(material.1)?;
+        let instance = mat.instance_raw(material.1)?;
 
         let set = &instance.set;
 
@@ -152,7 +152,7 @@ impl<'a> ComputeCommandBuffer<'a> {
         let layout = self.pipeline_layout;
 
         let mat = self.storages.material.raw(material.0)?;
-        let instance = mat.intance_raw(material.1)?;
+        let instance = mat.instance_raw(material.1)?;
 
         let set = &instance.set;
 
