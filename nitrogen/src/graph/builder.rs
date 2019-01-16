@@ -9,20 +9,18 @@ use crate::image;
 use self::ResourceReadType as R;
 use self::ResourceWriteType as W;
 
-use std::hash::{Hash, Hasher};
-
 #[derive(Hash, Debug, Clone, Copy)]
 pub enum ResourceType {
     Image,
     Buffer,
-    Extern,
+    Virtual,
 }
 
 #[derive(Hash, Debug, Clone)]
 pub(crate) enum ResourceCreateInfo {
-    Image(ImageCreateInfo),
+    Image(ImageInfo),
     Buffer(BufferCreateInfo),
-    Extern,
+    Virtual,
 }
 
 #[derive(Hash, Default)]
@@ -43,8 +41,8 @@ pub struct GraphBuilder {
     /// List of resources that will be written to. Also contains write type and binding
     pub(crate) resource_writes: Vec<(ResourceName, ResourceWriteType, u8)>,
 
-    /// List of resources that persist executions
-    pub(crate) resource_backbuffer: Vec<ResourceName>,
+    /// List of resources that persist executions (backbuffername, localname)
+    pub(crate) resource_backbuffer: Vec<(ResourceName, ResourceName)>,
 }
 
 impl GraphBuilder {
@@ -55,12 +53,52 @@ impl GraphBuilder {
     // image
 
     pub fn image_create<T: Into<ResourceName>>(&mut self, name: T, create_info: ImageCreateInfo) {
-        self.resource_creates
-            .push((name.into(), ResourceCreateInfo::Image(create_info)));
+        self.resource_creates.push((
+            name.into(),
+            ResourceCreateInfo::Image(ImageInfo::Create(create_info)),
+        ));
     }
+
+    pub fn image_backbuffer_create<BN, LN>(
+        &mut self,
+        backbuffer_name: BN,
+        local_name: LN,
+        create_info: ImageCreateInfo,
+        usage: crate::image::ImageUsage,
+    ) where
+        BN: Into<ResourceName>,
+        LN: Into<ResourceName>,
+    {
+        let bname = backbuffer_name.into();
+        let lname = local_name.into();
+
+        self.resource_creates.push((
+            lname.clone(),
+            ResourceCreateInfo::Image(ImageInfo::BackbufferCreate(
+                bname.clone(),
+                create_info,
+                usage.into(),
+            )),
+        ));
+
+        self.resource_backbuffer.push((bname, lname));
+    }
+
+    pub fn image_backbuffer_get<BN, LN>(&mut self, backbuffer_name: BN, local_name: LN)
+    where
+        BN: Into<ResourceName>,
+        LN: Into<ResourceName>,
+    {
+        self.resource_creates.push((
+            local_name.into(),
+            ResourceCreateInfo::Image(ImageInfo::BackbufferRead(backbuffer_name.into())),
+        ));
+    }
+
     pub fn image_copy<T0: Into<ResourceName>, T1: Into<ResourceName>>(&mut self, src: T0, new: T1) {
         self.resource_copies.push((new.into(), src.into()));
     }
+
     pub fn image_move<T0: Into<ResourceName>, T1: Into<ResourceName>>(&mut self, from: T0, to: T1) {
         self.resource_moves.push((to.into(), from.into()));
     }
@@ -69,6 +107,7 @@ impl GraphBuilder {
         self.resource_writes
             .push((name.into(), W::Image(ImageWriteType::Color), binding));
     }
+
     pub fn image_write_depth_stencil<T: Into<ResourceName>>(&mut self, name: T) {
         self.resource_writes.push((
             name.into(),
@@ -76,6 +115,7 @@ impl GraphBuilder {
             u8::max_value(),
         ));
     }
+
     pub fn image_write_storage<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
         self.resource_writes
             .push((name.into(), W::Image(ImageWriteType::Storage), binding));
@@ -107,10 +147,6 @@ impl GraphBuilder {
     pub fn image_read_storage<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
         self.resource_reads
             .push((name.into(), R::Image(ImageReadType::Storage), binding, None));
-    }
-
-    pub fn image_backbuffer<T: Into<ResourceName>>(&mut self, name: T) {
-        self.resource_backbuffer.push(name.into());
     }
 
     // buffer
@@ -163,18 +199,14 @@ impl GraphBuilder {
         ));
     }
 
-    pub fn buffer_backbuffer<T: Into<ResourceName>>(&mut self, name: T) {
-        self.resource_backbuffer.push(name.into());
-    }
-
     // extern
 
-    pub fn extern_create<T: Into<ResourceName>>(&mut self, name: T) {
+    pub fn virtual_create<T: Into<ResourceName>>(&mut self, name: T) {
         self.resource_creates
-            .push((name.into(), ResourceCreateInfo::Extern));
+            .push((name.into(), ResourceCreateInfo::Virtual));
     }
 
-    pub fn extern_move<T0: Into<ResourceName>, T1: Into<ResourceName>>(
+    pub fn virtual_move<T0: Into<ResourceName>, T1: Into<ResourceName>>(
         &mut self,
         from: T0,
         to: T1,
@@ -182,9 +214,8 @@ impl GraphBuilder {
         self.resource_moves.push((to.into(), from.into()));
     }
 
-    pub fn extern_read<T: Into<ResourceName>>(&mut self, name: T) {
-        self.resource_reads
-            .push((name.into(), R::External, 0, None));
+    pub fn virtual_read<T: Into<ResourceName>>(&mut self, name: T) {
+        self.resource_reads.push((name.into(), R::Virtual, 0, None));
     }
 
     // control flow control
@@ -203,20 +234,17 @@ pub enum ImageClearValue {
     DepthStencil(DepthValue, StencilValue),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
+pub(crate) enum ImageInfo {
+    Create(ImageCreateInfo),
+    BackbufferRead(ResourceName),
+    BackbufferCreate(ResourceName, ImageCreateInfo, gfx::image::Usage),
+}
+
+#[derive(Debug, Clone, Hash)]
 pub struct ImageCreateInfo {
     pub format: image::ImageFormat,
     pub size_mode: image::ImageSizeMode,
-    pub clear: ImageClearValue,
-}
-
-// impl to ignore clear color.
-// The clear color should not cause a new version of the graph to be created.
-impl Hash for ImageCreateInfo {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.format.hash(state);
-        self.size_mode.hash(state);
-    }
 }
 
 #[derive(Debug, Clone, Hash)]
@@ -235,7 +263,7 @@ pub enum BufferStorageType {
 pub enum ResourceReadType {
     Image(ImageReadType),
     Buffer(BufferReadType),
-    External,
+    Virtual,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
@@ -286,7 +314,7 @@ impl From<ResourceReadType> for ResourceType {
         match ty {
             ResourceReadType::Image(..) => ResourceType::Image,
             ResourceReadType::Buffer(..) => ResourceType::Buffer,
-            ResourceReadType::External => ResourceType::Extern,
+            ResourceReadType::Virtual => ResourceType::Virtual,
         }
     }
 }
@@ -296,7 +324,7 @@ impl From<ResourceCreateInfo> for ResourceType {
         match inf {
             ResourceCreateInfo::Image(..) => ResourceType::Image,
             ResourceCreateInfo::Buffer(..) => ResourceType::Buffer,
-            ResourceCreateInfo::Extern => ResourceType::Extern,
+            ResourceCreateInfo::Virtual => ResourceType::Virtual,
         }
     }
 }

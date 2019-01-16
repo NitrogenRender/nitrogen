@@ -47,12 +47,12 @@ struct Resources {
 }
 
 impl main_loop::UserData for Resources {
-    fn graph(&self) -> graph::GraphHandle {
-        self.graph
+    fn graph(&self) -> Option<graph::GraphHandle> {
+        Some(self.graph)
     }
 
-    fn output_image(&self) -> graph::ResourceName {
-        "CanvasFinal".into()
+    fn output_image(&self) -> Option<graph::ResourceName> {
+        Some("CanvasFinal".into())
     }
 }
 
@@ -151,11 +151,10 @@ fn create_graph(ctx: &mut Context) -> graph::GraphHandle {
         struct OpaquePass;
 
         impl graph::GraphicsPassImpl for OpaquePass {
-            fn setup(&mut self, builder: &mut graph::GraphBuilder) {
+            fn setup(&mut self, store: &mut graph::Store, builder: &mut graph::GraphBuilder) {
                 builder.image_create(
                     "Canvas",
                     graph::ImageCreateInfo {
-                        clear: graph::ImageClearValue::Color([0.7, 0.7, 1.0, 1.0]),
                         size_mode: image::ImageSizeMode::ContextRelative {
                             width: 1.0,
                             height: 1.0,
@@ -174,7 +173,6 @@ fn create_graph(ctx: &mut Context) -> graph::GraphHandle {
                             width: 1.0,
                             height: 1.0,
                         },
-                        clear: graph::ImageClearValue::DepthStencil(1.0, 0),
                     },
                 );
 
@@ -184,8 +182,15 @@ fn create_graph(ctx: &mut Context) -> graph::GraphHandle {
             }
 
             fn execute(&self, store: &graph::Store, cmd: &mut graph::GraphicsCommandBuffer<'_>) {
+                use nitrogen::graph::ImageClearValue::*;
+
                 let size = store.get::<main_loop::CanvasSize>().unwrap();
                 let quads = store.get::<Quads>().unwrap();
+
+                let mut cmd = unsafe {
+                    cmd.begin_render_pass(&[Color([0.7, 0.7, 1.0, 1.0]), DepthStencil(1.0, 0)])
+                        .unwrap()
+                };
 
                 unsafe {
                     cmd.push_constant::<[f32; 2]>(0, [size.0, size.1]);
@@ -252,7 +257,7 @@ fn create_graph(ctx: &mut Context) -> graph::GraphHandle {
         struct AlphaPass;
 
         impl graph::GraphicsPassImpl for AlphaPass {
-            fn setup(&mut self, builder: &mut graph::GraphBuilder) {
+            fn setup(&mut self, store: &mut graph::Store, builder: &mut graph::GraphBuilder) {
                 builder.image_move("Canvas", "CanvasFinal");
 
                 builder.image_write_color("CanvasFinal", 0);
@@ -265,6 +270,8 @@ fn create_graph(ctx: &mut Context) -> graph::GraphHandle {
             fn execute(&self, store: &graph::Store, cmd: &mut graph::GraphicsCommandBuffer<'_>) {
                 let size = store.get::<main_loop::CanvasSize>().unwrap();
                 let quads = store.get::<QuadsAlpha>().unwrap();
+
+                let mut cmd = unsafe { cmd.begin_render_pass(&[]).unwrap() };
 
                 unsafe {
                     cmd.push_constant::<[f32; 2]>(0, [size.0, size.1]);

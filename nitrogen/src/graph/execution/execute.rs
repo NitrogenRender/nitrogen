@@ -8,8 +8,7 @@ use crate::graph::resolve::GraphResourcesResolved;
 use crate::graph::ExecutionContext;
 
 use crate::graph::{
-    BufferWriteType, ImageReadType, ImageWriteType, ResourceCreateInfo, ResourceReadType,
-    ResourceWriteType,
+    BufferWriteType, ImageReadType, ImageWriteType, ResourceReadType, ResourceWriteType,
 };
 
 use gfx::Device;
@@ -44,6 +43,7 @@ pub(crate) unsafe fn execute(
             let read_storages = crate::graph::command::ReadStorages {
                 buffer: storages.buffer,
                 material: storages.material,
+                image: storages.image,
             };
 
             for _ in 0..batch.passes.len() {
@@ -124,7 +124,7 @@ pub(crate) unsafe fn execute(
                                 }
                             }
                             ResourceReadType::Buffer(_buf) => unimplemented!(),
-                            ResourceReadType::External => {
+                            ResourceReadType::Virtual => {
                                 // Nothing to do...
                                 SmallVec::new()
                             }
@@ -163,7 +163,22 @@ pub(crate) unsafe fn execute(
                                         ImageWriteType::Color | ImageWriteType::DepthStencil => {
                                             None
                                         }
-                                        ImageWriteType::Storage => unimplemented!(),
+                                        ImageWriteType::Storage => {
+                                            let img_handle = res.images[rid];
+                                            let image = storages.image.raw(img_handle).unwrap();
+
+                                            Some(gfx::pso::DescriptorSetWrite {
+                                                set,
+                                                binding: (*binding) as u32,
+                                                array_offset: 0,
+                                                descriptors: std::iter::once(
+                                                    gfx::pso::Descriptor::Image(
+                                                        &image.view,
+                                                        gfx::image::Layout::General,
+                                                    ),
+                                                ),
+                                            })
+                                        }
                                     }
                                 }
                             });
@@ -182,9 +197,12 @@ pub(crate) unsafe fn execute(
 
                     // TODO transition resource layouts
 
-                    let framebuffer = &res.framebuffers[pass];
-                    let framebuffer_extent = framebuffer.1;
-                    let framebuffer = &framebuffer.0;
+                    let framebuffer = res.framebuffers.get(pass);
+                    let framebuffer_extent = framebuffer
+                        .map(|f| (f.1.width, f.1.height))
+                        .unwrap_or((1, 1));
+
+                    let framebuffer = framebuffer.map(|f| &f.0);
 
                     let viewport = gfx::pso::Viewport {
                         // TODO depth boundaries
@@ -192,74 +210,10 @@ pub(crate) unsafe fn execute(
                         rect: gfx::pso::Rect {
                             x: 0,
                             y: 0,
-                            w: framebuffer_extent.width as i16,
-                            h: framebuffer_extent.height as i16,
+                            w: framebuffer_extent.0 as i16,
+                            h: framebuffer_extent.1 as i16,
                         },
                     };
-
-                    // clear values for image targets
-                    // TODO handle depth and storage clears
-                    let mut clear_colors = SmallVec::<[_; 16]>::new();
-                    let mut clear_depth = SmallVec::<[_; 16]>::new();
-
-                    'clear_loop: for (id, ty, binding) in &resolved_graph.pass_writes[pass] {
-                        if !batch.resource_create.contains(id) {
-                            continue 'clear_loop;
-                        }
-
-                        // only clear if image
-                        match ty {
-                            ResourceWriteType::Image(img) => match img {
-                                ImageWriteType::Color => {
-                                    let info = &resolved_graph.infos[id];
-                                    let image_info = match info {
-                                        ResourceCreateInfo::Image(info) => info,
-                                        _ => unreachable!(),
-                                    };
-                                    clear_colors.push((binding, image_info.clear));
-                                }
-                                ImageWriteType::DepthStencil => {
-                                    let info = &resolved_graph.infos[id];
-                                    let image_info = match info {
-                                        ResourceCreateInfo::Image(info) => info,
-                                        _ => unreachable!(),
-                                    };
-                                    clear_depth.push(image_info.clear);
-                                }
-                                _ => unimplemented!(),
-                            },
-                            ResourceWriteType::Buffer(_) => continue 'clear_loop,
-                        }
-                    }
-
-                    clear_colors
-                        .as_mut_slice()
-                        .sort_by_key(|(binding, _)| *binding);
-
-                    let clear_values = clear_colors
-                        .into_iter()
-                        .filter_map(|(_, color)| {
-                            use crate::graph::ImageClearValue;
-
-                            if let ImageClearValue::Color(color) = color {
-                                Some(gfx::command::ClearValue::Color(
-                                    gfx::command::ClearColor::Float(color),
-                                ))
-                            } else {
-                                None
-                            }
-                        })
-                        .chain(clear_depth.into_iter().filter_map(|clear| {
-                            use crate::graph::ImageClearValue;
-
-                            if let ImageClearValue::DepthStencil(depth, stencil) = clear {
-                                Some(gfx::command::ClearValue::DepthStencil(
-                                    gfx::command::ClearDepthStencil(depth, stencil),
-                                ))
-                            } else {
-                                None
-                            }
-                        }));
 
                     let submit = {
                         let mut raw_cmd = cmd_pool_gfx.alloc();
@@ -281,17 +235,13 @@ pub(crate) unsafe fn execute(
                         let pass_impl = &graph.passes_gfx_impl[&pass.0];
 
                         {
-                            let encoder = raw_cmd.begin_render_pass_inline(
-                                render_pass,
-                                &framebuffer,
-                                viewport.rect,
-                                clear_values,
-                            );
-
                             let mut command = crate::graph::command::GraphicsCommandBuffer {
-                                encoder,
+                                buf: &mut *raw_cmd,
                                 storages: &read_storages,
+                                framebuffer: framebuffer,
+                                viewport_rect: viewport.rect,
                                 pipeline_layout: &pipeline.layout,
+                                render_pass: render_pass,
                             };
 
                             pass_impl.execute(store, &mut command);

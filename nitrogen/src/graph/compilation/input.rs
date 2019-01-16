@@ -18,7 +18,8 @@ pub(crate) struct GraphInput {
         BTreeMap<PassId, Vec<(ResourceName, ResourceReadType, u8, Option<u8>)>>,
     pub(crate) resource_writes: BTreeMap<PassId, Vec<(ResourceName, ResourceWriteType, u8)>>,
 
-    pub(crate) resource_backbuffer: Vec<(PassId, ResourceName)>,
+    // (backbuffer name, local name)
+    pub(crate) resource_backbuffer: BTreeMap<PassId, Vec<(ResourceName, ResourceName)>>,
 }
 
 impl GraphInput {
@@ -30,8 +31,7 @@ impl GraphInput {
         self.resource_reads.insert(id, builder.resource_reads);
         self.resource_writes.insert(id, builder.resource_writes);
 
-        for res in builder.resource_backbuffer {
-            self.resource_backbuffer.push((id, res));
-        }
+        self.resource_backbuffer
+            .insert(id, builder.resource_backbuffer);
     }
 }

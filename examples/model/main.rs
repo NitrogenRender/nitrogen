@@ -44,12 +44,12 @@ impl main_loop::UserData for Data {
         });
     }
 
-    fn graph(&self) -> graph::GraphHandle {
-        self.graph
+    fn graph(&self) -> Option<graph::GraphHandle> {
+        Some(self.graph)
     }
 
-    fn output_image(&self) -> graph::ResourceName {
-        "Base".into()
+    fn output_image(&self) -> Option<graph::ResourceName> {
+        Some("Base".into())
     }
 
     fn release(self, ctx: &mut Context, submit: &mut submit_group::SubmitGroup) {
@@ -188,7 +188,7 @@ fn create_graph(
         };
 
         impl graph::GraphicsPassImpl for Pass {
-            fn setup(&mut self, builder: &mut graph::GraphBuilder) {
+            fn setup(&mut self, _: &mut graph::Store, builder: &mut graph::GraphBuilder) {
                 builder.image_create(
                     "Base",
                     graph::ImageCreateInfo {
@@ -197,7 +197,6 @@ fn create_graph(
                             height: 1.0,
                         },
                         format: image::ImageFormat::RgbaUnorm,
-                        clear: graph::ImageClearValue::Color([0.1, 0.1, 0.1, 1.0]),
                     },
                 );
 
@@ -209,7 +208,6 @@ fn create_graph(
                             height: 1.0,
                         },
                         format: image::ImageFormat::D32Float,
-                        clear: graph::ImageClearValue::DepthStencil(1.0, 0),
                     },
                 );
 
@@ -240,8 +238,16 @@ fn create_graph(
 
                 let mvp = p * m;
 
+                let mut cmd = unsafe {
+                    cmd.begin_render_pass(&[
+                        graph::ImageClearValue::Color([0.1, 0.1, 0.1, 1.0]),
+                        graph::ImageClearValue::DepthStencil(1.0, 0),
+                    ])
+                    .unwrap()
+                };
+
                 unsafe fn push_matrix(
-                    cmd: &mut graph::GraphicsCommandBuffer<'_>,
+                    cmd: &mut graph::RenderPassEncoder<'_>,
                     offset: u32,
                     mat: Matrix4<f32>,
                 ) {
@@ -252,8 +258,8 @@ fn create_graph(
                 }
 
                 unsafe {
-                    push_matrix(cmd, 0, mvp);
-                    push_matrix(cmd, 16, m);
+                    push_matrix(&mut cmd, 0, mvp);
+                    push_matrix(&mut cmd, 16, m);
 
                     cmd.bind_vertex_buffers(&[(self.position, 0), (self.normal, 0)]);
 

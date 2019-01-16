@@ -34,22 +34,22 @@ impl Display {
 
         let (_, formats, _, _) = surface.compatibility(&device.adapter.physical_device);
 
-        println!("{:?}", formats);
+        let formats = formats.unwrap();
+
         let format = formats
-            .unwrap()
-            .into_iter()
-            .find(|format| match format {
+            .iter()
+            .find(|format| match *format {
                 Format::Rgba8Unorm => true,
                 Format::Bgra8Unorm => true,
                 _ => false,
             })
-            .expect("No suitable display format found");
+            .unwrap_or(&formats[0]);
 
         Display {
             surface,
             surface_size: (1, 1),
             swapchain: None,
-            display_format: format,
+            display_format: *format,
             images: vec![],
         }
     }

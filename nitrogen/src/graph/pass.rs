@@ -24,6 +24,12 @@ pub enum Primitive {
     TriangleStrip,
 }
 
+impl Default for Primitive {
+    fn default() -> Self {
+        Primitive::TriangleList
+    }
+}
+
 impl From<Primitive> for gfx::Primitive {
     fn from(p: Primitive) -> Self {
         match p {
@@ -78,6 +84,7 @@ impl From<Comparison> for gfx::pso::Comparison {
     }
 }
 
+#[derive(Default)]
 pub struct GraphicsPassInfo {
     pub vertex_attrib: Option<VertexAttribHandle>,
     pub depth_mode: Option<DepthMode>,
@@ -90,6 +97,7 @@ pub struct GraphicsPassInfo {
     pub push_constants: Vec<std::ops::Range<u32>>,
 }
 
+#[derive(Default)]
 pub struct ComputePassInfo {
     pub materials: Vec<(usize, MaterialHandle)>,
     pub shader: ShaderInfo,
@@ -101,23 +109,34 @@ pub(crate) enum PassInfo {
     Compute(ComputePassInfo),
 }
 
+#[derive(Debug, Default)]
 pub struct Shaders {
     pub vertex: ShaderInfo,
     pub fragment: Option<ShaderInfo>,
     pub geometry: Option<ShaderInfo>,
 }
 
+#[derive(Debug, Clone)]
 pub struct ShaderInfo {
     pub content: Cow<'static, [u8]>,
     pub entry: CowString,
 }
 
+impl Default for ShaderInfo {
+    fn default() -> Self {
+        ShaderInfo {
+            content: Cow::Borrowed(&[]),
+            entry: "".into(),
+        }
+    }
+}
+
 pub trait GraphicsPassImpl {
-    fn setup(&mut self, builder: &mut builder::GraphBuilder);
-    fn execute(&self, store: &super::Store, command_buffer: &mut command::GraphicsCommandBuffer);
+    fn setup(&mut self, store: &mut super::Store, builder: &mut builder::GraphBuilder);
+    fn execute(&self, store: &super::Store, cmd: &mut command::GraphicsCommandBuffer);
 }
 
 pub trait ComputePassImpl {
-    fn setup(&mut self, builder: &mut builder::GraphBuilder);
-    fn execute(&self, store: &super::Store, command_buffer: &mut command::ComputeCommandBuffer);
+    fn setup(&mut self, store: &mut super::Store, builder: &mut builder::GraphBuilder);
+    fn execute(&self, store: &super::Store, cmd: &mut command::ComputeCommandBuffer);
 }

@@ -32,7 +32,7 @@ pub(crate) struct GraphResourcesResolved {
     pub(crate) pass_reads:
         BTreeMap<PassId, BTreeSet<(ResourceId, ResourceReadType, u8, Option<u8>)>>,
 
-    pub(crate) backbuffer: BTreeSet<ResourceId>,
+    pub(crate) backbuffer: BTreeMap<ResourceName, ResourceId>,
 }
 
 impl GraphResourcesResolved {
@@ -326,16 +326,19 @@ pub(crate) fn resolve_input_graph(
         }
     }
 
-    let mut resource_backbuffer = BTreeSet::new();
-    for (pass, res) in input.resource_backbuffer {
-        if let Some(id) = resource_name_lookup.get(&res) {
-            resource_backbuffer.insert(*id);
-        } else {
-            errors.push(GraphCompileError::ReferencedInvalidResource {
-                res: res.clone(),
-                pass,
-            });
-            continue;
+    let mut resource_backbuffer = BTreeMap::new();
+
+    for (pass, creates) in input.resource_backbuffer {
+        for (bname, lname) in creates {
+            if let Some(id) = resource_name_lookup.get(&lname) {
+                resource_backbuffer.insert(bname, *id);
+            } else {
+                errors.push(GraphCompileError::ReferencedInvalidResource {
+                    res: lname.clone(),
+                    pass,
+                });
+                continue;
+            }
         }
     }
 

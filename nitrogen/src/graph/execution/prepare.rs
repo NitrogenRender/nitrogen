@@ -9,7 +9,7 @@ use gfx;
 
 use crate::graph::{
     BufferReadType, BufferStorageType, BufferWriteType, ComputePassInfo, ExecutionContext,
-    GraphResourcesResolved, GraphicsPassInfo, ImageReadType, ImageWriteType, PassInfo,
+    GraphResourcesResolved, GraphicsPassInfo, ImageInfo, ImageReadType, ImageWriteType, PassInfo,
     ResourceCreateInfo, ResourceReadType, ResourceWriteType,
 };
 
@@ -25,6 +25,7 @@ use std::collections::BTreeMap;
 
 pub(crate) unsafe fn prepare_base(
     device: &DeviceContext,
+    backbuffer_usage: &BackbufferUsage,
     storages: &mut Storages,
     exec: &ExecutionGraph,
     resolved: &GraphResourcesResolved,
@@ -36,7 +37,15 @@ pub(crate) unsafe fn prepare_base(
         for pass in &batch.passes {
             let info = &passes[pass.0].1;
 
-            prepare_pass_base(device, storages, resolved, *pass, info, &mut res);
+            prepare_pass_base(
+                device,
+                backbuffer_usage,
+                storages,
+                resolved,
+                *pass,
+                info,
+                &mut res,
+            );
         }
     }
 
@@ -45,6 +54,7 @@ pub(crate) unsafe fn prepare_base(
 
 pub(crate) unsafe fn prepare_pass_base(
     device: &DeviceContext,
+    backbuffer_usage: &BackbufferUsage,
     storages: &mut Storages,
     resolved: &GraphResourcesResolved,
     pass: PassId,
@@ -54,7 +64,8 @@ pub(crate) unsafe fn prepare_pass_base(
     match info {
         PassInfo::Graphics(info) => {
             // Create render pass
-            let render_pass = create_render_pass(device, storages, resolved, pass)?;
+            let render_pass =
+                create_render_pass(device, backbuffer_usage, storages, resolved, pass)?;
 
             // insert into resources
             res.render_passes.insert(pass, render_pass);
@@ -85,6 +96,7 @@ pub(crate) unsafe fn prepare_pass_base(
 
 pub(crate) unsafe fn prepare(
     usages: &ResourceUsages,
+    backbuffer: &mut Backbuffer,
     base: &mut GraphBaseResources,
     device: &DeviceContext,
     storages: &mut Storages,
@@ -96,6 +108,7 @@ pub(crate) unsafe fn prepare(
     let mut res = GraphResources {
         exec_version: 0, // will be filled by the caller
         exec_context: context.clone(),
+        external_resources: HashSet::new(),
         images: HashMap::new(),
         samplers: HashMap::new(),
         buffers: HashMap::new(),
@@ -111,7 +124,7 @@ pub(crate) unsafe fn prepare(
         for create in &batch.resource_create {
             let res_info = &resolved.infos[create];
             create_resource(
-                usages, device, &context, storages, *create, res_info, &mut res,
+                usages, device, &context, backbuffer, storages, *create, res_info, &mut res,
             );
         }
 
@@ -132,7 +145,9 @@ pub(crate) unsafe fn prepare(
                 res.pass_mats.insert(*pass, instance);
             }
 
-            prepare_pass(base, device, storages, resolved, *pass, info, &mut res);
+            prepare_pass(
+                backbuffer, base, device, storages, resolved, *pass, info, &mut res,
+            )?;
         }
     }
 
@@ -140,6 +155,7 @@ pub(crate) unsafe fn prepare(
 }
 
 pub(crate) unsafe fn prepare_pass(
+    backbuffer: &mut Backbuffer,
     base: &GraphBaseResources,
     device: &DeviceContext,
     storages: &mut Storages,
@@ -175,10 +191,21 @@ pub(crate) unsafe fn prepare_pass(
                     .into_iter()
                     .filter_map(|(res_id, _, _)| {
                         let res_id = resolved.moved_from(*res_id)?;
+                        let (_, create_info) = resolved.create_info(res_id)?;
 
-                        let handle = res.images[&res_id];
+                        let handle = match create_info {
+                            ResourceCreateInfo::Image(ImageInfo::BackbufferCreate(n, _, _))
+                            | ResourceCreateInfo::Image(ImageInfo::BackbufferRead(n)) => {
+                                backbuffer.images.get(n)?
+                            }
+                            ResourceCreateInfo::Image(ImageInfo::Create(_)) => {
+                                res.images.get(&res_id)?
+                            }
+                            // buffer attachments???
+                            _ => unreachable!(),
+                        };
 
-                        let image = storages.image.raw(handle)?;
+                        let image = storages.image.raw(*handle)?;
 
                         Some((&image.view, &image.dimension))
                     })
@@ -235,6 +262,7 @@ pub(crate) unsafe fn prepare_pass(
 
 unsafe fn create_render_pass(
     device: &DeviceContext,
+    backbuffer_usage: &BackbufferUsage,
     storages: &mut Storages,
     resolved_graph: &GraphResourcesResolved,
     pass: PassId,
@@ -269,15 +297,23 @@ unsafe fn create_render_pass(
                 }
                 _ => false,
             })
-            .map(|(res, _ty, binding)| {
+            .filter_map(|(res, _ty, binding)| {
                 let (origin, info) = resolved_graph.create_info(*res).unwrap();
 
-                let info = match info {
-                    ResourceCreateInfo::Image(img) => img,
+                let (format, clear) = match info {
+                    ResourceCreateInfo::Image(ImageInfo::Create(img)) => {
+                        (img.format.into(), origin == *res)
+                    }
+                    ResourceCreateInfo::Image(ImageInfo::BackbufferCreate(_, img, _)) => {
+                        (img.format.into(), true)
+                    }
+                    ResourceCreateInfo::Image(ImageInfo::BackbufferRead(name)) => {
+                        (*(backbuffer_usage.images.get(name)?), false)
+                    }
                     _ => unreachable!(),
                 };
 
-                let clear = origin == *res;
+                // let clear = clear && origin == *res;
 
                 let load_op = if clear {
                     gfx::pass::AttachmentLoadOp::Clear
@@ -303,17 +339,17 @@ unsafe fn create_render_pass(
                     (ops, stencil)
                 };
 
-                (
+                Some((
                     *binding,
                     gfx::pass::Attachment {
-                        format: Some(info.format.into()),
+                        format: Some(format),
                         samples: 1,
                         ops,
                         stencil_ops: stencil,
                         // TODO Better layout transitions
                         layouts: initial_layout..gfx::image::Layout::General,
                     },
-                )
+                ))
             })
             // we might be "reading" from depth, but we still have to mention it as an attachment
             .chain(
@@ -323,20 +359,26 @@ unsafe fn create_render_pass(
                         ResourceReadType::Image(ImageReadType::DepthStencil) => true,
                         _ => false,
                     })
-                    .map(|(res, _, _, _)| {
+                    .filter_map(|(res, _, _, _)| {
                         has_depth_read = true;
 
                         let (_origin, info) = resolved_graph.create_info(*res).unwrap();
 
-                        let info = match info {
-                            ResourceCreateInfo::Image(img) => img,
+                        let format = match info {
+                            ResourceCreateInfo::Image(ImageInfo::Create(img)) => img.format.into(),
+                            ResourceCreateInfo::Image(ImageInfo::BackbufferCreate(_, img, _)) => {
+                                img.format.into()
+                            }
+                            ResourceCreateInfo::Image(ImageInfo::BackbufferRead(_name)) => {
+                                unimplemented!()
+                            }
                             _ => unreachable!(),
                         };
 
-                        (
+                        Some((
                             u8::max_value(),
                             gfx::pass::Attachment {
-                                format: Some(info.format.into()),
+                                format: Some(format),
                                 samples: 1,
                                 ops: gfx::pass::AttachmentOps {
                                     load: gfx::pass::AttachmentLoadOp::Load,
@@ -345,7 +387,7 @@ unsafe fn create_render_pass(
                                 stencil_ops: gfx::pass::AttachmentOps::DONT_CARE,
                                 layouts: gfx::image::Layout::General..gfx::image::Layout::General,
                             },
-                        )
+                        ))
                     }),
             )
             .collect::<SmallVec<[_; 16]>>()
@@ -527,13 +569,119 @@ unsafe fn create_resource(
     usages: &ResourceUsages,
     device: &DeviceContext,
     context: &ExecutionContext,
+    backbuffer: &mut Backbuffer,
     storages: &mut Storages,
     id: ResourceId,
     info: &ResourceCreateInfo,
     res: &mut GraphResources,
 ) -> Option<()> {
     match info {
-        ResourceCreateInfo::Image(img) => {
+        ResourceCreateInfo::Image(ImageInfo::BackbufferCreate(name, create, _usage)) => {
+            let raw_dim = create.size_mode.absolute(context.reference_size);
+            let format = create.format;
+
+            if let Some(img) = backbuffer.images.get(name) {
+                let image = storages.image.raw(*img)?;
+
+                let dims = image.dimension.as_triple(0);
+
+                if (dims.0, dims.1) == raw_dim && image.format == format.into() {
+                    // we can reuse the old one!
+
+                    res.images.insert(id, *img);
+                    res.external_resources.insert(id);
+
+                    if let Some(sampler) = backbuffer.samplers.get(name) {
+                        res.samplers.insert(id, *sampler);
+                    }
+
+                    return Some(());
+                }
+                // there is no else case. If the backbuffer would be incompatible we would have
+                // cleared it - that means we continue with creating the image
+            }
+
+            let raw_dim = create.size_mode.absolute(context.reference_size);
+            let dim = image::ImageDimension::D2 {
+                x: raw_dim.0,
+                y: raw_dim.1,
+            };
+
+            let kind = image::ViewKind::D2;
+
+            let format = create.format;
+
+            let is_depth_stencil = format.is_depth_stencil();
+
+            let num_mips = if is_depth_stencil { 0 } else { 1 };
+
+            // any flags that will be needed
+            let usages = &usages.image[&id];
+
+            // let's go!
+            let create_info = image::ImageCreateInfo {
+                dimension: dim,
+                num_layers: 1,
+                num_samples: 1,
+                num_mipmaps: num_mips,
+                format,
+                kind,
+                usage: usages.0.clone(),
+                is_transient: false,
+            };
+
+            let img_handle = storages
+                .image
+                .create(device, &[create_info])
+                .remove(0)
+                .ok()?;
+
+            res.images.insert(id, img_handle);
+            res.external_resources.insert(id);
+
+            backbuffer.images.insert(name.clone(), img_handle);
+
+            // If the image is used for sampling then it means some other pass will read from it
+            // as a color image. In that case we create a sampler for this image as well
+            if usages.0.contains(gfx::image::Usage::SAMPLED) {
+                let sampler = storages
+                    .sampler
+                    .create(
+                        device,
+                        &[sampler::SamplerCreateInfo {
+                            min_filter: sampler::Filter::Linear,
+                            mip_filter: sampler::Filter::Linear,
+                            mag_filter: sampler::Filter::Linear,
+                            wrap_mode: (
+                                sampler::WrapMode::Clamp,
+                                sampler::WrapMode::Clamp,
+                                sampler::WrapMode::Clamp,
+                            ),
+                        }],
+                    )
+                    .remove(0);
+                res.samplers.insert(id, sampler);
+                backbuffer.samplers.insert(name.clone(), sampler);
+            }
+
+            Some(())
+        }
+
+        ResourceCreateInfo::Image(ImageInfo::BackbufferRead(name)) => {
+            // read image from backbuffer
+
+            let img = backbuffer.images.get(name)?;
+            res.images.insert(id, *img);
+            res.external_resources.insert(id);
+
+            if let Some(sampler) = backbuffer.samplers.get(name) {
+                res.samplers.insert(id, *sampler);
+            }
+
+            Some(())
+        }
+
+        ResourceCreateInfo::Image(ImageInfo::Create(img)) => {
             // find out the size and kind of the image
 
             let raw_dim = img.size_mode.absolute(context.reference_size);
@@ -633,7 +781,7 @@ unsafe fn create_resource(
 
             Some(())
         }
-        ResourceCreateInfo::Extern => {
+        ResourceCreateInfo::Virtual => {
             // External resources don't really "exist", they are just markers, so nothing to do here
             Some(())
         }
@@ -656,7 +804,7 @@ unsafe fn create_pipeline_base<'a>(
         let reads = resolved.pass_reads[&pass]
             .iter()
             .filter(|(_id, _ty, _, _)| match _ty {
-                ResourceReadType::External => false,
+                ResourceReadType::Virtual => false,
                 ResourceReadType::Image(ImageReadType::DepthStencil) => false,
                 ResourceReadType::Image(_) => true,
                 ResourceReadType::Buffer(_) => true,
@@ -741,7 +889,7 @@ unsafe fn create_pipeline_base<'a>(
                                 }
                             }
                         }
-                        ResourceReadType::External => unreachable!(),
+                        ResourceReadType::Virtual => unreachable!(),
                     },
                     count: 1,
                     stage_flags: gfx::pso::ShaderStageFlags::ALL,
@@ -776,7 +924,7 @@ unsafe fn create_pipeline_base<'a>(
                                 }
                             }
                         }
-                        ResourceReadType::External => unreachable!(),
+                        ResourceReadType::Virtual => unreachable!(),
                     },
                     count: 1,
                 }

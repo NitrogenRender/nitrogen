@@ -15,12 +15,45 @@ pub struct CanvasSize(pub f32, pub f32);
 pub trait UserData: Sized {
     fn iteration(&mut self, _store: &mut graph::Store, _delta: f64) {}
 
-    fn graph(&self) -> graph::GraphHandle;
+    unsafe fn execute(
+        &mut self,
+        store: &mut graph::Store,
+        ctx: &mut Context,
+        submit: &mut SubmitGroup,
+        context: &graph::ExecutionContext,
+        display: DisplayHandle,
+    ) -> Option<()> {
+        let graph = self.graph()?;
+        let image_name = self.output_image()?;
 
-    fn output_image(&self) -> graph::ResourceName;
+        let mut backbuffer = graph::Backbuffer::new();
+
+        if let Err(err) = ctx.graph_compile(graph, &mut backbuffer, store) {
+            println!("{:?}", err);
+            return None;
+        }
+
+        submit.graph_execute(ctx, &mut backbuffer, graph, store, context);
+
+        submit.backbuffer_destroy(ctx, backbuffer);
+
+        let image = submit.graph_get_image(ctx, graph, image_name)?;
+
+        submit.display_present(ctx, display, image);
+
+        Some(())
+    }
+
+    fn graph(&self) -> Option<graph::GraphHandle> {
+        None
+    }
+
+    fn output_image(&self) -> Option<graph::ResourceName> {
+        None
+    }
 
     fn release(self, ctx: &mut Context, submit: &mut SubmitGroup) {
-        submit.graph_destroy(ctx, &[self.graph()]);
+        submit.graph_destroy(ctx, self.graph());
     }
 }
 
@@ -69,9 +102,7 @@ impl<U: UserData> MainLoop<U> {
 
         let mut submits = vec![
             ctx.create_submit_group(),
-            ctx.create_submit_group(),
-            ctx.create_submit_group(),
-            ctx.create_submit_group(),
+            // ctx.create_submit_group(),
         ];
 
         let user_data = match f(&mut store, &mut ctx, &mut submits[0]) {
@@ -163,21 +194,15 @@ impl<U: UserData> MainLoop<U> {
             reference_size: (self.size.0 as u32, self.size.1 as u32),
         };
 
-        // execute graph
-        {
-            let graph = self.user_data.graph();
-            let image = self.user_data.output_image();
+        // execute
 
-            if let Err(err) = self.ctx.graph_compile(graph) {
-                println!("{:?}", err);
-            }
-
-            submit.graph_execute(&mut self.ctx, graph, &mut self.store, &context);
-
-            let image = submit.graph_get_image(&self.ctx, graph, image).unwrap();
-
-            submit.display_present(&mut self.ctx, self.display, image);
-        }
+        self.user_data.execute(
+            &mut self.store,
+            &mut self.ctx,
+            submit,
+            &context,
+            self.display,
+        );
 
         self.submit_idx = (self.submit_idx + 1) % self.submits.len();
     }

@@ -161,6 +161,7 @@ impl SubmitGroup {
     pub unsafe fn graph_execute(
         &mut self,
         ctx: &mut Context,
+        backbuffer: &mut graph::Backbuffer,
         graph: graph::GraphHandle,
         store: &graph::Store,
         exec_context: &graph::ExecutionContext,
@@ -187,12 +188,14 @@ impl SubmitGroup {
             &mut storages,
             store,
             graph,
+            backbuffer,
             res,
             exec_context,
         ) {
             self.graph_resources.insert(graph, res);
         } else {
-            println!("Weeeeeird!!");
+            self.graph_resources.remove(&graph);
+            backbuffer.clear(&mut storages, &mut self.res_destroys);
         }
     }
 
@@ -235,6 +238,11 @@ impl SubmitGroup {
 
         let res = self.graph_resources.get(&graph)?;
         res.images.get(&id).cloned()
+    }
+
+    pub fn backbuffer_destroy(&mut self, ctx: &mut Context, backbuffer: graph::Backbuffer) {
+        ctx.image_storage
+            .destroy(&mut self.res_destroys, backbuffer.images.values())
     }
 
     pub unsafe fn image_upload_data(

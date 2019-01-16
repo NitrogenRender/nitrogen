@@ -9,11 +9,12 @@ use gfx::buffer::Usage as BUsage;
 use gfx::image::Usage as IUsage;
 
 use crate::graph::{
-    BufferReadType, BufferWriteType, ImageReadType, ImageWriteType, ResourceCreateInfo,
+    BufferReadType, BufferWriteType, ImageInfo, ImageReadType, ImageWriteType, ResourceCreateInfo,
     ResourceReadType, ResourceWriteType,
 };
 
 pub(crate) fn derive_resource_usage(
+    backbuffer_usage: &BackbufferUsage,
     exec: &ExecutionGraph,
     resolved: &GraphResourcesResolved,
     outputs: &[ResourceId],
@@ -21,7 +22,7 @@ pub(crate) fn derive_resource_usage(
     let mut usages = ResourceUsages::default();
 
     for batch in &exec.pass_execution {
-        derive_batch(batch, resolved, &mut usages);
+        derive_batch(backbuffer_usage, batch, resolved, &mut usages);
     }
 
     // outputs have to be readable somehow
@@ -43,6 +44,7 @@ pub(crate) fn derive_resource_usage(
 }
 
 fn derive_batch(
+    backbuffer_usage: &BackbufferUsage,
     batch: &ExecutionBatch,
     resolved: &GraphResourcesResolved,
     usages: &mut ResourceUsages,
@@ -57,13 +59,27 @@ fn derive_batch(
 
                 usages.buffer.insert(*create, usage);
             }
-            ResourceCreateInfo::Image(img) => {
+            ResourceCreateInfo::Image(ImageInfo::Create(img)) => {
                 let format = img.format.into();
                 let usage = IUsage::empty();
 
                 usages.image.insert(*create, (usage, format));
             }
-            ResourceCreateInfo::Extern => {
+            ResourceCreateInfo::Image(ImageInfo::BackbufferCreate(_, img, usage)) => {
+                let format = img.format.into();
+                let usage = *usage;
+
+                usages.image.insert(*create, (usage, format));
+            }
+            ResourceCreateInfo::Image(ImageInfo::BackbufferRead(n)) => {
+                // we don't really care about this, as all backbuffer resources have
+                // explicit usages
+                let format = backbuffer_usage.images[n].clone();
+                usages
+                    .image
+                    .insert(*create, (gfx::image::Usage::empty(), format));
+            }
+            ResourceCreateInfo::Virtual => {
                 // nothing to do here as we are not concerned with how external resources are
                 // constructed
             }
@@ -166,7 +182,7 @@ fn derive_pass(
 
                 usages.image.insert(origin, (usage, format));
             }
-            ResourceReadType::External => {
+            ResourceReadType::Virtual => {
                 // Nothing to do ...
             }
         }
@@ -193,7 +209,10 @@ fn derive_pass(
                 usages.buffer.insert(origin, usage);
             }
             ResourceWriteType::Image(img) => {
-                let (mut usage, format) = usages.image[&origin].clone();
+                let (mut usage, format) = match usages.image.get(&origin) {
+                    Some(stuff) => stuff,
+                    None => continue,
+                };
 
                 match img {
                     ImageWriteType::Color => {
@@ -207,7 +226,7 @@ fn derive_pass(
                     }
                 }
 
-                usages.image.insert(origin, (usage, format));
+                usages.image.insert(origin, (usage, *format));
             }
         }
     }
