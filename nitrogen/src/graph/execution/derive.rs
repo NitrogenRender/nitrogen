@@ -19,11 +19,15 @@ pub(crate) fn derive_resource_usage(
     resolved: &GraphResourcesResolved,
     outputs: &[ResourceId],
 ) -> ResourceUsages {
+    println!("{:?}", resolved.name_lookup);
+
     let mut usages = ResourceUsages::default();
 
     for batch in &exec.pass_execution {
         derive_batch(backbuffer_usage, batch, resolved, &mut usages);
     }
+
+    println!("outputs: {:?}", outputs);
 
     // outputs have to be readable somehow
     outputs

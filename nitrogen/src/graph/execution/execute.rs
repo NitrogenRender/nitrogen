@@ -62,112 +62,20 @@ pub(crate) unsafe fn execute(
                 if let Some(set) = set_raw {
                     let reads = resolved_graph.pass_reads[pass]
                         .iter()
-                        .map(|(rid, ty, binding, samp)| match ty {
-                            ResourceReadType::Image(img) => {
-                                let img_handle = &res.images[rid];
-                                let image = storages.image.raw(*img_handle).unwrap();
+                        .map(|(rid, ty, binding, samp)| {
+                            let rid = &resolved_graph.moved_from(*rid).unwrap();
+                            match ty {
+                                ResourceReadType::Image(img) => {
+                                    let img_handle = &res.images[rid];
+                                    let image = storages.image.raw(*img_handle).unwrap();
 
-                                match img {
-                                    ImageReadType::Color => {
-                                        let samp_handle = &res.samplers[rid];
-                                        let sampler = storages.sampler.raw(*samp_handle).unwrap();
-
-                                        let img_desc = gfx::pso::DescriptorSetWrite {
-                                            set,
-                                            binding: (*binding) as u32,
-                                            array_offset: 0,
-                                            descriptors: std::iter::once(
-                                                gfx::pso::Descriptor::Image(
-                                                    &image.view,
-                                                    gfx::image::Layout::General,
-                                                ),
-                                            ),
-                                        };
-
-                                        let sampler_desc = gfx::pso::DescriptorSetWrite {
-                                            set,
-                                            binding: samp.clone().unwrap() as u32,
-                                            array_offset: 0,
-                                            descriptors: std::iter::once(
-                                                gfx::pso::Descriptor::Sampler(sampler),
-                                            ),
-                                        };
-
-                                        let mut vec = SmallVec::<[_; 2]>::new();
-                                        vec.push(img_desc);
-                                        vec.push(sampler_desc);
-
-                                        vec
-                                    }
-                                    ImageReadType::Storage => {
-                                        let desc = gfx::pso::DescriptorSetWrite {
-                                            set,
-                                            binding: (*binding) as u32,
-                                            array_offset: 0,
-                                            descriptors: std::iter::once(
-                                                gfx::pso::Descriptor::Image(
-                                                    &image.view,
-                                                    gfx::image::Layout::General,
-                                                ),
-                                            ),
-                                        };
-
-                                        let mut res: SmallVec<[_; 2]> = SmallVec::new();
-                                        res.push(desc);
-
-                                        res
-                                    }
-                                    ImageReadType::DepthStencil => {
-                                        // this is a not a "real" read type
-                                        SmallVec::new()
-                                    }
-                                }
-                            }
-                            ResourceReadType::Buffer(_buf) => unimplemented!(),
-                            ResourceReadType::Virtual => {
-                                // Nothing to do...
-                                SmallVec::new()
-                            }
-                        })
-                        .flatten();
-
-                    device.device.write_descriptor_sets(reads);
-
-                    let writes =
-                        resolved_graph.pass_writes[pass]
-                            .iter()
-                            .filter_map(|(rid, ty, binding)| match ty {
-                                ResourceWriteType::Buffer(buf) => {
-                                    let buf_handle = &res.buffers[rid];
-                                    let buffer = storages.buffer.raw(*buf_handle).unwrap();
-                                    match buf {
-                                        BufferWriteType::Storage => {
-                                            Some(gfx::pso::DescriptorSetWrite {
-                                                set,
-                                                binding: (*binding) as u32,
-                                                array_offset: 0,
-                                                descriptors: std::iter::once(
-                                                    gfx::pso::Descriptor::Buffer(
-                                                        buffer.buffer.raw(),
-                                                        None..None,
-                                                    ),
-                                                ),
-                                            })
-                                        }
-                                        _ => unimplemented!(),
-                                    }
-                                }
-                                ResourceWriteType::Image(img) => {
                                     match img {
-                                        // those two use render pass attachments, not descriptor sets
-                                        ImageWriteType::Color | ImageWriteType::DepthStencil => {
-                                            None
-                                        }
-                                        ImageWriteType::Storage => {
-                                            let img_handle = res.images[rid];
-                                            let image = storages.image.raw(img_handle).unwrap();
+                                        ImageReadType::Color => {
+                                            let samp_handle = &res.samplers[rid];
+                                            let sampler =
+                                                storages.sampler.raw(*samp_handle).unwrap();
 
-                                            Some(gfx::pso::DescriptorSetWrite {
+                                            let img_desc = gfx::pso::DescriptorSetWrite {
                                                 set,
                                                 binding: (*binding) as u32,
                                                 array_offset: 0,
@@ -177,7 +85,105 @@ pub(crate) unsafe fn execute(
                                                         gfx::image::Layout::General,
                                                     ),
                                                 ),
-                                            })
+                                            };
+
+                                            let sampler_desc = gfx::pso::DescriptorSetWrite {
+                                                set,
+                                                binding: samp.clone().unwrap() as u32,
+                                                array_offset: 0,
+                                                descriptors: std::iter::once(
+                                                    gfx::pso::Descriptor::Sampler(sampler),
+                                                ),
+                                            };
+
+                                            let mut vec = SmallVec::<[_; 2]>::new();
+                                            vec.push(img_desc);
+                                            vec.push(sampler_desc);
+
+                                            vec
+                                        }
+                                        ImageReadType::Storage => {
+                                            let desc = gfx::pso::DescriptorSetWrite {
+                                                set,
+                                                binding: (*binding) as u32,
+                                                array_offset: 0,
+                                                descriptors: std::iter::once(
+                                                    gfx::pso::Descriptor::Image(
+                                                        &image.view,
+                                                        gfx::image::Layout::General,
+                                                    ),
+                                                ),
+                                            };
+
+                                            let mut res: SmallVec<[_; 2]> = SmallVec::new();
+                                            res.push(desc);
+
+                                            res
+                                        }
+                                        ImageReadType::DepthStencil => {
+                                            // this is a not a "real" read type
+                                            SmallVec::new()
+                                        }
+                                    }
+                                }
+                                ResourceReadType::Buffer(_buf) => unimplemented!(),
+                                ResourceReadType::Virtual => {
+                                    // Nothing to do...
+                                    SmallVec::new()
+                                }
+                            }
+                        })
+                        .flatten();
+
+                    device.device.write_descriptor_sets(reads);
+
+                    let writes =
+                        resolved_graph.pass_writes[pass]
+                            .iter()
+                            .filter_map(|(rid, ty, binding)| {
+                                let rid = &resolved_graph.moved_from(*rid)?;
+                                match ty {
+                                    ResourceWriteType::Buffer(buf) => {
+                                        let buf_handle = &res.buffers[rid];
+                                        let buffer = storages.buffer.raw(*buf_handle).unwrap();
+                                        match buf {
+                                            BufferWriteType::Storage => {
+                                                Some(gfx::pso::DescriptorSetWrite {
+                                                    set,
+                                                    binding: (*binding) as u32,
+                                                    array_offset: 0,
+                                                    descriptors: std::iter::once(
+                                                        gfx::pso::Descriptor::Buffer(
+                                                            buffer.buffer.raw(),
+                                                            None..None,
+                                                        ),
+                                                    ),
+                                                })
+                                            }
+                                            _ => unimplemented!(),
+                                        }
+                                    }
+                                    ResourceWriteType::Image(img) => {
+                                        match img {
+                                            // those two use render pass attachments, not descriptor sets
+                                            ImageWriteType::Color
+                                            | ImageWriteType::DepthStencil => None,
+                                            ImageWriteType::Storage => {
+                                                let img_handle = res.images[rid];
+                                                let image = storages.image.raw(img_handle).unwrap();
+
+                                                Some(gfx::pso::DescriptorSetWrite {
+                                                    set,
+                                                    binding: (*binding) as u32,
+                                                    array_offset: 0,
+                                                    descriptors: std::iter::once(
+                                                        gfx::pso::Descriptor::Image(
+                                                            &image.view,
+                                                            gfx::image::Layout::General,
+                                                        ),
+                                                    ),
+                                                })
+                                            }
                                         }
                                     }
                                 }

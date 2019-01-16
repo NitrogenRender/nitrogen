@@ -107,7 +107,7 @@ impl ml::UserData for Data {
         submit.graph_execute(ctx, backbuffer, self.graph_post, store, context);
 
         let img = submit
-            .graph_get_image(ctx, self.graph_post, "Emissive")
+            .graph_get_image(ctx, self.graph_post, "Combined")
             .unwrap();
 
         // let img = backbuffer.image_get("Canvas")?;
@@ -135,7 +135,7 @@ fn init(
 
         elements.push(CanvasElement {
             size: (200.0, 150.0),
-            color: [5.0, 0.0, 0.0, 1.0],
+            color: [1.0, 0.0, 0.0, 1.0],
             transform: Transform2d {
                 rotation: cgmath::Rad(0.0),
                 scale: cgmath::Vector2::new(1.0, 1.0),
@@ -280,7 +280,106 @@ fn setup_graph_post(ctx: &mut nit::Context) -> graph::GraphHandle {
         ctx.graph_add_compute_pass(graph, "Separate", info, PassImpl);
     }
 
-    ctx.graph_add_output(graph, "Emissive");
+    // blur pass
+    {
+        let info = graph::ComputePassInfo {
+            // 0..1 bool vertical
+            push_constants: vec![(0..1)],
+            materials: vec![],
+            shader: graph::ShaderInfo {
+                entry: "ComputeMain".into(),
+                content: std::borrow::Cow::Borrowed(include_bytes!(concat!(
+                    env!("OUT_DIR"),
+                    "/multi-graph/post_blur.hlsl.comp.spirv",
+                ))),
+            },
+        };
+
+        struct PassImpl;
+
+        impl graph::ComputePassImpl for PassImpl {
+            fn setup(&mut self, store: &mut graph::Store, builder: &mut graph::GraphBuilder) {
+                builder.image_move("Emissive", "Blurred");
+
+                builder.image_write_storage("Blurred", 0);
+
+                builder.enable();
+            }
+
+            fn execute(&self, store: &graph::Store, cmd: &mut graph::ComputeCommandBuffer) {
+                let ml::CanvasSize(w, h) = store.get().unwrap();
+
+                for i in 0..5 {
+                    // first do horizontal
+                    unsafe {
+                        cmd.push_constant(0, 0u32);
+                        cmd.dispatch([*w as u32, *h as u32, 1]);
+                    }
+
+                    // then do vertical
+                    unsafe {
+                        cmd.push_constant(0, 1u32);
+                        cmd.dispatch([*w as u32, *h as u32, 1]);
+                    }
+                }
+            }
+        }
+
+        ctx.graph_add_compute_pass(graph, "Blurring", info, PassImpl);
+    }
+
+    // combine pass
+    {
+        let info = graph::ComputePassInfo {
+            push_constants: vec![],
+            materials: vec![],
+            shader: graph::ShaderInfo {
+                entry: "ComputeMain".into(),
+                content: std::borrow::Cow::Borrowed(include_bytes!(concat!(
+                    env!("OUT_DIR"),
+                    "/multi-graph/post_combine.hlsl.comp.spirv",
+                ))),
+            },
+        };
+
+        struct PassImpl;
+
+        impl graph::ComputePassImpl for PassImpl {
+            fn setup(&mut self, store: &mut graph::Store, builder: &mut graph::GraphBuilder) {
+                builder.image_create(
+                    "Combined",
+                    graph::ImageCreateInfo {
+                        format: nit::image::ImageFormat::Rgba32Float,
+                        size_mode: nit::image::ImageSizeMode::ContextRelative {
+                            width: 1.0,
+                            height: 1.0,
+                        },
+                    },
+                );
+
+                builder.image_write_storage("Combined", 0);
+
+                builder.image_backbuffer_get("Canvas", "Raw");
+
+                builder.image_read_color("Raw", 1, 2);
+                builder.image_read_storage("Blurred", 3);
+
+                builder.enable();
+            }
+
+            fn execute(&self, store: &graph::Store, cmd: &mut graph::ComputeCommandBuffer) {
+                let ml::CanvasSize(w, h) = store.get().unwrap();
+
+                unsafe {
+                    cmd.dispatch([*w as u32, *h as u32, 1]);
+                }
+            }
+        }
+
+        ctx.graph_add_compute_pass(graph, "Combine", info, PassImpl);
+    }
+
+    ctx.graph_add_output(graph, "Combined");
 
     graph
 }
