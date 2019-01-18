@@ -426,7 +426,6 @@ impl Material {
 
     unsafe fn free_instance(&mut self, handle: Handle<MaterialInstance>) -> Option<()> {
         use gfx::pso::DescriptorPool;
-        use std;
 
         let instance = self.instances.remove(handle)?;
 

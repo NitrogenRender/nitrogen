@@ -11,6 +11,7 @@ use std::ops::{Index, IndexMut};
 pub type Generation = u64;
 pub type Id = usize;
 
+#[repr(C)]
 pub struct Handle<T>(pub Id, pub Generation, PhantomData<T>);
 
 // huh. Derive doesn't work here because Rust can't prove that `T` is Copy.
@@ -55,7 +56,7 @@ impl<T> Handle<T> {
 }
 
 #[derive(Debug)]
-pub(crate) struct Storage<T> {
+pub struct Storage<T> {
     pub generations: Vec<Generation>,
     pub entries: Slab<T>,
 }
@@ -83,14 +84,14 @@ impl<T> IndexMut<Handle<T>> for Storage<T> {
 }
 
 impl<T> Storage<T> {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             generations: vec![],
             entries: Slab::new(),
         }
     }
 
-    pub(crate) fn insert(&mut self, data: T) -> Handle<T> {
+    pub fn insert(&mut self, data: T) -> Handle<T> {
         let (entry, handle) = {
             let entry = self.entries.vacant_entry();
             let key = entry.key();
@@ -111,7 +112,7 @@ impl<T> Storage<T> {
         handle
     }
 
-    pub(crate) fn is_alive(&self, handle: Handle<T>) -> bool {
+    pub fn is_alive(&self, handle: Handle<T>) -> bool {
         let storage_size_enough = self.generations.len() > handle.id();
 
         if storage_size_enough {
@@ -122,7 +123,7 @@ impl<T> Storage<T> {
         }
     }
 
-    pub(crate) fn remove(&mut self, handle: Handle<T>) -> Option<T> {
+    pub fn remove(&mut self, handle: Handle<T>) -> Option<T> {
         if self.is_alive(handle) {
             let data = self.entries.remove(handle.id());
             self.generations[handle.id()] += 1;
@@ -132,7 +133,7 @@ impl<T> Storage<T> {
         }
     }
 
-    pub(crate) fn get(&self, handle: Handle<T>) -> Option<&T> {
+    pub fn get(&self, handle: Handle<T>) -> Option<&T> {
         if self.is_alive(handle) {
             self.entries.get(handle.id())
         } else {
@@ -140,7 +141,7 @@ impl<T> Storage<T> {
         }
     }
 
-    pub(crate) fn get_mut(&mut self, handle: Handle<T>) -> Option<&mut T> {
+    pub fn get_mut(&mut self, handle: Handle<T>) -> Option<&mut T> {
         if self.is_alive(handle) {
             self.entries.get_mut(handle.id())
         } else {
@@ -151,7 +152,7 @@ impl<T> Storage<T> {
 
 use std::iter::IntoIterator;
 
-pub(crate) struct StorageIter<T> {
+pub struct StorageIter<T> {
     storage: Storage<T>,
     index: usize,
 }
