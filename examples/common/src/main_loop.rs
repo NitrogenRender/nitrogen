@@ -72,6 +72,9 @@ pub struct MainLoop<U: UserData> {
 
     last_iter: Instant,
 
+    total_frame_time: f64,
+    total_frame_count: u128,
+
     running: bool,
     size: (f32, f32),
 }
@@ -134,6 +137,9 @@ impl<U: UserData> MainLoop<U> {
 
             last_iter: instant,
 
+            total_frame_count: 0,
+            total_frame_time: 0.0,
+
             submits,
             submit_idx: 0,
         })
@@ -188,6 +194,9 @@ impl<U: UserData> MainLoop<U> {
             secs + subsecs
         };
 
+        self.total_frame_time += delta;
+        self.total_frame_count += 1;
+
         self.user_data.iteration(&mut self.store, delta);
 
         let context = graph::ExecutionContext {
@@ -208,6 +217,11 @@ impl<U: UserData> MainLoop<U> {
     }
 
     pub unsafe fn release(mut self) {
+
+        println!("frame time: {}", self.total_frame_time);
+        println!("num frames: {}", self.total_frame_count);
+        println!("average FPS: {}", 1.0 / (self.total_frame_time / (self.total_frame_count as f64)));
+
         for submit_group in &mut self.submits {
             submit_group.wait(&mut self.ctx);
         }
