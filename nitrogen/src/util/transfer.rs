@@ -73,7 +73,7 @@ pub(crate) unsafe fn copy_buffers<'a, T>(
             );
 
             let exit_barrier = gfx::memory::Barrier::Buffer {
-                states: Access::TRANSFER_WRITE..Access::SHADER_READ,
+                states: Access::TRANSFER_WRITE..Access::empty(),
                 families: None,
                 target: buffer_transfer.dst.raw(),
                 range: None..None,
