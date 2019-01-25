@@ -144,14 +144,18 @@ pub(crate) struct BufferStorage {
     device_local: BTreeSet<usize>,
 
     buffers: Storage<Buffer>,
+
+    atom_size: usize,
 }
 
 impl BufferStorage {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(atom_size: usize) -> Self {
         BufferStorage {
             cpu_visible: BTreeSet::new(),
             device_local: BTreeSet::new(),
             buffers: Storage::new(),
+
+            atom_size,
         }
     }
 
@@ -190,13 +194,23 @@ impl BufferStorage {
             let props = Properties::CPU_VISIBLE | Properties::COHERENT;
             let usage = create_info.usage.clone().into();
 
+            // size should be a multiple of the non-coherent-atom-size
+            let size = {
+                let inv_pad = create_info.size % (self.atom_size as u64);
+                if inv_pad != 0 {
+                    create_info.size + (self.atom_size as u64 - inv_pad)
+                } else {
+                    create_info.size
+                }
+            };
+
             let req = BufferRequest {
                 transient: create_info.is_transient,
                 // TODO handle mapping??
                 persistently_mappable: false,
                 properties: props,
                 usage,
-                size: create_info.size,
+                size,
             };
 
             let raw_buffer = match allocator.create_buffer(&device.device, req) {
@@ -208,7 +222,7 @@ impl BufferStorage {
             };
 
             let buffer = Buffer {
-                size: create_info.size,
+                size,
                 buffer: raw_buffer,
                 _properties: props,
                 _usage: usage,
@@ -307,13 +321,23 @@ impl BufferStorage {
             let props = Properties::DEVICE_LOCAL;
             let usage = create_info.usage.clone().into();
 
+            // size should be a multiple of the non-coherent-atom-size
+            let size = {
+                let inv_pad = create_info.size % (self.atom_size as u64);
+                if inv_pad != 0 {
+                    create_info.size + (self.atom_size as u64 - inv_pad)
+                } else {
+                    create_info.size
+                }
+            };
+
             let req = BufferRequest {
                 transient: create_info.is_transient,
                 // TODO handle mapping
                 persistently_mappable: false,
                 properties: props,
                 usage,
-                size: create_info.size,
+                size,
             };
 
             let raw_buffer = match allocator.create_buffer(&device.device, req) {
@@ -325,7 +349,7 @@ impl BufferStorage {
             };
 
             let buffer = Buffer {
-                size: create_info.size,
+                size,
                 buffer: raw_buffer,
                 _properties: props,
                 _usage: usage,

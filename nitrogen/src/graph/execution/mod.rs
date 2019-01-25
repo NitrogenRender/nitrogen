@@ -139,6 +139,10 @@ impl Backbuffer {
     pub fn image_get<T: Into<super::ResourceName>>(&self, name: T) -> Option<ImageHandle> {
         self.images.get(&name.into()).cloned()
     }
+
+    pub fn image_put<T: Into<super::ResourceName>>(&mut self, name: T, image: ImageHandle) {
+        self.images.insert(name.into(), image);
+    }
 }
 
 #[derive(Debug)]

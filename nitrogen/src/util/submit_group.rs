@@ -158,6 +158,82 @@ impl SubmitGroup {
         ctx.displays[display].setup_swapchain(&ctx.device_ctx, &mut self.res_destroys);
     }
 
+    pub unsafe fn clear_image(
+        &mut self,
+        ctx: &mut Context,
+        image: image::ImageHandle,
+        clear: graph::ImageClearValue,
+    ) -> Option<()> {
+        use graph::ImageClearValue;
+
+        let mut cmd = self.pool_graphics.alloc();
+
+        let img = ctx.image_storage.raw(image)?;
+
+        let entry_barrier = gfx::memory::Barrier::Image {
+            states: (gfx::image::Access::empty(), gfx::image::Layout::Undefined)
+                ..(
+                    gfx::image::Access::TRANSFER_WRITE,
+                    gfx::image::Layout::TransferDstOptimal,
+                ),
+            target: img.image.raw(),
+            families: None,
+            range: gfx::image::SubresourceRange {
+                aspects: img.aspect,
+                levels: 0..1,
+                layers: 0..1,
+            },
+        };
+
+        cmd.pipeline_barrier(
+            gfx::pso::PipelineStage::TOP_OF_PIPE..gfx::pso::PipelineStage::TRANSFER,
+            gfx::memory::Dependencies::empty(),
+            &[entry_barrier],
+        );
+
+        cmd.clear_image(
+            img.image.raw(),
+            gfx::image::Layout::TransferDstOptimal,
+            match clear {
+                ImageClearValue::Color(color) => gfx::command::ClearColor::Float(color),
+                _ => gfx::command::ClearColor::Float([0.0; 4]),
+            },
+            match clear {
+                ImageClearValue::DepthStencil(depth, stencil) => {
+                    gfx::command::ClearDepthStencil(depth, stencil)
+                }
+                _ => gfx::command::ClearDepthStencil(1.0, 0),
+            },
+            &[gfx::image::SubresourceRange {
+                aspects: img.aspect,
+                levels: 0..1,
+                layers: 0..1,
+            }],
+        );
+
+        let exit_barrier = gfx::memory::Barrier::Image {
+            states: (
+                gfx::image::Access::TRANSFER_WRITE,
+                gfx::image::Layout::TransferDstOptimal,
+            )..(gfx::image::Access::empty(), gfx::image::Layout::General),
+            target: img.image.raw(),
+            families: None,
+            range: gfx::image::SubresourceRange {
+                aspects: img.aspect,
+                levels: 0..1,
+                layers: 0..1,
+            },
+        };
+
+        cmd.pipeline_barrier(
+            gfx::pso::PipelineStage::TRANSFER..gfx::pso::PipelineStage::BOTTOM_OF_PIPE,
+            gfx::memory::Dependencies::empty(),
+            &[exit_barrier],
+        );
+
+        Some(())
+    }
+
     pub unsafe fn graph_execute(
         &mut self,
         ctx: &mut Context,

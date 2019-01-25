@@ -133,12 +133,20 @@ impl Context {
     /// The `name` and `version` fields are passed down to the graphics driver. They don't have any
     /// special meaning attached to them (as far as I know)
     pub unsafe fn new(name: &str, version: u32) -> Self {
+        use gfx::adapter::PhysicalDevice;
+
         let instance = back::Instance::create(name, version);
         let device_ctx = Arc::new(DeviceContext::new(&instance));
 
+        let memory_atom_size = device_ctx
+            .adapter
+            .physical_device
+            .limits()
+            .non_coherent_atom_size;
+
         let image_storage = image::ImageStorage::new();
         let sampler_storage = sampler::SamplerStorage::new();
-        let buffer_storage = buffer::BufferStorage::new();
+        let buffer_storage = buffer::BufferStorage::new(memory_atom_size);
         let vertex_attrib_storage = vertex_attrib::VertexAttribStorage::new();
         let pipeline_storage = pipeline::PipelineStorage::new();
         let render_pass_storage = render_pass::RenderPassStorage::new();
