@@ -287,8 +287,19 @@ mod alloc_gfxm {
 
             let prop = request.properties;
 
+            let padding = {
+                let modulus = request.size % (self.atom_size as u64);
+                if modulus != 0 {
+                    (self.atom_size as u64) - modulus
+                } else {
+                    0
+                }
+            };
+
+            let size = request.size + padding;
+
             let reqs = gfx::memory::Requirements {
-                size: request.size,
+                size,
                 alignment: request.alignment.max(self.atom_size as u64),
                 type_mask: request.type_mask,
             };

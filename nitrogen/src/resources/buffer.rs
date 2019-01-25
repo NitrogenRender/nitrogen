@@ -533,8 +533,6 @@ unsafe fn write_data_to_buffer(
 
     let range = buffer.block().range();
 
-    dbg!(range.clone());
-
     let mut writer = device
         .device
         .acquire_mapping_writer(buffer.block().memory(), range)?;
