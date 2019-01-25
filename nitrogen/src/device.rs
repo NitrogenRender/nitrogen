@@ -98,7 +98,10 @@ impl DeviceContext {
             .collect();
 
         let memory_properties = adapter.physical_device.memory_properties();
-        let memory_allocator = DefaultAlloc::new(&device, memory_properties);
+
+        let coherent_atom_size = adapter.physical_device.limits().non_coherent_atom_size;
+
+        let memory_allocator = DefaultAlloc::new(&device, memory_properties, coherent_atom_size);
 
         DeviceContext {
             memory_allocator: Mutex::new(memory_allocator),

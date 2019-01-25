@@ -243,10 +243,11 @@ mod alloc_gfxm {
     #[derive(Debug)]
     pub(crate) struct AllocatorGfxm {
         alloc: SmartAllocator<back::Backend>,
+        atom_size: usize,
     }
 
     fn gfxm_err_to_alloc_err(err: gfx_memory::MemoryError) -> AllocationError {
-        println!("Encountered an error! {:?}", err);
+        eprintln!("Encountered an error! {:?}", err);
 
         use gfx_memory::MemoryError;
         match err {
@@ -260,9 +261,13 @@ mod alloc_gfxm {
         pub(crate) unsafe fn new(
             _device: &back::Device,
             props: gfx::adapter::MemoryProperties,
+            non_coherent_atom_size: usize,
         ) -> Self {
             let alloc = SmartAllocator::new(props, 256, 64, 1024, 256 * 1024 * 1024);
-            Self { alloc }
+            Self {
+                alloc,
+                atom_size: non_coherent_atom_size,
+            }
         }
     }
 
@@ -284,7 +289,7 @@ mod alloc_gfxm {
 
             let reqs = gfx::memory::Requirements {
                 size: request.size,
-                alignment: request.alignment,
+                alignment: request.alignment.max(self.atom_size as u64),
                 type_mask: request.type_mask,
             };
 
@@ -301,7 +306,10 @@ mod alloc_gfxm {
         }
 
         unsafe fn dispose(self, device: &back::Device) -> Result<(), Self> {
-            self.alloc.dispose(device).map_err(|alloc| Self { alloc })
+            let atom_size = self.atom_size;
+            self.alloc
+                .dispose(device)
+                .map_err(|alloc| Self { alloc, atom_size })
         }
     }
 
@@ -333,6 +341,16 @@ mod alloc_empty {
 
     #[derive(Debug)]
     pub(crate) struct AllocatorEmpty;
+
+    impl AllocatorEmpty {
+        pub(crate) unsafe fn new(
+            _device: &back::Device,
+            _props: gfx::adapter::MemoryProperties,
+            _non_coherent_atom_size: usize,
+        ) -> Self {
+            AllocatorEmpty
+        }
+    }
 
     impl Allocator for AllocatorEmpty {
         type Block = BlockEmpty;
