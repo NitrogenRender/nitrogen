@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use derive_more::{Display, From};
 use bitflags::bitflags;
-use failure_derive::Fail;
 
 use std;
 use std::borrow::Borrow;
@@ -35,35 +35,25 @@ pub type BufferHandle = Handle<Buffer>;
 
 pub type Result<T> = std::result::Result<T, BufferError>;
 
-#[derive(Debug, Fail, Clone)]
+#[derive(Debug, Display, From, Clone)]
 pub enum BufferError {
-    #[fail(display = "The specified buffer handle was invalid")]
+    #[display(fmt = "The specified buffer handle was invalid")]
     HandleInvalid,
 
-    #[fail(display = "Failed to allocate buffer")]
-    CantCreate(#[cause] AllocatorError),
+    #[display(fmt = "Failed to allocate buffer")]
+    CantCreate(AllocatorError),
 
-    #[fail(display = "Failed to map the memory of the buffer")]
-    MappingError(#[cause] gfx::mapping::Error),
+    #[display(fmt = "Failed to map the memory of the buffer")]
+    MappingError(gfx::mapping::Error),
 
-    #[fail(display = "The provided data and offset would cause a buffer overflow")]
+    #[display(fmt = "The provided data and offset would cause a buffer overflow")]
     UploadOutOfBounds,
 
-    #[fail(display = "The buffer could not be written to (not CPU visible and not TRANSFER_DST)")]
+    #[display(fmt = "The buffer could not be written to (not CPU visible and not TRANSFER_DST)")]
     CantWriteToBuffer,
 }
 
-impl From<AllocatorError> for BufferError {
-    fn from(error: AllocatorError) -> Self {
-        BufferError::CantCreate(error)
-    }
-}
-
-impl From<gfx::mapping::Error> for BufferError {
-    fn from(error: gfx::mapping::Error) -> Self {
-        BufferError::MappingError(error)
-    }
-}
+impl std::error::Error for BufferError {}
 
 bitflags!(
 

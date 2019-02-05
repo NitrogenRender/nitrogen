@@ -20,37 +20,23 @@ use gfx::pso;
 use gfx::Device;
 
 use std::collections::BTreeMap;
+use std::error::Error;
 
-use failure_derive::Fail;
+use derive_more::{Display, From};
 
-#[derive(Clone, Debug, Fail)]
+#[derive(Clone, Debug, From, Display)]
 pub enum PipelineError {
-    #[fail(display = "Creation of pipeline was unsuccessful")]
-    CreationError(#[cause] gfx::pso::CreationError),
+    #[display(fmt = "Creation of pipeline was unsuccessful")]
+    CreationError(gfx::pso::CreationError),
 
-    #[fail(display = "Shader module could not be created")]
-    ShaderError(#[cause] gfx::device::ShaderError),
+    #[display(fmt = "Shader module could not be created")]
+    ShaderError(gfx::device::ShaderError),
 
-    #[fail(display = "Ran out of memory")]
-    OutOfMemory(#[cause] gfx::device::OutOfMemory),
+    #[display(fmt = "Ran out of memory")]
+    OutOfMemory(gfx::device::OutOfMemory),
 }
 
-impl From<gfx::pso::CreationError> for PipelineError {
-    fn from(err: gfx::pso::CreationError) -> Self {
-        PipelineError::CreationError(err)
-    }
-}
-impl From<gfx::device::ShaderError> for PipelineError {
-    fn from(err: gfx::device::ShaderError) -> Self {
-        PipelineError::ShaderError(err)
-    }
-}
-
-impl From<gfx::device::OutOfMemory> for PipelineError {
-    fn from(err: gfx::device::OutOfMemory) -> Self {
-        PipelineError::OutOfMemory(err)
-    }
-}
+impl Error for PipelineError {}
 
 pub(crate) type Result<T> = std::result::Result<T, PipelineError>;
 

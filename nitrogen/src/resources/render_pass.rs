@@ -7,18 +7,15 @@ use crate::storage::{Handle, Storage};
 use gfx::Device;
 
 use smallvec::SmallVec;
+use derive_more::{Display, From};
 
 use crate::device::DeviceContext;
 use crate::submit_group::ResourceList;
 
+#[derive(From, Display)]
 pub enum RenderPassError {
+    #[display(fmt = "Out of memory")]
     OutOfMemory(gfx::device::OutOfMemory),
-}
-
-impl From<gfx::device::OutOfMemory> for RenderPassError {
-    fn from(err: gfx::device::OutOfMemory) -> Self {
-        RenderPassError::OutOfMemory(err)
-    }
 }
 
 pub type Result<T> = ::std::result::Result<T, RenderPassError>;

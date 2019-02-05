@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use failure::Fail;
+use derive_more::{Display, From};
 
 /// The returned object representing a memory allocation
 pub(crate) trait Block: Sized {
@@ -43,32 +43,36 @@ impl<A: Allocator> ImageType<A> {
 }
 
 /// Errors that can occur when allocating memory from a device
-#[derive(Debug, Fail, Clone)]
+#[derive(Debug, Display, Clone)]
 pub enum AllocationError {
     /// No suitable memory type could be found
-    #[fail(display = "No suitable memory type could be found")]
+    #[display(fmt = "No suitable memory type could be found")]
     NoSuitableMemoryType,
 
     /// Not enough free memory available to perform the allocation
-    #[fail(display = "Out of memory")]
+    #[display(fmt = "Out of memory")]
     OutOfMemory,
 
     /// An implementation might impose a limited number of objects
-    #[fail(display = "Too many objects")]
+    #[display(fmt = "Too many objects")]
     TooManyObjects,
 }
 
-#[derive(Debug, Fail, Clone)]
+impl std::error::Error for AllocationError {}
+
+#[derive(Debug, Display, From, Clone)]
 pub enum AllocatorError {
-    #[fail(display = "Could not allocate memory")]
-    AllocationError(#[cause] AllocationError),
-    #[fail(display = "Could not bind resource")]
-    BindError(#[cause] gfx::device::BindError),
-    #[fail(display = "Could not create buffer")]
-    BufferCreationError(#[cause] gfx::buffer::CreationError),
-    #[fail(display = "Could not create image")]
-    ImageCreationError(#[cause] gfx::image::CreationError),
+    #[display(fmt = "Could not allocate memory")]
+    AllocationError(AllocationError),
+    #[display(fmt = "Could not bind resource")]
+    BindError(gfx::device::BindError),
+    #[display(fmt = "Could not create buffer")]
+    BufferCreationError(gfx::buffer::CreationError),
+    #[display(fmt = "Could not create image")]
+    ImageCreationError(gfx::image::CreationError),
 }
+
+impl std::error::Error for AllocatorError {}
 
 /// An allocation request
 #[derive(Debug)]
@@ -124,8 +128,7 @@ pub(crate) trait Allocator: std::fmt::Debug + Sized {
         use gfx::Device;
 
         let mut buf = device
-            .create_buffer(request.size, request.usage)
-            .map_err(AllocatorError::BufferCreationError)?;
+            .create_buffer(request.size, request.usage)?;
         let reqs = device.get_buffer_requirements(&buf);
 
         let request = Request {
@@ -138,12 +141,10 @@ pub(crate) trait Allocator: std::fmt::Debug + Sized {
         };
 
         let block = self
-            .alloc(device, request)
-            .map_err(AllocatorError::AllocationError)?;
+            .alloc(device, request)?;
 
         device
-            .bind_buffer_memory(block.memory(), block.range().start, &mut buf)
-            .map_err(AllocatorError::BindError)?;
+            .bind_buffer_memory(block.memory(), block.range().start, &mut buf)?;
 
         Ok(BufferType { buffer: buf, block })
     }
@@ -162,8 +163,7 @@ pub(crate) trait Allocator: std::fmt::Debug + Sized {
                 request.tiling,
                 request.usage,
                 request.view_caps,
-            )
-            .map_err(AllocatorError::ImageCreationError)?;
+            )?;
 
         let reqs = device.get_image_requirements(&img);
 
@@ -177,12 +177,10 @@ pub(crate) trait Allocator: std::fmt::Debug + Sized {
         };
 
         let block = self
-            .alloc(device, request)
-            .map_err(AllocatorError::AllocationError)?;
+            .alloc(device, request)?;
 
         device
-            .bind_image_memory(block.memory(), block.range().start, &mut img)
-            .map_err(AllocatorError::BindError)?;
+            .bind_image_memory(block.memory(), block.range().start, &mut img)?;
 
         Ok(ImageType { image: img, block })
     }

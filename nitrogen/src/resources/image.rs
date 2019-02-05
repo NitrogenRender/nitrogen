@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use failure_derive::Fail;
+use derive_more::{Display, From};
 
 use gfx::image;
 use gfx::Device;
@@ -256,43 +256,28 @@ pub struct Image {
     pub format: gfx::format::Format,
 }
 
-#[derive(Debug, Fail, Clone)]
+#[derive(Debug, Display, From, Clone)]
 pub enum ImageError {
-    #[fail(display = "The specified image handle was invalid")]
+    #[display(fmt = "The specified image handle was invalid")]
     HandleInvalid,
 
-    #[fail(display = "The data provided for uploading was not valid")]
+    #[display(fmt = "The data provided for uploading was not valid")]
     UploadDataInvalid,
 
-    #[fail(display = "Failed to allocate image")]
-    CantCreate(#[cause] AllocatorError),
+    #[display(fmt = "Failed to allocate image")]
+    CantCreate(AllocatorError),
 
-    #[fail(display = "Failed to map memory")]
-    MappingError(#[cause] gfx::mapping::Error),
+    #[display(fmt = "Failed to map memory")]
+    MappingError(gfx::mapping::Error),
 
-    #[fail(display = "Image View could not be created")]
-    ViewError(#[cause] gfx::image::ViewError),
+    #[display(fmt = "Image View could not be created")]
+    ViewError(gfx::image::ViewError),
 
-    #[fail(display = "Image can not be used a transfer destination")]
+    #[display(fmt = "Image can not be used a transfer destination")]
     CantWriteToImage,
 }
 
-impl From<AllocatorError> for ImageError {
-    fn from(err: AllocatorError) -> Self {
-        ImageError::CantCreate(err)
-    }
-}
-impl From<gfx::mapping::Error> for ImageError {
-    fn from(err: gfx::mapping::Error) -> Self {
-        ImageError::MappingError(err)
-    }
-}
-
-impl From<gfx::image::ViewError> for ImageError {
-    fn from(err: gfx::image::ViewError) -> Self {
-        ImageError::ViewError(err)
-    }
-}
+impl std::error::Error for ImageError {}
 
 pub(crate) struct ImageStorage {
     // TODO handle host visible images??

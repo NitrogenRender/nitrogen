@@ -14,7 +14,7 @@ use crate::types;
 
 use smallvec::{smallvec, SmallVec};
 
-use failure_derive::Fail;
+use derive_more::{Display, From};
 
 pub type MaterialHandle = Handle<Material>;
 
@@ -451,29 +451,19 @@ impl Material {
 
 // error stuff
 
-#[derive(Clone, Fail, Debug)]
+#[derive(Clone, Display, From, Debug)]
 pub enum MaterialError {
-    #[fail(display = "Cannot create empty material")]
+    #[display(fmt = "Cannot create empty material")]
     CreateEmptyMaterial,
 
-    #[fail(display = "Invalid handle used")]
+    #[display(fmt = "Invalid handle used")]
     InvalidHandle,
 
-    #[fail(display = "Material could not be created because of insufficient memory")]
-    CreateError(#[cause] gfx::device::OutOfMemory),
+    #[display(fmt = "Material could not be created because of insufficient memory")]
+    CreateError(gfx::device::OutOfMemory),
 
-    #[fail(display = "Material instance could not be allocated")]
-    AllocationError(#[cause] gfx::pso::AllocationError),
+    #[display(fmt = "Material instance could not be allocated")]
+    AllocationError(gfx::pso::AllocationError),
 }
 
-impl From<gfx::device::OutOfMemory> for MaterialError {
-    fn from(err: gfx::device::OutOfMemory) -> Self {
-        MaterialError::CreateError(err)
-    }
-}
-
-impl From<gfx::pso::AllocationError> for MaterialError {
-    fn from(err: gfx::pso::AllocationError) -> Self {
-        MaterialError::AllocationError(err)
-    }
-}
+impl std::error::Error for MaterialError {}
