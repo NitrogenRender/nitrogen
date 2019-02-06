@@ -94,7 +94,7 @@ pub unsafe fn image_create(
         usage,
     };
 
-    ctx.image_create(&[create_info]).remove(0).ok()
+    ctx.image_create(create_info).ok()
 }
 
 pub unsafe fn image_create_with_content(
@@ -119,10 +119,7 @@ pub unsafe fn image_create_with_content(
         target_offset: (0, 0, 0),
     };
 
-    submit
-        .image_upload_data(ctx, &[(img, upload)])
-        .remove(0)
-        .ok()?;
+    submit.image_upload_data(ctx, img, upload).ok()?;
 
     let sampler_create = sampler::SamplerCreateInfo {
         min_filter: sampler::Filter::Linear,

@@ -82,7 +82,7 @@ fn main() {
             ..Default::default()
         };
 
-        let img = unsafe { ntg.image_create(&[create_info]).remove(0).unwrap() };
+        let img = unsafe { ntg.image_create(create_info).unwrap() };
 
         debug!("width {}, height {}", width, height);
 
@@ -94,10 +94,7 @@ fn main() {
                 target_offset: (0, 0, 0),
             };
 
-            submit
-                .image_upload_data(&mut ntg, &[(img, data)])
-                .remove(0)
-                .unwrap()
+            submit.image_upload_data(&mut ntg, img, data).unwrap()
         }
 
         drop(image);

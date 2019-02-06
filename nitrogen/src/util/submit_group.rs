@@ -324,15 +324,17 @@ impl SubmitGroup {
     pub unsafe fn image_upload_data(
         &mut self,
         ctx: &mut Context,
-        images: &[(image::ImageHandle, image::ImageUploadInfo)],
-    ) -> SmallVec<[image::Result<()>; 16]> {
+        image: image::ImageHandle,
+        data: image::ImageUploadInfo,
+    ) -> image::Result<()> {
         ctx.image_storage.upload_data(
             &ctx.device_ctx,
             &self.sem_pool,
             &mut self.sem_list,
             &self.pool_transfer,
             &mut self.res_destroys,
-            images,
+            image,
+            data,
         )
     }
 

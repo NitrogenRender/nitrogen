@@ -630,11 +630,7 @@ unsafe fn create_resource(
                 is_transient: false,
             };
 
-            let img_handle = storages
-                .image
-                .create(device, &[create_info])
-                .remove(0)
-                .ok()?;
+            let img_handle = storages.image.create(device, create_info).ok()?;
 
             res.images.insert(id, img_handle);
             res.external_resources.insert(id);
@@ -713,11 +709,7 @@ unsafe fn create_resource(
                 is_transient: false,
             };
 
-            let img_handle = storages
-                .image
-                .create(device, &[create_info])
-                .remove(0)
-                .ok()?;
+            let img_handle = storages.image.create(device, create_info).ok()?;
 
             res.images.insert(id, img_handle);
 

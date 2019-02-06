@@ -248,9 +248,9 @@ impl Context {
     /// Create image objects and retrieve handles for them.
     pub unsafe fn image_create<I: Into<gfx::image::Usage> + Clone>(
         &mut self,
-        create_infos: &[image::ImageCreateInfo<I>],
-    ) -> SmallVec<[image::Result<image::ImageHandle>; 16]> {
-        self.image_storage.create(&self.device_ctx, create_infos)
+        create_info: image::ImageCreateInfo<I>,
+    ) -> image::Result<image::ImageHandle> {
+        self.image_storage.create(&self.device_ctx, create_info)
     }
 
     // sampler
