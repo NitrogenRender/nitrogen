@@ -232,6 +232,7 @@ impl Context {
     pub unsafe fn release(self) {
         self.buffer_storage.release(&self.device_ctx);
         self.image_storage.release(&self.device_ctx);
+        self.sampler_storage.release(&self.device_ctx);
 
         self.material_storage.release(&self.device_ctx);
 

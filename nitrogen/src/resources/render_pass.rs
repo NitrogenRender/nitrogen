@@ -6,8 +6,8 @@ use crate::storage::{Handle, Storage};
 
 use gfx::Device;
 
-use smallvec::SmallVec;
 use derive_more::{Display, From};
+use smallvec::SmallVec;
 
 use crate::device::DeviceContext;
 use crate::submit_group::ResourceList;

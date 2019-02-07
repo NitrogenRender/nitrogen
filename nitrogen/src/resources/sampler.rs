@@ -92,6 +92,12 @@ impl SamplerStorage {
         }
     }
 
+    pub(crate) unsafe fn release(self, device: &DeviceContext) {
+        for (_, sampler) in self.storage {
+            device.device.destroy_sampler(sampler);
+        }
+    }
+
     pub(crate) unsafe fn create(
         &mut self,
         device: &DeviceContext,

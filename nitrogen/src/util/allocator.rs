@@ -127,8 +127,7 @@ pub(crate) trait Allocator: std::fmt::Debug + Sized {
     ) -> Result<BufferType<Self>, AllocatorError> {
         use gfx::Device;
 
-        let mut buf = device
-            .create_buffer(request.size, request.usage)?;
+        let mut buf = device.create_buffer(request.size, request.usage)?;
         let reqs = device.get_buffer_requirements(&buf);
 
         let request = Request {
@@ -140,11 +139,9 @@ pub(crate) trait Allocator: std::fmt::Debug + Sized {
             _persistently_mappable: request.persistently_mappable,
         };
 
-        let block = self
-            .alloc(device, request)?;
+        let block = self.alloc(device, request)?;
 
-        device
-            .bind_buffer_memory(block.memory(), block.range().start, &mut buf)?;
+        device.bind_buffer_memory(block.memory(), block.range().start, &mut buf)?;
 
         Ok(BufferType { buffer: buf, block })
     }
@@ -155,15 +152,14 @@ pub(crate) trait Allocator: std::fmt::Debug + Sized {
         request: ImageRequest,
     ) -> Result<ImageType<Self>, AllocatorError> {
         use gfx::Device;
-        let mut img = device
-            .create_image(
-                request.kind,
-                request.level,
-                request.format,
-                request.tiling,
-                request.usage,
-                request.view_caps,
-            )?;
+        let mut img = device.create_image(
+            request.kind,
+            request.level,
+            request.format,
+            request.tiling,
+            request.usage,
+            request.view_caps,
+        )?;
 
         let reqs = device.get_image_requirements(&img);
 
@@ -176,11 +172,9 @@ pub(crate) trait Allocator: std::fmt::Debug + Sized {
             _persistently_mappable: false,
         };
 
-        let block = self
-            .alloc(device, request)?;
+        let block = self.alloc(device, request)?;
 
-        device
-            .bind_image_memory(block.memory(), block.range().start, &mut img)?;
+        device.bind_image_memory(block.memory(), block.range().start, &mut img)?;
 
         Ok(ImageType { image: img, block })
     }
