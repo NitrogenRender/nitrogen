@@ -17,7 +17,7 @@ use crate::types::Sampler;
 
 use std::borrow::Borrow;
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum Filter {
     Nearest,
     Linear,
@@ -32,7 +32,7 @@ impl From<Filter> for image::Filter {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum WrapMode {
     Tile,
     Mirror,
