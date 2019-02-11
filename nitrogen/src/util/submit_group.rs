@@ -324,15 +324,17 @@ impl SubmitGroup {
     pub unsafe fn image_upload_data(
         &mut self,
         ctx: &mut Context,
-        images: &[(image::ImageHandle, image::ImageUploadInfo)],
-    ) -> SmallVec<[image::Result<()>; 16]> {
+        image: image::ImageHandle,
+        data: image::ImageUploadInfo,
+    ) -> image::Result<()> {
         ctx.image_storage.upload_data(
             &ctx.device_ctx,
             &self.sem_pool,
             &mut self.sem_list,
             &self.pool_transfer,
             &mut self.res_destroys,
-            images,
+            image,
+            data,
         )
     }
 
@@ -343,9 +345,11 @@ impl SubmitGroup {
     pub unsafe fn buffer_cpu_visible_upload<T>(
         &mut self,
         ctx: &mut Context,
-        data: &[(buffer::BufferHandle, buffer::BufferUploadInfo<T>)],
-    ) -> SmallVec<[buffer::Result<()>; 16]> {
-        ctx.buffer_storage.cpu_visible_upload(&ctx.device_ctx, data)
+        buffer: buffer::BufferHandle,
+        info: buffer::BufferUploadInfo<T>,
+    ) -> buffer::Result<()> {
+        ctx.buffer_storage
+            .cpu_visible_upload(&ctx.device_ctx, buffer, info)
     }
 
     pub unsafe fn buffer_cpu_visible_read<T>(
@@ -361,15 +365,17 @@ impl SubmitGroup {
     pub unsafe fn buffer_device_local_upload<T>(
         &mut self,
         ctx: &mut Context,
-        data: &[(buffer::BufferHandle, buffer::BufferUploadInfo<T>)],
-    ) -> SmallVec<[buffer::Result<()>; 16]> {
+        buffer: buffer::BufferHandle,
+        info: buffer::BufferUploadInfo<T>,
+    ) -> buffer::Result<()> {
         ctx.buffer_storage.device_local_upload(
             &ctx.device_ctx,
             &self.sem_pool,
             &mut self.sem_list,
             &self.pool_transfer,
             &mut self.res_destroys,
-            data,
+            buffer,
+            info,
         )
     }
 

@@ -48,13 +48,10 @@
 //!
 //! [`Context`]: ./struct.Context.html
 
-// extern crate gfx_backend_vulkan as back;
-// pub extern crate gfx_hal as gfx;
-// extern crate gfx_memory as gfxm;
+#[macro_use]
+extern crate derive_more;
 
 pub use gfx;
-
-use smallvec::SmallVec;
 
 pub(crate) mod types;
 
@@ -248,9 +245,9 @@ impl Context {
     /// Create image objects and retrieve handles for them.
     pub unsafe fn image_create<I: Into<gfx::image::Usage> + Clone>(
         &mut self,
-        create_infos: &[image::ImageCreateInfo<I>],
-    ) -> SmallVec<[image::Result<image::ImageHandle>; 16]> {
-        self.image_storage.create(&self.device_ctx, create_infos)
+        create_info: image::ImageCreateInfo<I>,
+    ) -> image::Result<image::ImageHandle> {
+        self.image_storage.create(&self.device_ctx, create_info)
     }
 
     // sampler
@@ -258,9 +255,9 @@ impl Context {
     /// Create sampler objects and retrieve handles for them.
     pub unsafe fn sampler_create(
         &mut self,
-        create_infos: &[sampler::SamplerCreateInfo],
-    ) -> SmallVec<[sampler::SamplerHandle; 16]> {
-        self.sampler_storage.create(&self.device_ctx, create_infos)
+        create_info: sampler::SamplerCreateInfo,
+    ) -> sampler::SamplerHandle {
+        self.sampler_storage.create(&self.device_ctx, create_info)
     }
 
     // buffer
@@ -268,24 +265,24 @@ impl Context {
     /// Create buffer objects and retrieve handles for them.
     pub unsafe fn buffer_cpu_visible_create<U>(
         &mut self,
-        create_infos: &[buffer::CpuVisibleCreateInfo<U>],
-    ) -> SmallVec<[buffer::Result<buffer::BufferHandle>; 16]>
+        create_info: buffer::CpuVisibleCreateInfo<U>,
+    ) -> buffer::Result<buffer::BufferHandle>
     where
         U: Into<gfx::buffer::Usage> + Clone,
     {
         self.buffer_storage
-            .cpu_visible_create(&self.device_ctx, create_infos)
+            .cpu_visible_create(&self.device_ctx, create_info)
     }
 
     pub unsafe fn buffer_device_local_create<U>(
         &mut self,
-        create_infos: &[buffer::DeviceLocalCreateInfo<U>],
-    ) -> SmallVec<[buffer::Result<buffer::BufferHandle>; 16]>
+        create_info: buffer::DeviceLocalCreateInfo<U>,
+    ) -> buffer::Result<buffer::BufferHandle>
     where
         U: Into<gfx::buffer::Usage> + Clone,
     {
         self.buffer_storage
-            .device_local_create(&self.device_ctx, create_infos)
+            .device_local_create(&self.device_ctx, create_info)
     }
 
     // vertex attribs
@@ -298,9 +295,9 @@ impl Context {
     /// [`GraphicsPassInfo`]: ./graph/pass/struct.GraphicsPassInfo.html
     pub fn vertex_attribs_create(
         &mut self,
-        infos: &[vertex_attrib::VertexAttribInfo],
-    ) -> SmallVec<[vertex_attrib::VertexAttribHandle; 16]> {
-        self.vertex_attrib_storage.create(infos)
+        info: vertex_attrib::VertexAttribInfo,
+    ) -> vertex_attrib::VertexAttribHandle {
+        self.vertex_attrib_storage.create(info)
     }
 
     /// Destroy vertex attribute description objects.
@@ -317,9 +314,9 @@ impl Context {
     /// [`material` module]: ./resources/material/index.html
     pub unsafe fn material_create(
         &mut self,
-        create_infos: &[material::MaterialCreateInfo],
-    ) -> SmallVec<[Result<material::MaterialHandle, material::MaterialError>; 16]> {
-        self.material_storage.create(&self.device_ctx, create_infos)
+        create_info: material::MaterialCreateInfo,
+    ) -> Result<material::MaterialHandle, material::MaterialError> {
+        self.material_storage.create(&self.device_ctx, create_info)
     }
 
     /// Create material instances and retrieve handles for them.
@@ -329,10 +326,10 @@ impl Context {
     /// [`material` module]: ./resources/material/index.html
     pub unsafe fn material_create_instance(
         &mut self,
-        materials: &[material::MaterialHandle],
-    ) -> SmallVec<[Result<material::MaterialInstanceHandle, material::MaterialError>; 16]> {
+        material: material::MaterialHandle,
+    ) -> Result<material::MaterialInstanceHandle, material::MaterialError> {
         self.material_storage
-            .create_instances(&self.device_ctx, materials)
+            .create_instance(&self.device_ctx, material)
     }
 
     /// Update a material instance with resource handles.

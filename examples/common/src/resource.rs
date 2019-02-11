@@ -22,9 +22,7 @@ pub unsafe fn buffer_device_local_create<T: Sized>(
             is_transient: false,
         };
 
-        ctx.buffer_device_local_create(&[create_info])
-            .remove(0)
-            .ok()?
+        ctx.buffer_device_local_create(create_info).ok()?
     };
 
     // upload
@@ -32,8 +30,7 @@ pub unsafe fn buffer_device_local_create<T: Sized>(
         let upload_info = buffer::BufferUploadInfo { offset: 0, data };
 
         submit
-            .buffer_device_local_upload(ctx, &[(buffer, upload_info)])
-            .remove(0)
+            .buffer_device_local_upload(ctx, buffer, upload_info)
             .ok()?;
     }
 
@@ -94,7 +91,7 @@ pub unsafe fn image_create(
         usage,
     };
 
-    ctx.image_create(&[create_info]).remove(0).ok()
+    ctx.image_create(create_info).ok()
 }
 
 pub unsafe fn image_create_with_content(
@@ -119,10 +116,7 @@ pub unsafe fn image_create_with_content(
         target_offset: (0, 0, 0),
     };
 
-    submit
-        .image_upload_data(ctx, &[(img, upload)])
-        .remove(0)
-        .ok()?;
+    submit.image_upload_data(ctx, img, upload).ok()?;
 
     let sampler_create = sampler::SamplerCreateInfo {
         min_filter: sampler::Filter::Linear,
@@ -135,7 +129,7 @@ pub unsafe fn image_create_with_content(
         ),
     };
 
-    let sampler = ctx.sampler_create(&[sampler_create]).remove(0);
+    let sampler = ctx.sampler_create(sampler_create);
 
     Some((img, sampler))
 }

@@ -21,7 +21,7 @@ fn main() {
         let create_info = material::MaterialCreateInfo {
             parameters: &[(0, material::MaterialParameterType::StorageBuffer)],
         };
-        unsafe { ctx.material_create(&[create_info]).remove(0).unwrap() }
+        unsafe { ctx.material_create(create_info).unwrap() }
     };
 
     let buffer = {
@@ -43,11 +43,7 @@ fn main() {
                 | buffer::BufferUsage::UNIFORM,
         };
 
-        let buffer = unsafe {
-            ctx.buffer_cpu_visible_create(&[create_info])
-                .remove(0)
-                .unwrap()
-        };
+        let buffer = unsafe { ctx.buffer_cpu_visible_create(create_info).unwrap() };
 
         let upload_data = buffer::BufferUploadInfo {
             offset: 0,
@@ -56,8 +52,7 @@ fn main() {
 
         unsafe {
             submit
-                .buffer_cpu_visible_upload(&mut ctx, &[(buffer, upload_data)])
-                .remove(0)
+                .buffer_cpu_visible_upload(&mut ctx, buffer, upload_data)
                 .unwrap();
 
             submit.wait(&mut ctx);
@@ -66,7 +61,7 @@ fn main() {
         buffer
     };
 
-    let material_instance = unsafe { ctx.material_create_instance(&[material]).remove(0).unwrap() };
+    let material_instance = unsafe { ctx.material_create_instance(material).unwrap() };
 
     unsafe {
         ctx.material_write_instance(

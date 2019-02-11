@@ -97,7 +97,7 @@ fn init(
                 }],
             }],
         };
-        ctx.vertex_attribs_create(&[create_info]).remove(0)
+        ctx.vertex_attribs_create(create_info)
     };
 
     // create a bunch of buffers
@@ -140,10 +140,10 @@ fn init(
                 (1, material::MaterialParameterType::StorageBuffer),
             ],
         };
-        ctx.material_create(&[create_info]).remove(0).ok()?
+        ctx.material_create(create_info).ok()?
     };
 
-    let instance_material = unsafe { ctx.material_create_instance(&[material]).remove(0).ok()? };
+    let instance_material = unsafe { ctx.material_create_instance(material).ok()? };
 
     // write to instance
     {

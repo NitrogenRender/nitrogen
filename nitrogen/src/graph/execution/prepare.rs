@@ -136,11 +136,7 @@ pub(crate) unsafe fn prepare(
             let info = &passes[pass.0].1;
 
             if let Some(mat) = base.pipelines_mat.get(pass) {
-                let instance = storages
-                    .material
-                    .create_instances(device, &[*mat])
-                    .remove(0)
-                    .unwrap();
+                let instance = storages.material.create_instance(device, *mat).unwrap();
 
                 res.pass_mats.insert(*pass, instance);
             }
@@ -459,11 +455,7 @@ unsafe fn create_render_pass(
         dependencies: &[dependencies],
     };
 
-    storages
-        .render_pass
-        .create(device, &[create_info])
-        .remove(0)
-        .ok()
+    storages.render_pass.create(device, create_info).ok()
 }
 
 unsafe fn create_pipeline_compute(
@@ -497,8 +489,7 @@ unsafe fn create_pipeline_compute(
 
     let pipeline_handle = storages
         .pipeline
-        .create_compute_pipelines(device, &[create_info])
-        .remove(0)
+        .create_compute_pipeline(device, create_info)
         .ok();
 
     pipeline_handle.map(|handle| (handle, pass_mat))
@@ -552,14 +543,13 @@ unsafe fn create_pipeline_graphics(
 
     let pipeline_handle = storages
         .pipeline
-        .create_graphics_pipelines(
+        .create_graphics_pipeline(
             device,
             storages.render_pass,
             storages.vertex_attrib,
             render_pass,
-            &[create_info],
+            create_info,
         )
-        .remove(0)
         .ok();
 
     pipeline_handle.map(|handle| (handle, pass_mat))
@@ -630,11 +620,7 @@ unsafe fn create_resource(
                 is_transient: false,
             };
 
-            let img_handle = storages
-                .image
-                .create(device, &[create_info])
-                .remove(0)
-                .ok()?;
+            let img_handle = storages.image.create(device, create_info).ok()?;
 
             res.images.insert(id, img_handle);
             res.external_resources.insert(id);
@@ -644,22 +630,19 @@ unsafe fn create_resource(
             // If the image is used for sampling then it means some other pass will read from it
             // as a color image. In that case we create a sampler for this image as well
             if usages.0.contains(gfx::image::Usage::SAMPLED) {
-                let sampler = storages
-                    .sampler
-                    .create(
-                        device,
-                        &[sampler::SamplerCreateInfo {
-                            min_filter: sampler::Filter::Linear,
-                            mip_filter: sampler::Filter::Linear,
-                            mag_filter: sampler::Filter::Linear,
-                            wrap_mode: (
-                                sampler::WrapMode::Clamp,
-                                sampler::WrapMode::Clamp,
-                                sampler::WrapMode::Clamp,
-                            ),
-                        }],
-                    )
-                    .remove(0);
+                let sampler = storages.sampler.create(
+                    device,
+                    sampler::SamplerCreateInfo {
+                        min_filter: sampler::Filter::Linear,
+                        mip_filter: sampler::Filter::Linear,
+                        mag_filter: sampler::Filter::Linear,
+                        wrap_mode: (
+                            sampler::WrapMode::Clamp,
+                            sampler::WrapMode::Clamp,
+                            sampler::WrapMode::Clamp,
+                        ),
+                    },
+                );
                 res.samplers.insert(id, sampler);
                 backbuffer.samplers.insert(name.clone(), sampler);
             }
@@ -713,33 +696,26 @@ unsafe fn create_resource(
                 is_transient: false,
             };
 
-            let img_handle = storages
-                .image
-                .create(device, &[create_info])
-                .remove(0)
-                .ok()?;
+            let img_handle = storages.image.create(device, create_info).ok()?;
 
             res.images.insert(id, img_handle);
 
             // If the image is used for sampling then it means some other pass will read from it
             // as a color image. In that case we create a sampler for this image as well
             if usages.0.contains(gfx::image::Usage::SAMPLED) {
-                let sampler = storages
-                    .sampler
-                    .create(
-                        device,
-                        &[sampler::SamplerCreateInfo {
-                            min_filter: sampler::Filter::Linear,
-                            mip_filter: sampler::Filter::Linear,
-                            mag_filter: sampler::Filter::Linear,
-                            wrap_mode: (
-                                sampler::WrapMode::Clamp,
-                                sampler::WrapMode::Clamp,
-                                sampler::WrapMode::Clamp,
-                            ),
-                        }],
-                    )
-                    .remove(0);
+                let sampler = storages.sampler.create(
+                    device,
+                    sampler::SamplerCreateInfo {
+                        min_filter: sampler::Filter::Linear,
+                        mip_filter: sampler::Filter::Linear,
+                        mag_filter: sampler::Filter::Linear,
+                        wrap_mode: (
+                            sampler::WrapMode::Clamp,
+                            sampler::WrapMode::Clamp,
+                            sampler::WrapMode::Clamp,
+                        ),
+                    },
+                );
                 res.samplers.insert(id, sampler);
             }
 
@@ -758,8 +734,7 @@ unsafe fn create_resource(
 
                     storages
                         .buffer
-                        .device_local_create(device, &[create_info])
-                        .remove(0)
+                        .device_local_create(device, create_info)
                         .ok()?
                 }
                 BufferStorageType::HostVisible => {
@@ -771,8 +746,7 @@ unsafe fn create_resource(
 
                     storages
                         .buffer
-                        .cpu_visible_create(device, &[create_info])
-                        .remove(0)
+                        .cpu_visible_create(device, create_info)
                         .ok()?
                 }
             };

@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use derive_more::{Display, From};
-
 /// The returned object representing a memory allocation
 pub(crate) trait Block: Sized {
     fn range(&self) -> std::ops::Range<u64>;

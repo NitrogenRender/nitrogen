@@ -123,7 +123,7 @@ fn init(
             ],
         };
 
-        ctx.vertex_attribs_create(&[info]).remove(0)
+        ctx.vertex_attribs_create(info)
     };
 
     // create material and material instance
@@ -136,11 +136,10 @@ fn init(
             ],
         };
 
-        ctx.material_create(&[create_info]).remove(0)
-    }
-    .unwrap();
+        ctx.material_create(create_info).unwrap()
+    };
 
-    let mat_instance = unsafe { ctx.material_create_instance(&[material]).remove(0) }.unwrap();
+    let mat_instance = unsafe { ctx.material_create_instance(material) }.unwrap();
 
     unsafe {
         ctx.material_write_instance(

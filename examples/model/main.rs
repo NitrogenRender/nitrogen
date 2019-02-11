@@ -110,7 +110,7 @@ fn init_resources(
                 },
             ],
         };
-        ctx.vertex_attribs_create(&[create_info]).remove(0)
+        ctx.vertex_attribs_create(create_info)
     };
 
     let graph = create_graph(

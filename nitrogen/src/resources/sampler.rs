@@ -10,8 +10,6 @@ use crate::device::DeviceContext;
 use crate::util::storage;
 use crate::util::storage::Storage;
 
-use smallvec::SmallVec;
-
 use crate::submit_group::ResourceList;
 use crate::types::Sampler;
 
@@ -101,26 +99,18 @@ impl SamplerStorage {
     pub(crate) unsafe fn create(
         &mut self,
         device: &DeviceContext,
-        create_infos: &[SamplerCreateInfo],
-    ) -> SmallVec<[SamplerHandle; 16]> {
-        let mut results = SmallVec::with_capacity(create_infos.len());
+        create_info: SamplerCreateInfo,
+    ) -> SamplerHandle {
+        let create_info = create_info.into();
 
-        for create_info in create_infos {
-            let create_info = create_info.clone().into();
+        let sampler = {
+            device
+                .device
+                .create_sampler(create_info)
+                .expect("Can't create sampler")
+        };
 
-            let sampler = {
-                device
-                    .device
-                    .create_sampler(create_info)
-                    .expect("Can't create sampler")
-            };
-
-            let handle = self.storage.insert(sampler);
-
-            results.push(handle);
-        }
-
-        results
+        self.storage.insert(sampler)
     }
 
     pub(crate) fn raw(&self, sampler: SamplerHandle) -> Option<&Sampler> {

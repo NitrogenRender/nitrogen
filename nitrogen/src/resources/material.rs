@@ -12,9 +12,7 @@ use crate::resources::sampler::{SamplerHandle, SamplerStorage};
 
 use crate::types;
 
-use smallvec::{smallvec, SmallVec};
-
-use derive_more::{Display, From};
+use smallvec::SmallVec;
 
 pub type MaterialHandle = Handle<Material>;
 
@@ -119,60 +117,46 @@ impl MaterialStorage {
     pub(crate) unsafe fn create(
         &mut self,
         device: &DeviceContext,
-        create_infos: &[MaterialCreateInfo],
-    ) -> SmallVec<[Result<MaterialHandle, MaterialError>; 16]> {
+        create_info: MaterialCreateInfo,
+    ) -> Result<MaterialHandle, MaterialError> {
         use gfx::Device;
 
-        let mut results = smallvec![];
+        let descriptors = create_info
+            .parameters
+            .iter()
+            .map(
+                |(binding, desc_type)| gfx::pso::DescriptorSetLayoutBinding {
+                    binding: *binding,
+                    ty: desc_type.clone().into(),
+                    count: 1,
+                    stage_flags: gfx::pso::ShaderStageFlags::ALL,
+                    immutable_samplers: false,
+                },
+            )
+            .collect::<SmallVec<[_; 16]>>();
 
-        for create_info in create_infos {
-            let descriptors = create_info
-                .parameters
-                .iter()
-                .map(
-                    |(binding, desc_type)| gfx::pso::DescriptorSetLayoutBinding {
-                        binding: *binding,
-                        ty: desc_type.clone().into(),
-                        count: 1,
-                        stage_flags: gfx::pso::ShaderStageFlags::ALL,
-                        immutable_samplers: false,
-                    },
-                )
-                .collect::<SmallVec<[_; 16]>>();
-
-            if descriptors.len() == 0 {
-                results.push(Err(MaterialError::CreateEmptyMaterial));
-                continue;
-            }
-
-            let res = device
-                .device
-                .create_descriptor_set_layout(descriptors.as_slice(), &[]);
-
-            match res {
-                Ok(set) => {
-                    let mut parameters = create_info.parameters.to_vec();
-                    parameters.sort_by_key(|(binding, _)| *binding);
-
-                    let mat = Material {
-                        sets_per_pool: MAX_SETS_PER_POOL,
-                        parameters,
-                        desc_set_layout: set,
-                        instances: Storage::new(),
-                        pool_allocated: Vec::new(),
-                        pool_used: Vec::new(),
-                        pools: Vec::new(),
-                    };
-                    let handle = self.storage.insert(mat);
-                    results.push(Ok(handle));
-                }
-                Err(err) => {
-                    results.push(Err(err.into()));
-                }
-            }
+        if descriptors.len() == 0 {
+            return Err(MaterialError::CreateEmptyMaterial);
         }
 
-        results
+        let set = device
+            .device
+            .create_descriptor_set_layout(descriptors.as_slice(), &[])?;
+
+        let mut parameters = create_info.parameters.to_vec();
+        parameters.sort_by_key(|(binding, _)| *binding);
+
+        let mat = Material {
+            sets_per_pool: MAX_SETS_PER_POOL,
+            parameters,
+            desc_set_layout: set,
+            instances: Storage::new(),
+            pool_allocated: Vec::new(),
+            pool_used: Vec::new(),
+            pools: Vec::new(),
+        };
+        let handle = self.storage.insert(mat);
+        Ok(handle)
     }
 
     pub(crate) unsafe fn create_raw<P>(
@@ -248,39 +232,19 @@ impl MaterialStorage {
         self.storage.get(material)
     }
 
-    pub(crate) unsafe fn create_instances(
+    pub(crate) unsafe fn create_instance(
         &mut self,
         device: &DeviceContext,
-        materials: &[MaterialHandle],
-    ) -> SmallVec<[Result<MaterialInstanceHandle, MaterialError>; 16]> {
-        let mut results = smallvec![];
+        material: MaterialHandle,
+    ) -> Result<MaterialInstanceHandle, MaterialError> {
+        let mat = self
+            .storage
+            .get_mut(material)
+            .ok_or(MaterialError::InvalidHandle)?;
 
-        for material in materials {
-            let mat_res = self
-                .storage
-                .get_mut(*material)
-                .ok_or(MaterialError::InvalidHandle);
+        let instance = mat.create_instance(device)?;
 
-            let mat = match mat_res {
-                Ok(mat) => mat,
-                Err(err) => {
-                    results.push(Err(err.into()));
-                    continue;
-                }
-            };
-
-            let instance = match mat.create_instance(device) {
-                Ok(inst) => inst,
-                Err(err) => {
-                    results.push(Err(err.into()));
-                    continue;
-                }
-            };
-
-            results.push(Ok((*material, instance)));
-        }
-
-        results
+        Ok((material, instance))
     }
 
     pub(crate) unsafe fn write_instance<I>(

@@ -48,11 +48,10 @@ fn main() {
             ],
         };
 
-        ntg.material_create(&[create_info]).remove(0).unwrap()
+        ntg.material_create(create_info).unwrap()
     };
 
-    let mat_example_instance =
-        unsafe { ntg.material_create_instance(&[material]).remove(0).unwrap() };
+    let mat_example_instance = unsafe { ntg.material_create_instance(material).unwrap() };
 
     let (image, sampler) = {
         let image_data = include_bytes!("assets/test.png");
@@ -82,7 +81,7 @@ fn main() {
             ..Default::default()
         };
 
-        let img = unsafe { ntg.image_create(&[create_info]).remove(0).unwrap() };
+        let img = unsafe { ntg.image_create(create_info).unwrap() };
 
         debug!("width {}, height {}", width, height);
 
@@ -94,10 +93,7 @@ fn main() {
                 target_offset: (0, 0, 0),
             };
 
-            submit
-                .image_upload_data(&mut ntg, &[(img, data)])
-                .remove(0)
-                .unwrap()
+            submit.image_upload_data(&mut ntg, img, data).unwrap()
         }
 
         drop(image);
@@ -112,7 +108,7 @@ fn main() {
                 wrap_mode: (WrapMode::Clamp, WrapMode::Clamp, WrapMode::Clamp),
             };
 
-            ntg.sampler_create(&[sampler_create]).remove(0)
+            ntg.sampler_create(sampler_create)
         };
 
         (img, sampler)
@@ -129,10 +125,7 @@ fn main() {
             usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC
                 | nitrogen::buffer::BufferUsage::VERTEX,
         };
-        let buffer = ntg
-            .buffer_cpu_visible_create(&[create_info])
-            .remove(0)
-            .unwrap();
+        let buffer = ntg.buffer_cpu_visible_create(create_info).unwrap();
 
         let upload_data = nitrogen::buffer::BufferUploadInfo {
             offset: 0,
@@ -140,8 +133,7 @@ fn main() {
         };
 
         submit
-            .buffer_cpu_visible_upload(&mut ntg, &[(buffer, upload_data)])
-            .remove(0)
+            .buffer_cpu_visible_upload(&mut ntg, buffer, upload_data)
             .unwrap();
 
         buffer
@@ -154,10 +146,7 @@ fn main() {
             usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC
                 | nitrogen::buffer::BufferUsage::VERTEX,
         };
-        let buffer = ntg
-            .buffer_cpu_visible_create(&[create_info])
-            .remove(0)
-            .unwrap();
+        let buffer = ntg.buffer_cpu_visible_create(create_info).unwrap();
 
         let upload_data = nitrogen::buffer::BufferUploadInfo {
             offset: 0,
@@ -165,8 +154,7 @@ fn main() {
         };
 
         submit
-            .buffer_cpu_visible_upload(&mut ntg, &[(buffer, upload_data)])
-            .remove(0)
+            .buffer_cpu_visible_upload(&mut ntg, buffer, upload_data)
             .unwrap();
 
         buffer
@@ -198,7 +186,7 @@ fn main() {
             ],
         };
 
-        ntg.vertex_attribs_create(&[info]).remove(0)
+        ntg.vertex_attribs_create(info)
     };
 
     let graph = setup_graphs(
@@ -229,10 +217,7 @@ fn main() {
             usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC
                 | nitrogen::buffer::BufferUsage::UNIFORM,
         };
-        let buffer = ntg
-            .buffer_cpu_visible_create(&[create_info])
-            .remove(0)
-            .unwrap();
+        let buffer = ntg.buffer_cpu_visible_create(create_info).unwrap();
 
         let upload_data = nitrogen::buffer::BufferUploadInfo {
             offset: 0,
@@ -240,8 +225,7 @@ fn main() {
         };
 
         submit
-            .buffer_cpu_visible_upload(&mut ntg, &[(buffer, upload_data)])
-            .remove(0)
+            .buffer_cpu_visible_upload(&mut ntg, buffer, upload_data)
             .unwrap();
 
         buffer
