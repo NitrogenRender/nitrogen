@@ -136,11 +136,7 @@ pub(crate) unsafe fn prepare(
             let info = &passes[pass.0].1;
 
             if let Some(mat) = base.pipelines_mat.get(pass) {
-                let instance = storages
-                    .material
-                    .create_instances(device, &[*mat])
-                    .remove(0)
-                    .unwrap();
+                let instance = storages.material.create_instance(device, *mat).unwrap();
 
                 res.pass_mats.insert(*pass, instance);
             }
@@ -459,11 +455,7 @@ unsafe fn create_render_pass(
         dependencies: &[dependencies],
     };
 
-    storages
-        .render_pass
-        .create(device, &[create_info])
-        .remove(0)
-        .ok()
+    storages.render_pass.create(device, create_info).ok()
 }
 
 unsafe fn create_pipeline_compute(
@@ -742,8 +734,7 @@ unsafe fn create_resource(
 
                     storages
                         .buffer
-                        .device_local_create(device, &[create_info])
-                        .remove(0)
+                        .device_local_create(device, create_info)
                         .ok()?
                 }
                 BufferStorageType::HostVisible => {
@@ -755,8 +746,7 @@ unsafe fn create_resource(
 
                     storages
                         .buffer
-                        .cpu_visible_create(device, &[create_info])
-                        .remove(0)
+                        .cpu_visible_create(device, create_info)
                         .ok()?
                 }
             };

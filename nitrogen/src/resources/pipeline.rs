@@ -9,8 +9,6 @@ use crate::graph::{BlendMode, DepthMode};
 use crate::render_pass::{RenderPassHandle, RenderPassStorage};
 use crate::vertex_attrib::{VertexAttribHandle, VertexAttribStorage};
 
-use smallvec::SmallVec;
-
 use crate::types;
 use crate::types::*;
 

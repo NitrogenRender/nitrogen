@@ -22,9 +22,7 @@ pub unsafe fn buffer_device_local_create<T: Sized>(
             is_transient: false,
         };
 
-        ctx.buffer_device_local_create(&[create_info])
-            .remove(0)
-            .ok()?
+        ctx.buffer_device_local_create(create_info).ok()?
     };
 
     // upload
@@ -32,8 +30,7 @@ pub unsafe fn buffer_device_local_create<T: Sized>(
         let upload_info = buffer::BufferUploadInfo { offset: 0, data };
 
         submit
-            .buffer_device_local_upload(ctx, &[(buffer, upload_info)])
-            .remove(0)
+            .buffer_device_local_upload(ctx, buffer, upload_info)
             .ok()?;
     }
 

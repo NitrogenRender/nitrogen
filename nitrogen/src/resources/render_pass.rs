@@ -7,7 +7,6 @@ use crate::storage::{Handle, Storage};
 use gfx::Device;
 
 use derive_more::{Display, From};
-use smallvec::SmallVec;
 
 use crate::device::DeviceContext;
 use crate::submit_group::ResourceList;
@@ -46,27 +45,22 @@ impl RenderPassStorage {
     pub(crate) unsafe fn create(
         &mut self,
         device: &DeviceContext,
-        create_infos: &[RenderPassCreateInfo],
-    ) -> SmallVec<[Result<RenderPassHandle>; 16]> {
-        create_infos
-            .iter()
-            .map(|create_info| {
-                let pass = device.device.create_render_pass(
-                    create_info.attachments,
-                    create_info.subpasses,
-                    create_info.dependencies,
-                );
+        create_info: RenderPassCreateInfo,
+    ) -> Result<RenderPassHandle> {
+        let pass = device.device.create_render_pass(
+            create_info.attachments,
+            create_info.subpasses,
+            create_info.dependencies,
+        );
 
-                match pass {
-                    Ok(render_pass) => {
-                        let handle = self.storage.insert(RenderPass { render_pass });
+        match pass {
+            Ok(render_pass) => {
+                let handle = self.storage.insert(RenderPass { render_pass });
 
-                        Ok(handle)
-                    }
-                    Err(e) => Err(e.into()),
-                }
-            })
-            .collect()
+                Ok(handle)
+            }
+            Err(e) => Err(e.into()),
+        }
     }
 
     pub(crate) fn raw(&self, handle: RenderPassHandle) -> Option<&crate::types::RenderPass> {

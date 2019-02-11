@@ -12,9 +12,6 @@ use std::borrow::Borrow;
 use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 
-use smallvec::smallvec;
-use smallvec::SmallVec;
-
 use crate::util::allocator::{
     Allocator, AllocatorError, BufferRequest, Image as AllocImage, ImageRequest,
 };
@@ -26,7 +23,6 @@ use crate::resources::command_pool::CommandPoolTransfer;
 use crate::resources::semaphore_pool::SemaphoreList;
 use crate::resources::semaphore_pool::SemaphorePool;
 use crate::submit_group::ResourceList;
-use crate::util::allocator::AllocatorError::ImageCreationError;
 
 #[derive(Copy, Clone, Debug)]
 pub enum ImageDimension {

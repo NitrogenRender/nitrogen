@@ -54,8 +54,6 @@
 
 pub use gfx;
 
-use smallvec::SmallVec;
-
 pub(crate) mod types;
 
 pub mod display;
@@ -268,24 +266,24 @@ impl Context {
     /// Create buffer objects and retrieve handles for them.
     pub unsafe fn buffer_cpu_visible_create<U>(
         &mut self,
-        create_infos: &[buffer::CpuVisibleCreateInfo<U>],
-    ) -> SmallVec<[buffer::Result<buffer::BufferHandle>; 16]>
+        create_info: buffer::CpuVisibleCreateInfo<U>,
+    ) -> buffer::Result<buffer::BufferHandle>
     where
         U: Into<gfx::buffer::Usage> + Clone,
     {
         self.buffer_storage
-            .cpu_visible_create(&self.device_ctx, create_infos)
+            .cpu_visible_create(&self.device_ctx, create_info)
     }
 
     pub unsafe fn buffer_device_local_create<U>(
         &mut self,
-        create_infos: &[buffer::DeviceLocalCreateInfo<U>],
-    ) -> SmallVec<[buffer::Result<buffer::BufferHandle>; 16]>
+        create_info: buffer::DeviceLocalCreateInfo<U>,
+    ) -> buffer::Result<buffer::BufferHandle>
     where
         U: Into<gfx::buffer::Usage> + Clone,
     {
         self.buffer_storage
-            .device_local_create(&self.device_ctx, create_infos)
+            .device_local_create(&self.device_ctx, create_info)
     }
 
     // vertex attribs
@@ -317,9 +315,9 @@ impl Context {
     /// [`material` module]: ./resources/material/index.html
     pub unsafe fn material_create(
         &mut self,
-        create_infos: &[material::MaterialCreateInfo],
-    ) -> SmallVec<[Result<material::MaterialHandle, material::MaterialError>; 16]> {
-        self.material_storage.create(&self.device_ctx, create_infos)
+        create_info: material::MaterialCreateInfo,
+    ) -> Result<material::MaterialHandle, material::MaterialError> {
+        self.material_storage.create(&self.device_ctx, create_info)
     }
 
     /// Create material instances and retrieve handles for them.
@@ -329,10 +327,10 @@ impl Context {
     /// [`material` module]: ./resources/material/index.html
     pub unsafe fn material_create_instance(
         &mut self,
-        materials: &[material::MaterialHandle],
-    ) -> SmallVec<[Result<material::MaterialInstanceHandle, material::MaterialError>; 16]> {
+        material: material::MaterialHandle,
+    ) -> Result<material::MaterialInstanceHandle, material::MaterialError> {
         self.material_storage
-            .create_instances(&self.device_ctx, materials)
+            .create_instance(&self.device_ctx, material)
     }
 
     /// Update a material instance with resource handles.

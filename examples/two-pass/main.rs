@@ -48,11 +48,10 @@ fn main() {
             ],
         };
 
-        ntg.material_create(&[create_info]).remove(0).unwrap()
+        ntg.material_create(create_info).unwrap()
     };
 
-    let mat_example_instance =
-        unsafe { ntg.material_create_instance(&[material]).remove(0).unwrap() };
+    let mat_example_instance = unsafe { ntg.material_create_instance(material).unwrap() };
 
     let (image, sampler) = {
         let image_data = include_bytes!("assets/test.png");
@@ -126,10 +125,7 @@ fn main() {
             usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC
                 | nitrogen::buffer::BufferUsage::VERTEX,
         };
-        let buffer = ntg
-            .buffer_cpu_visible_create(&[create_info])
-            .remove(0)
-            .unwrap();
+        let buffer = ntg.buffer_cpu_visible_create(create_info).unwrap();
 
         let upload_data = nitrogen::buffer::BufferUploadInfo {
             offset: 0,
@@ -137,8 +133,7 @@ fn main() {
         };
 
         submit
-            .buffer_cpu_visible_upload(&mut ntg, &[(buffer, upload_data)])
-            .remove(0)
+            .buffer_cpu_visible_upload(&mut ntg, buffer, upload_data)
             .unwrap();
 
         buffer
@@ -151,10 +146,7 @@ fn main() {
             usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC
                 | nitrogen::buffer::BufferUsage::VERTEX,
         };
-        let buffer = ntg
-            .buffer_cpu_visible_create(&[create_info])
-            .remove(0)
-            .unwrap();
+        let buffer = ntg.buffer_cpu_visible_create(create_info).unwrap();
 
         let upload_data = nitrogen::buffer::BufferUploadInfo {
             offset: 0,
@@ -162,8 +154,7 @@ fn main() {
         };
 
         submit
-            .buffer_cpu_visible_upload(&mut ntg, &[(buffer, upload_data)])
-            .remove(0)
+            .buffer_cpu_visible_upload(&mut ntg, buffer, upload_data)
             .unwrap();
 
         buffer
@@ -226,10 +217,7 @@ fn main() {
             usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC
                 | nitrogen::buffer::BufferUsage::UNIFORM,
         };
-        let buffer = ntg
-            .buffer_cpu_visible_create(&[create_info])
-            .remove(0)
-            .unwrap();
+        let buffer = ntg.buffer_cpu_visible_create(create_info).unwrap();
 
         let upload_data = nitrogen::buffer::BufferUploadInfo {
             offset: 0,
@@ -237,8 +225,7 @@ fn main() {
         };
 
         submit
-            .buffer_cpu_visible_upload(&mut ntg, &[(buffer, upload_data)])
-            .remove(0)
+            .buffer_cpu_visible_upload(&mut ntg, buffer, upload_data)
             .unwrap();
 
         buffer

@@ -136,11 +136,10 @@ fn init(
             ],
         };
 
-        ctx.material_create(&[create_info]).remove(0)
-    }
-    .unwrap();
+        ctx.material_create(create_info).unwrap()
+    };
 
-    let mat_instance = unsafe { ctx.material_create_instance(&[material]).remove(0) }.unwrap();
+    let mat_instance = unsafe { ctx.material_create_instance(material) }.unwrap();
 
     unsafe {
         ctx.material_write_instance(

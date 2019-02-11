@@ -4,8 +4,6 @@
 
 use crate::storage::{Handle, Storage};
 
-use smallvec::SmallVec;
-
 pub type VertexAttribHandle = Handle<VertexAttrib>;
 
 #[derive(Debug)]

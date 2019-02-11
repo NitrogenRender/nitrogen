@@ -10,8 +10,6 @@ use crate::device::DeviceContext;
 use crate::util::storage;
 use crate::util::storage::Storage;
 
-use smallvec::SmallVec;
-
 use crate::submit_group::ResourceList;
 use crate::types::Sampler;
 
