@@ -171,7 +171,10 @@ impl SubmitGroup {
         let img = ctx.image_storage.raw(image)?;
 
         let entry_barrier = gfx::memory::Barrier::Image {
-            states: (gfx::image::Access::empty(), gfx::image::Layout::Undefined)
+            states: (
+                gfx::image::Access::empty(),
+                gfx::image::Layout::Preinitialized,
+            )
                 ..(
                     gfx::image::Access::TRANSFER_WRITE,
                     gfx::image::Layout::TransferDstOptimal,
