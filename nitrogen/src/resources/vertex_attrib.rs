@@ -48,59 +48,52 @@ impl VertexAttribStorage {
         }
     }
 
-    pub(crate) fn create(
-        &mut self,
-        create_infos: &[VertexAttribInfo],
-    ) -> SmallVec<[VertexAttribHandle; 16]> {
-        create_infos
+    pub(crate) fn create(&mut self, create_info: VertexAttribInfo) -> VertexAttribHandle {
+        let num_attribs = {
+            create_info
+                .buffer_infos
+                .iter()
+                .map(|buffer| buffer.elements.len())
+                .sum()
+        };
+
+        let mut attribs = Vec::with_capacity(num_attribs);
+        let mut bufs = Vec::with_capacity(create_info.buffer_infos.len());
+
+        let attrib_iter = create_info.buffer_infos.iter().flat_map(|buffer| {
+            let index = buffer.index;
+
+            buffer
+                .elements
+                .iter()
+                .map(move |elem| gfx::pso::AttributeDesc {
+                    location: elem.location,
+                    binding: index,
+                    element: gfx::pso::Element {
+                        format: elem.format,
+                        offset: elem.offset,
+                    },
+                })
+        });
+
+        attribs.extend(attrib_iter);
+
+        let bufs_iter = create_info
+            .buffer_infos
             .iter()
-            .map(|create_info| {
-                let num_attribs = {
-                    create_info
-                        .buffer_infos
-                        .iter()
-                        .map(|buffer| buffer.elements.len())
-                        .sum()
-                };
+            .map(|buf_info| VertexBufferDesc {
+                stride: buf_info.stride,
+                binding: buf_info.index as _,
+            });
 
-                let mut attribs = Vec::with_capacity(num_attribs);
-                let mut bufs = Vec::with_capacity(create_info.buffer_infos.len());
+        bufs.extend(bufs_iter);
 
-                let attrib_iter = create_info.buffer_infos.iter().flat_map(|buffer| {
-                    let index = buffer.index;
+        let attrib = VertexAttrib {
+            buffers: bufs,
+            attribs,
+        };
 
-                    buffer
-                        .elements
-                        .iter()
-                        .map(move |elem| gfx::pso::AttributeDesc {
-                            location: elem.location,
-                            binding: index,
-                            element: gfx::pso::Element {
-                                format: elem.format,
-                                offset: elem.offset,
-                            },
-                        })
-                });
-
-                attribs.extend(attrib_iter);
-
-                let bufs_iter = create_info
-                    .buffer_infos
-                    .iter()
-                    .map(|buf_info| VertexBufferDesc {
-                        stride: buf_info.stride,
-                        binding: buf_info.index as _,
-                    });
-
-                bufs.extend(bufs_iter);
-
-                VertexAttrib {
-                    buffers: bufs,
-                    attribs,
-                }
-            })
-            .map(|attrib| self.storage.insert(attrib))
-            .collect()
+        self.storage.insert(attrib)
     }
 
     pub(crate) fn raw(&self, handle: VertexAttribHandle) -> Option<&VertexAttrib> {

@@ -109,7 +109,7 @@ fn main() {
                 wrap_mode: (WrapMode::Clamp, WrapMode::Clamp, WrapMode::Clamp),
             };
 
-            ntg.sampler_create(&[sampler_create]).remove(0)
+            ntg.sampler_create(sampler_create)
         };
 
         (img, sampler)
@@ -195,7 +195,7 @@ fn main() {
             ],
         };
 
-        ntg.vertex_attribs_create(&[info]).remove(0)
+        ntg.vertex_attribs_create(info)
     };
 
     let graph = setup_graphs(

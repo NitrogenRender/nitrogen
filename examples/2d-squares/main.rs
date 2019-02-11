@@ -97,7 +97,7 @@ fn init(
                 }],
             }],
         };
-        ctx.vertex_attribs_create(&[create_info]).remove(0)
+        ctx.vertex_attribs_create(create_info)
     };
 
     // create a bunch of buffers

@@ -10,10 +10,11 @@ use crate::util::allocator::{Allocator, DefaultAlloc};
 
 use smallvec::SmallVec;
 
+use std::cell::{RefCell, RefMut};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 pub(crate) struct DeviceContext {
-    pub(crate) memory_allocator: Mutex<DefaultAlloc>,
+    pub(crate) memory_allocator: RefCell<DefaultAlloc>,
 
     pub(crate) graphics_queue_idx: usize,
     pub(crate) compute_queue_idx: usize,
@@ -104,7 +105,7 @@ impl DeviceContext {
         let memory_allocator = DefaultAlloc::new(&device, memory_properties, coherent_atom_size);
 
         DeviceContext {
-            memory_allocator: Mutex::new(memory_allocator),
+            memory_allocator: RefCell::new(memory_allocator),
 
             graphics_queue_idx: graphics_idx,
             compute_queue_idx: compute_idx,
@@ -116,11 +117,8 @@ impl DeviceContext {
         }
     }
 
-    pub(crate) fn allocator(&self) -> MutexGuard<DefaultAlloc> {
-        // if we can't access the device-local memory allocator then ... well, RIP
-        self.memory_allocator
-            .lock()
-            .expect("Memory allocator can't be accessed")
+    pub(crate) fn allocator(&self) -> RefMut<DefaultAlloc> {
+        self.memory_allocator.borrow_mut()
     }
 
     pub(crate) fn graphics_queue_group(&self) -> &types::QueueGroup<gfx::Graphics> {
@@ -166,7 +164,6 @@ impl DeviceContext {
     pub(crate) unsafe fn release(self) {
         self.memory_allocator
             .into_inner()
-            .unwrap()
             .dispose(&self.device)
             .unwrap();
         self.device.wait_idle().unwrap();

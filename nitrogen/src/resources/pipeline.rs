@@ -104,36 +104,13 @@ impl PipelineStorage {
         }
     }
 
-    pub(crate) unsafe fn create_graphics_pipelines(
+    pub(crate) unsafe fn create_graphics_pipeline(
         &mut self,
         device: &DeviceContext,
         render_pass_storage: &RenderPassStorage,
         vertex_attrib_storage: &VertexAttribStorage,
         render_pass_handle: RenderPassHandle,
-        create_infos: &[GraphicsPipelineCreateInfo],
-    ) -> SmallVec<[Result<PipelineHandle>; 16]> {
-        create_infos
-            .iter()
-            .map(|create_info| {
-                self.create_graphics_pipeline(
-                    device,
-                    render_pass_storage,
-                    vertex_attrib_storage,
-                    render_pass_handle,
-                    create_info,
-                )
-            })
-            .collect()
-    }
-
-    // I'm sorry Mike Acton
-    unsafe fn create_graphics_pipeline(
-        &mut self,
-        device: &DeviceContext,
-        render_pass_storage: &RenderPassStorage,
-        vertex_attrib_storage: &VertexAttribStorage,
-        render_pass_handle: RenderPassHandle,
-        create_info: &GraphicsPipelineCreateInfo,
+        create_info: GraphicsPipelineCreateInfo,
     ) -> Result<PipelineHandle> {
         struct ShaderModules {
             vertex: ShaderModule,
@@ -302,21 +279,10 @@ impl PipelineStorage {
         Ok(handle)
     }
 
-    pub(crate) unsafe fn create_compute_pipelines(
-        &mut self,
-        device: &DeviceContext,
-        create_infos: &[ComputePipelineCreateInfo],
-    ) -> SmallVec<[Result<PipelineHandle>; 16]> {
-        create_infos
-            .iter()
-            .map(|create_info| self.create_compute_pipeline(device, create_info))
-            .collect()
-    }
-
     pub(crate) unsafe fn create_compute_pipeline(
         &mut self,
         device: &DeviceContext,
-        create_info: &ComputePipelineCreateInfo,
+        create_info: ComputePipelineCreateInfo,
     ) -> Result<PipelineHandle> {
         let shader_module = device
             .device

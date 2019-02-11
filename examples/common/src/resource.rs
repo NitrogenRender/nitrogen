@@ -132,7 +132,7 @@ pub unsafe fn image_create_with_content(
         ),
     };
 
-    let sampler = ctx.sampler_create(&[sampler_create]).remove(0);
+    let sampler = ctx.sampler_create(sampler_create);
 
     Some((img, sampler))
 }

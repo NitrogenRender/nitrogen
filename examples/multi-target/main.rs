@@ -123,7 +123,7 @@ fn init(
             ],
         };
 
-        ctx.vertex_attribs_create(&[info]).remove(0)
+        ctx.vertex_attribs_create(info)
     };
 
     // create material and material instance

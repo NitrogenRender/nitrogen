@@ -258,9 +258,9 @@ impl Context {
     /// Create sampler objects and retrieve handles for them.
     pub unsafe fn sampler_create(
         &mut self,
-        create_infos: &[sampler::SamplerCreateInfo],
-    ) -> SmallVec<[sampler::SamplerHandle; 16]> {
-        self.sampler_storage.create(&self.device_ctx, create_infos)
+        create_info: sampler::SamplerCreateInfo,
+    ) -> sampler::SamplerHandle {
+        self.sampler_storage.create(&self.device_ctx, create_info)
     }
 
     // buffer
@@ -298,9 +298,9 @@ impl Context {
     /// [`GraphicsPassInfo`]: ./graph/pass/struct.GraphicsPassInfo.html
     pub fn vertex_attribs_create(
         &mut self,
-        infos: &[vertex_attrib::VertexAttribInfo],
-    ) -> SmallVec<[vertex_attrib::VertexAttribHandle; 16]> {
-        self.vertex_attrib_storage.create(infos)
+        info: vertex_attrib::VertexAttribInfo,
+    ) -> vertex_attrib::VertexAttribHandle {
+        self.vertex_attrib_storage.create(info)
     }
 
     /// Destroy vertex attribute description objects.

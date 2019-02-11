@@ -497,8 +497,7 @@ unsafe fn create_pipeline_compute(
 
     let pipeline_handle = storages
         .pipeline
-        .create_compute_pipelines(device, &[create_info])
-        .remove(0)
+        .create_compute_pipeline(device, create_info)
         .ok();
 
     pipeline_handle.map(|handle| (handle, pass_mat))
@@ -552,14 +551,13 @@ unsafe fn create_pipeline_graphics(
 
     let pipeline_handle = storages
         .pipeline
-        .create_graphics_pipelines(
+        .create_graphics_pipeline(
             device,
             storages.render_pass,
             storages.vertex_attrib,
             render_pass,
-            &[create_info],
+            create_info,
         )
-        .remove(0)
         .ok();
 
     pipeline_handle.map(|handle| (handle, pass_mat))
@@ -640,22 +638,19 @@ unsafe fn create_resource(
             // If the image is used for sampling then it means some other pass will read from it
             // as a color image. In that case we create a sampler for this image as well
             if usages.0.contains(gfx::image::Usage::SAMPLED) {
-                let sampler = storages
-                    .sampler
-                    .create(
-                        device,
-                        &[sampler::SamplerCreateInfo {
-                            min_filter: sampler::Filter::Linear,
-                            mip_filter: sampler::Filter::Linear,
-                            mag_filter: sampler::Filter::Linear,
-                            wrap_mode: (
-                                sampler::WrapMode::Clamp,
-                                sampler::WrapMode::Clamp,
-                                sampler::WrapMode::Clamp,
-                            ),
-                        }],
-                    )
-                    .remove(0);
+                let sampler = storages.sampler.create(
+                    device,
+                    sampler::SamplerCreateInfo {
+                        min_filter: sampler::Filter::Linear,
+                        mip_filter: sampler::Filter::Linear,
+                        mag_filter: sampler::Filter::Linear,
+                        wrap_mode: (
+                            sampler::WrapMode::Clamp,
+                            sampler::WrapMode::Clamp,
+                            sampler::WrapMode::Clamp,
+                        ),
+                    },
+                );
                 res.samplers.insert(id, sampler);
                 backbuffer.samplers.insert(name.clone(), sampler);
             }
@@ -716,22 +711,19 @@ unsafe fn create_resource(
             // If the image is used for sampling then it means some other pass will read from it
             // as a color image. In that case we create a sampler for this image as well
             if usages.0.contains(gfx::image::Usage::SAMPLED) {
-                let sampler = storages
-                    .sampler
-                    .create(
-                        device,
-                        &[sampler::SamplerCreateInfo {
-                            min_filter: sampler::Filter::Linear,
-                            mip_filter: sampler::Filter::Linear,
-                            mag_filter: sampler::Filter::Linear,
-                            wrap_mode: (
-                                sampler::WrapMode::Clamp,
-                                sampler::WrapMode::Clamp,
-                                sampler::WrapMode::Clamp,
-                            ),
-                        }],
-                    )
-                    .remove(0);
+                let sampler = storages.sampler.create(
+                    device,
+                    sampler::SamplerCreateInfo {
+                        min_filter: sampler::Filter::Linear,
+                        mip_filter: sampler::Filter::Linear,
+                        mag_filter: sampler::Filter::Linear,
+                        wrap_mode: (
+                            sampler::WrapMode::Clamp,
+                            sampler::WrapMode::Clamp,
+                            sampler::WrapMode::Clamp,
+                        ),
+                    },
+                );
                 res.samplers.insert(id, sampler);
             }
 
