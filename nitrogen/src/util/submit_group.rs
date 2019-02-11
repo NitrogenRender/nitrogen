@@ -166,15 +166,16 @@ impl SubmitGroup {
     ) -> Option<()> {
         use graph::ImageClearValue;
 
-        let mut cmd = self.pool_graphics.alloc();
-
         let img = ctx.image_storage.raw(image)?;
 
+        let sem = self.sem_pool.alloc();
+
+        self.sem_list.add_next_semaphore(sem);
+
+        let mut cmd = self.pool_graphics.alloc();
+
         let entry_barrier = gfx::memory::Barrier::Image {
-            states: (
-                gfx::image::Access::empty(),
-                gfx::image::Layout::Preinitialized,
-            )
+            states: (gfx::image::Access::empty(), gfx::image::Layout::General)
                 ..(
                     gfx::image::Access::TRANSFER_WRITE,
                     gfx::image::Layout::TransferDstOptimal,
@@ -233,6 +234,25 @@ impl SubmitGroup {
             gfx::memory::Dependencies::empty(),
             &[exit_barrier],
         );
+
+        cmd.finish();
+
+        let mut queue = ctx.device_ctx.graphics_queue();
+
+        {
+            let submission = gfx::Submission {
+                command_buffers: Some(&*cmd),
+                wait_semaphores: self
+                    .sem_pool
+                    .list_prev_sems(&self.sem_list)
+                    .map(|sem| (sem, gfx::pso::PipelineStage::BOTTOM_OF_PIPE)),
+                signal_semaphores: self.sem_pool.list_next_sems(&self.sem_list),
+            };
+
+            queue.submit(submission, None);
+        }
+
+        self.sem_list.advance();
 
         Some(())
     }
