@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use bitflags::bitflags;
-use derive_more::{Display, From};
 
 use std;
 use std::borrow::Borrow;

@@ -6,8 +6,6 @@ use crate::storage::{Handle, Storage};
 
 use gfx::Device;
 
-use derive_more::{Display, From};
-
 use crate::device::DeviceContext;
 use crate::submit_group::ResourceList;
 

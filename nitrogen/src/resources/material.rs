@@ -14,8 +14,6 @@ use crate::types;
 
 use smallvec::SmallVec;
 
-use derive_more::{Display, From};
-
 pub type MaterialHandle = Handle<Material>;
 
 const MAX_SETS_PER_POOL: u8 = 16;

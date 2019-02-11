@@ -20,8 +20,6 @@ use gfx::Device;
 use std::collections::BTreeMap;
 use std::error::Error;
 
-use derive_more::{Display, From};
-
 #[derive(Clone, Debug, From, Display)]
 pub enum PipelineError {
     #[display(fmt = "Creation of pipeline was unsuccessful")]

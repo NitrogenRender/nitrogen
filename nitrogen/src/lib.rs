@@ -48,9 +48,8 @@
 //!
 //! [`Context`]: ./struct.Context.html
 
-// extern crate gfx_backend_vulkan as back;
-// pub extern crate gfx_hal as gfx;
-// extern crate gfx_memory as gfxm;
+#[macro_use]
+extern crate derive_more;
 
 pub use gfx;
 
