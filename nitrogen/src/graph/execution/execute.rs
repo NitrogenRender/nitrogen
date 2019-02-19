@@ -64,6 +64,7 @@ pub(crate) unsafe fn execute(
                         .iter()
                         .map(|(rid, ty, binding, samp)| {
                             let rid = &resolved_graph.moved_from(*rid).unwrap();
+
                             match ty {
                                 ResourceReadType::Image(img) => {
                                     let img_handle = &res.images[rid];
@@ -71,10 +72,6 @@ pub(crate) unsafe fn execute(
 
                                     match img {
                                         ImageReadType::Color => {
-                                            let samp_handle = &res.samplers[rid];
-                                            let sampler =
-                                                storages.sampler.raw(*samp_handle).unwrap();
-
                                             let img_desc = gfx::pso::DescriptorSetWrite {
                                                 set,
                                                 binding: (*binding) as u32,
@@ -87,18 +84,25 @@ pub(crate) unsafe fn execute(
                                                 ),
                                             };
 
-                                            let sampler_desc = gfx::pso::DescriptorSetWrite {
-                                                set,
-                                                binding: samp.clone().unwrap() as u32,
-                                                array_offset: 0,
-                                                descriptors: std::iter::once(
-                                                    gfx::pso::Descriptor::Sampler(sampler),
-                                                ),
-                                            };
-
+                                            // prepare final descriptor writes
                                             let mut vec = SmallVec::<[_; 2]>::new();
                                             vec.push(img_desc);
-                                            vec.push(sampler_desc);
+
+                                            if let Some(samp_bind) = *samp {
+                                                let samp_handle = &res.samplers[rid];
+                                                let sampler =
+                                                    storages.sampler.raw(*samp_handle).unwrap();
+
+                                                let sampler_desc = gfx::pso::DescriptorSetWrite {
+                                                    set,
+                                                    binding: samp_bind as u32,
+                                                    array_offset: 0,
+                                                    descriptors: std::iter::once(
+                                                        gfx::pso::Descriptor::Sampler(sampler),
+                                                    ),
+                                                };
+                                                vec.push(sampler_desc);
+                                            }
 
                                             vec
                                         }

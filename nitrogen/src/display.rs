@@ -97,6 +97,7 @@ impl Display {
         config.image_usage |= gfx::image::Usage::TRANSFER_DST;
         config.image_layers = 1;
 
+        // TODO add a setting for VSync
         config.present_mode = gfx::PresentMode::Immediate;
         // config.present_mode = gfx::PresentMode::Relaxed;
 

@@ -125,13 +125,13 @@ impl GraphBuilder {
         &mut self,
         name: T,
         binding: u8,
-        sampler_binding: u8,
+        sampler_binding: Option<u8>,
     ) {
         self.resource_reads.push((
             name.into(),
             R::Image(ImageReadType::Color),
             binding,
-            Some(sampler_binding),
+            sampler_binding,
         ));
     }
 

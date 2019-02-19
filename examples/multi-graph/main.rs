@@ -263,7 +263,7 @@ fn setup_graph_post(ctx: &mut nit::Context) -> graph::GraphHandle {
 
                 builder.image_write_storage("Emissive", 0);
 
-                builder.image_read_color("Canvas", 1, 2);
+                builder.image_read_color("Canvas", 1, Some(2));
 
                 builder.enable();
             }
@@ -361,7 +361,7 @@ fn setup_graph_post(ctx: &mut nit::Context) -> graph::GraphHandle {
 
                 builder.image_backbuffer_get("Canvas", "Raw");
 
-                builder.image_read_color("Raw", 1, 2);
+                builder.image_read_color("Raw", 1, Some(2));
                 builder.image_read_storage("Blurred", 3);
 
                 builder.enable();

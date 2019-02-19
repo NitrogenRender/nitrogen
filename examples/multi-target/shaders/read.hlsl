@@ -47,15 +47,11 @@ VertexOut VertexMain(VertexIn input)
 [[vk::binding(0, 0)]]
 Texture2D tRed;
 [[vk::binding(1, 0)]]
-SamplerState sRed;
-[[vk::binding(2, 0)]]
 Texture2D tGreen;
-[[vk::binding(3, 0)]]
-SamplerState sGreen;
-[[vk::binding(4, 0)]]
+[[vk::binding(2, 0)]]
 Texture2D tBlue;
-[[vk::binding(5, 0)]]
-SamplerState sBlue;
+[[vk::binding(3, 0)]]
+SamplerState samp;
 
 FragmentOut FragmentMain(VertexOut input)
 {
@@ -66,18 +62,18 @@ FragmentOut FragmentMain(VertexOut input)
     float4 color;
     switch (input.idx) {
     case 0:
-        color = float4(tRed.Sample(sRed, uv).xxx, 1.0);
+        color = float4(tRed.Sample(samp, uv).xxx, 1.0);
         break;
     case 1:
-        color = float4(tGreen.Sample(sGreen, uv).xxx, 1.0);
+        color = float4(tGreen.Sample(samp, uv).xxx, 1.0);
         break;
     case 2:
-        color = float4(tBlue.Sample(sBlue, uv).xxx, 1.0);
+        color = float4(tBlue.Sample(samp, uv).xxx, 1.0);
         break;
     case 3:
-        float red = tRed.Sample(sRed, uv).x;
-        float green = tGreen.Sample(sRed, uv).x;
-        float blue = tBlue.Sample(sRed, uv).x;
+        float red = tRed.Sample(samp, uv).x;
+        float green = tGreen.Sample(samp, uv).x;
+        float blue = tBlue.Sample(samp, uv).x;
         color = float4(red, green, blue, 1.0);
         break;
     }

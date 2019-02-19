@@ -297,9 +297,9 @@ fn setup_graphs(
 
                 builder.image_write_color("Output", 0);
 
-                builder.image_read_color("Red", 0, 1);
-                builder.image_read_color("Green", 2, 3);
-                builder.image_read_color("Blue", 4, 5);
+                builder.image_read_color("Red", 0, Some(3));
+                builder.image_read_color("Green", 1, None);
+                builder.image_read_color("Blue", 2, None);
 
                 builder.enable();
             },

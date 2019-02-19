@@ -432,7 +432,7 @@ fn setup_graphs(
 
                 builder.image_write_color("IOutput", 0);
 
-                builder.image_read_color("ITest", 0, 1);
+                builder.image_read_color("ITest", 0, Some(1));
 
                 builder.enable();
             },
