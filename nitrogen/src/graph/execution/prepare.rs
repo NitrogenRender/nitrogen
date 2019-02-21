@@ -20,6 +20,7 @@ use crate::device::DeviceContext;
 use crate::resources::material::MaterialHandle;
 use smallvec::SmallVec;
 
+use crate::graph::ResourceName;
 use crate::resources::material::MaterialStorage;
 use std::collections::BTreeMap;
 
@@ -94,6 +95,32 @@ pub(crate) unsafe fn prepare_pass_base(
     }
 }
 
+#[derive(Debug, Clone, From, Display)]
+pub enum PrepareError {
+    #[display(fmt = "Renderpass invalid. Is the graph compiled?")]
+    InvalidRenderPass,
+
+    #[display(fmt = "Resource {:?} is referenced which is invalid", _0)]
+    InvalidResource(ResourceId),
+
+    #[display(fmt = "Backbuffer resource \"{}\" does not exist", _0)]
+    InvalidBackbufferResource(ResourceName),
+
+    #[display(fmt = "Image {:?} was not created yet. Bug?", _0)]
+    InvalidImageResource(ResourceId),
+
+    #[display(fmt = "Image {:?} is invalid", _0)]
+    InvalidImageHandle(ImageHandle),
+
+    #[display(fmt = "The framebuffer extent could not be inferred")]
+    CantInferFramebufferExtent,
+
+    #[display(fmt = "Out of memory: {}", _0)]
+    OutOfMemory(gfx::device::OutOfMemory),
+}
+
+impl std::error::Error for PrepareError {}
+
 pub(crate) unsafe fn prepare(
     usages: &ResourceUsages,
     backbuffer: &mut Backbuffer,
@@ -104,7 +131,7 @@ pub(crate) unsafe fn prepare(
     resolved: &GraphResourcesResolved,
     passes: &[(PassName, PassInfo)],
     context: ExecutionContext,
-) -> Option<GraphResources> {
+) -> Result<GraphResources, PrepareError> {
     let mut res = GraphResources {
         exec_version: 0, // will be filled by the caller
         exec_context: context.clone(),
@@ -147,7 +174,7 @@ pub(crate) unsafe fn prepare(
         }
     }
 
-    Some(res)
+    Ok(res)
 }
 
 pub(crate) unsafe fn prepare_pass(
@@ -159,13 +186,17 @@ pub(crate) unsafe fn prepare_pass(
     pass: PassId,
     info: &PassInfo,
     res: &mut GraphResources,
-) -> Option<()> {
-    // TODO compute
+) -> Result<(), PrepareError> {
     match info {
         PassInfo::Graphics { .. } => {
             // create framebuffers
             let render_pass = base.render_passes[&pass];
-            let render_pass_raw = storages.render_pass.raw(render_pass)?;
+            let render_pass_raw = storages
+                .render_pass
+                .raw(render_pass)
+                .ok_or(PrepareError::InvalidRenderPass)?;
+
+            // get all image views and dimensions for framebuffer creation
 
             let (views, dims): (SmallVec<[_; 16]>, SmallVec<[_; 16]>) = {
                 // we only care about images that are used as a color or depth-stencil attachment
@@ -183,27 +214,36 @@ pub(crate) unsafe fn prepare_pass(
                     .as_mut_slice()
                     .sort_by_key(|(_, _, binding)| binding);
 
-                sorted_attachments
+                // resolve all the references, preserve error
+                let mut res_view_dims = sorted_attachments
                     .into_iter()
-                    .filter_map(|(res_id, _, _)| {
-                        let res_id = resolved.moved_from(*res_id)?;
-                        let (_, create_info) = resolved.create_info(res_id)?;
+                    .map(|(res_id, _, _)| -> Result<_, PrepareError> {
+                        let res_id = resolved
+                            .moved_from(*res_id)
+                            .ok_or(PrepareError::InvalidResource(*res_id))?;
+                        let (_, create_info) = resolved
+                            .create_info(res_id)
+                            .ok_or(PrepareError::InvalidResource(res_id))?;
 
                         let handle = match create_info {
-                            ResourceCreateInfo::Image(ImageInfo::BackbufferCreate(n, _, _))
-                            | ResourceCreateInfo::Image(ImageInfo::BackbufferRead(n)) => {
-                                backbuffer.images.get(n)?
-                            }
-                            ResourceCreateInfo::Image(ImageInfo::Create(_)) => {
-                                res.images.get(&res_id)?
-                            }
+                            ResourceCreateInfo::Image(ImageInfo::BackbufferRead(n)) => backbuffer
+                                .images
+                                .get(n)
+                                .ok_or(PrepareError::InvalidBackbufferResource(n.clone()))?,
+                            ResourceCreateInfo::Image(ImageInfo::Create(_)) => res
+                                .images
+                                .get(&res_id)
+                                .ok_or(PrepareError::InvalidImageResource(res_id))?,
                             // buffer attachments???
                             _ => unreachable!(),
                         };
 
-                        let image = storages.image.raw(*handle)?;
+                        let image = storages
+                            .image
+                            .raw(*handle)
+                            .ok_or(PrepareError::InvalidImageHandle(*handle))?;
 
-                        Some((&image.view, &image.dimension))
+                        Ok((&image.view, &image.dimension))
                     })
                     // depth textures might be "read" from when using for testing without writing
                     .chain(
@@ -213,19 +253,38 @@ pub(crate) unsafe fn prepare_pass(
                                 ResourceReadType::Image(ImageReadType::DepthStencil) => true,
                                 _ => false,
                             })
-                            .filter_map(|(res_id, _, _, _)| {
-                                let res_id = resolved.moved_from(*res_id)?;
+                            .map(|(res_id, _, _, _)| -> Result<_, PrepareError> {
+                                let res_id = resolved
+                                    .moved_from(*res_id)
+                                    .ok_or(PrepareError::InvalidResource(*res_id))?;
 
                                 let handle = res.images[&res_id];
 
-                                let image = storages.image.raw(handle)?;
+                                let image = storages
+                                    .image
+                                    .raw(handle)
+                                    .ok_or(PrepareError::InvalidImageHandle(handle))?;
 
-                                Some((&image.view, &image.dimension))
+                                Ok((&image.view, &image.dimension))
                             }),
-                    )
-                    .unzip()
+                    );
+
+                // fold all the results into array, aborting on the first encountered error
+                // then bubble up the error
+                let view_dims: SmallVec<[_; 16]> = res_view_dims.try_fold(
+                    SmallVec::new(),
+                    |mut acc, val| -> Result<_, PrepareError> {
+                        acc.push(val?);
+                        Ok(acc)
+                    },
+                )?;
+
+                // split into views and dimensions
+                view_dims.into_iter().unzip()
             };
 
+            // find "THE" extent of the framebuffer
+            // TODO check that all dimensions are the same using `all()`?
             let extent = {
                 dims.as_slice()
                     .iter()
@@ -235,23 +294,24 @@ pub(crate) unsafe fn prepare_pass(
                         height: y,
                         depth: z,
                     })
-                    .next()?
+                    .next()
+                    .ok_or(PrepareError::CantInferFramebufferExtent)?
             };
 
             use gfx::Device;
 
+            // wheeeey
             let framebuffer = device
                 .device
-                .create_framebuffer(render_pass_raw, views, extent)
-                .ok()?;
+                .create_framebuffer(render_pass_raw, views, extent)?;
 
             res.framebuffers.insert(pass, (framebuffer, extent));
 
-            Some(())
+            Ok(())
         }
         PassInfo::Compute(_) => {
             // nothing to prepare for compute passes
-            Some(())
+            Ok(())
         }
     }
 }
@@ -299,9 +359,6 @@ unsafe fn create_render_pass(
                 let (format, clear) = match info {
                     ResourceCreateInfo::Image(ImageInfo::Create(img)) => {
                         (img.format.into(), origin == *res)
-                    }
-                    ResourceCreateInfo::Image(ImageInfo::BackbufferCreate(_, img, _)) => {
-                        (img.format.into(), true)
                     }
                     ResourceCreateInfo::Image(ImageInfo::BackbufferRead(name)) => {
                         (*(backbuffer_usage.images.get(name)?), false)
@@ -362,9 +419,6 @@ unsafe fn create_render_pass(
 
                         let format = match info {
                             ResourceCreateInfo::Image(ImageInfo::Create(img)) => img.format.into(),
-                            ResourceCreateInfo::Image(ImageInfo::BackbufferCreate(_, img, _)) => {
-                                img.format.into()
-                            }
                             ResourceCreateInfo::Image(ImageInfo::BackbufferRead(_name)) => {
                                 unimplemented!()
                             }
@@ -566,90 +620,6 @@ unsafe fn create_resource(
     res: &mut GraphResources,
 ) -> Option<()> {
     match info {
-        ResourceCreateInfo::Image(ImageInfo::BackbufferCreate(name, create, _usage)) => {
-            let raw_dim = create.size_mode.absolute(context.reference_size);
-            let format = create.format;
-
-            if let Some(img) = backbuffer.images.get(name) {
-                let image = storages.image.raw(*img)?;
-
-                let dims = image.dimension.as_triple(0);
-
-                if (dims.0, dims.1) == raw_dim && image.format == format.into() {
-                    // we can reuse the old one!
-
-                    res.images.insert(id, *img);
-                    res.external_resources.insert(id);
-
-                    if let Some(sampler) = backbuffer.samplers.get(name) {
-                        res.samplers.insert(id, *sampler);
-                    }
-
-                    return Some(());
-                }
-                // there is no else case. If the backbuffer would be incompatible we would have
-                // cleared it - that means we continue with creating the image
-            }
-
-            let raw_dim = create.size_mode.absolute(context.reference_size);
-            let dim = image::ImageDimension::D2 {
-                x: raw_dim.0,
-                y: raw_dim.1,
-            };
-
-            let kind = image::ViewKind::D2;
-
-            let format = create.format;
-
-            let is_depth_stencil = format.is_depth_stencil();
-
-            let num_mips = if is_depth_stencil { 0 } else { 1 };
-
-            // any flags that will be needed
-            let usages = &usages.image[&id];
-
-            // let's go!
-            let create_info = image::ImageCreateInfo {
-                dimension: dim,
-                num_layers: 1,
-                num_samples: 1,
-                num_mipmaps: num_mips,
-                format,
-                kind,
-                usage: usages.0.clone(),
-                is_transient: false,
-            };
-
-            let img_handle = storages.image.create(device, create_info).ok()?;
-
-            res.images.insert(id, img_handle);
-            res.external_resources.insert(id);
-
-            backbuffer.images.insert(name.clone(), img_handle);
-
-            // If the image is used for sampling then it means some other pass will read from it
-            // as a color image. In that case we create a sampler for this image as well
-            if usages.0.contains(gfx::image::Usage::SAMPLED) {
-                let sampler = storages.sampler.create(
-                    device,
-                    sampler::SamplerCreateInfo {
-                        min_filter: sampler::Filter::Linear,
-                        mip_filter: sampler::Filter::Linear,
-                        mag_filter: sampler::Filter::Linear,
-                        wrap_mode: (
-                            sampler::WrapMode::Clamp,
-                            sampler::WrapMode::Clamp,
-                            sampler::WrapMode::Clamp,
-                        ),
-                    },
-                );
-                res.samplers.insert(id, sampler);
-                backbuffer.samplers.insert(name.clone(), sampler);
-            }
-
-            Some(())
-        }
-
         ResourceCreateInfo::Image(ImageInfo::BackbufferRead(name)) => {
             // read image from backbuffer
 

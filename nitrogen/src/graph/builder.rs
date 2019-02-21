@@ -59,31 +59,6 @@ impl GraphBuilder {
         ));
     }
 
-    pub fn image_backbuffer_create<BN, LN>(
-        &mut self,
-        backbuffer_name: BN,
-        local_name: LN,
-        create_info: ImageCreateInfo,
-        usage: crate::image::ImageUsage,
-    ) where
-        BN: Into<ResourceName>,
-        LN: Into<ResourceName>,
-    {
-        let bname = backbuffer_name.into();
-        let lname = local_name.into();
-
-        self.resource_creates.push((
-            lname.clone(),
-            ResourceCreateInfo::Image(ImageInfo::BackbufferCreate(
-                bname.clone(),
-                create_info,
-                usage.into(),
-            )),
-        ));
-
-        self.resource_backbuffer.push((bname, lname));
-    }
-
     pub fn image_backbuffer_get<BN, LN>(&mut self, backbuffer_name: BN, local_name: LN)
     where
         BN: Into<ResourceName>,
@@ -238,7 +213,6 @@ pub enum ImageClearValue {
 pub(crate) enum ImageInfo {
     Create(ImageCreateInfo),
     BackbufferRead(ResourceName),
-    BackbufferCreate(ResourceName, ImageCreateInfo, gfx::image::Usage),
 }
 
 #[derive(Debug, Clone, Hash)]

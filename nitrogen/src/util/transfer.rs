@@ -9,6 +9,7 @@ use crate::buffer::BufferTypeInternal;
 use crate::image::ImageType;
 
 use crate::device::DeviceContext;
+use crate::resources::command_pool::CommandPoolGraphics;
 use crate::resources::command_pool::CommandPoolTransfer;
 use crate::resources::semaphore_pool::SemaphoreList;
 use crate::resources::semaphore_pool::SemaphorePool;
@@ -176,6 +177,108 @@ pub(crate) unsafe fn copy_buffers_to_images(
         };
 
         device.transfer_queue().submit(submission, None);
+    }
+
+    sem_list.advance();
+}
+
+pub(crate) struct ImageBlit<'a> {
+    pub(crate) dst: &'a ImageType,
+    pub(crate) src: &'a ImageType,
+
+    // TODO mipmaps?
+    // TODO layers?
+    pub(crate) filter: gfx::image::Filter,
+
+    pub(crate) subresource_range: gfx::image::SubresourceRange,
+    pub(crate) copy_information: gfx::command::ImageBlit,
+}
+
+pub(crate) unsafe fn blit_image(
+    device: &DeviceContext,
+    sem_pool: &SemaphorePool,
+    sem_list: &mut SemaphoreList,
+    cmd_pool: &CommandPoolGraphics,
+    blits: &[ImageBlit],
+) {
+    use gfx::image::Access;
+    use gfx::image::Layout;
+    use gfx::memory::Barrier;
+    use gfx::pso::PipelineStage;
+
+    let submit = {
+        let mut cmd = cmd_pool.alloc();
+
+        for transfer in blits {
+            let entry_barrier_dst = Barrier::Image {
+                states: (Access::empty(), Layout::General)
+                    ..(Access::TRANSFER_WRITE, Layout::TransferDstOptimal),
+                target: transfer.dst.raw(),
+                families: None,
+                range: transfer.subresource_range.clone(),
+            };
+            let entry_barrier_src = Barrier::Image {
+                states: (Access::empty(), Layout::General)
+                    ..(Access::TRANSFER_READ, Layout::TransferSrcOptimal),
+                target: transfer.src.raw(),
+                families: None,
+                range: transfer.subresource_range.clone(),
+            };
+
+            cmd.pipeline_barrier(
+                PipelineStage::TOP_OF_PIPE..PipelineStage::TRANSFER,
+                gfx::memory::Dependencies::empty(),
+                &[entry_barrier_dst, entry_barrier_src],
+            );
+
+            cmd.blit_image(
+                transfer.src.raw(),
+                Layout::TransferSrcOptimal,
+                transfer.dst.raw(),
+                Layout::TransferDstOptimal,
+                transfer.filter,
+                &[transfer.copy_information.clone()],
+            );
+
+            let exit_barrier_dst = Barrier::Image {
+                states: (Access::TRANSFER_WRITE, Layout::TransferDstOptimal)
+                    ..(Access::empty(), Layout::General),
+                target: transfer.dst.raw(),
+                families: None,
+                range: transfer.subresource_range.clone(),
+            };
+            let exit_barrier_src = Barrier::Image {
+                states: (Access::TRANSFER_READ, Layout::TransferSrcOptimal)
+                    ..(Access::empty(), Layout::General),
+                target: transfer.src.raw(),
+                families: None,
+                range: transfer.subresource_range.clone(),
+            };
+
+            cmd.pipeline_barrier(
+                PipelineStage::TRANSFER..PipelineStage::BOTTOM_OF_PIPE,
+                gfx::memory::Dependencies::empty(),
+                &[exit_barrier_dst, exit_barrier_src],
+            );
+        }
+
+        cmd.finish();
+        cmd
+    };
+
+    let sem = sem_pool.alloc();
+    sem_list.add_next_semaphore(sem);
+
+    {
+        let submission = gfx::Submission {
+            command_buffers: Some(&*submit),
+            wait_semaphores: sem_pool
+                .list_prev_sems(sem_list)
+                .map(|sem| (sem, gfx::pso::PipelineStage::BOTTOM_OF_PIPE)),
+            signal_semaphores: sem_pool.list_next_sems(sem_list),
+        };
+
+        device.graphics_queue().submit(submission, None);
     }
 
     sem_list.advance();

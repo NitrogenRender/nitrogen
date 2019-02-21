@@ -418,11 +418,9 @@ impl Context {
     pub fn graph_compile(
         &mut self,
         graph: graph::GraphHandle,
-        backbuffer: &mut graph::Backbuffer,
         store: &mut graph::Store,
     ) -> Result<(), Vec<graph::GraphCompileError>> {
-        self.graph_storage
-            .compile(&mut backbuffer.usage, store, graph)
+        self.graph_storage.compile(store, graph)
     }
 
     // submit group

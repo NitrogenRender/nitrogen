@@ -241,7 +241,7 @@ impl From<ViewKind> for gfx::image::ViewKind {
 }
 
 pub(crate) type ImageType = AllocImage;
-type ImageView = <back::Backend as gfx::Backend>::ImageView;
+pub(crate) type ImageView = <back::Backend as gfx::Backend>::ImageView;
 
 pub struct Image {
     pub(crate) image: ImageType,

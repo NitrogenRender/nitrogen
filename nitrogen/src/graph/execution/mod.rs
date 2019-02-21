@@ -25,7 +25,22 @@ use std::collections::{HashMap, HashSet};
 
 use smallvec::SmallVec;
 
+use crate::resources::image::ImageFormat;
 use gfx;
+
+#[derive(Clone, Debug, From, Display)]
+pub enum GraphExecError {
+    #[display(fmt = "Invalid graph handle")]
+    InvalidGraph,
+
+    #[display(fmt = "The graph has not been compiled before executing")]
+    GraphNotCompiled,
+
+    #[display(fmt = "Graph resources could not be created: {}", _0)]
+    ResourcePrepareError(PrepareError),
+}
+
+impl std::error::Error for GraphExecError {}
 
 #[derive(Debug, Default)]
 pub(crate) struct ResourceUsages {
@@ -110,9 +125,6 @@ impl GraphResources {
 pub struct Backbuffer {
     pub(crate) usage: BackbufferUsage,
 
-    //
-    pub(crate) exec_contexts: HashMap<usize, super::ExecutionContext>,
-
     pub(crate) images: HashMap<super::ResourceName, ImageHandle>,
     pub(crate) samplers: HashMap<super::ResourceName, SamplerHandle>,
 }
@@ -121,56 +133,37 @@ impl Backbuffer {
     pub fn new() -> Self {
         Backbuffer {
             usage: BackbufferUsage::new(),
-            exec_contexts: HashMap::new(),
 
             images: HashMap::new(),
             samplers: HashMap::new(),
         }
     }
 
-    pub(crate) fn clear(&mut self, stores: &mut Storages, res_list: &mut ResourceList) {
-        stores.image.destroy(res_list, self.images.values());
-        stores.sampler.destroy(res_list, self.samplers.values());
-
-        self.images.clear();
-        self.samplers.clear();
-    }
-
     pub fn image_get<T: Into<super::ResourceName>>(&self, name: T) -> Option<ImageHandle> {
         self.images.get(&name.into()).cloned()
     }
 
-    pub fn image_put<T: Into<super::ResourceName>>(&mut self, name: T, image: ImageHandle) {
-        self.images.insert(name.into(), image);
+    pub fn image_put<T: Into<super::ResourceName>>(
+        &mut self,
+        name: T,
+        image: ImageHandle,
+        format: ImageFormat,
+    ) {
+        let name = name.into();
+        self.images.insert(name.clone(), image);
+        self.usage.images.insert(name, format.into());
     }
 }
 
 #[derive(Debug)]
 pub(crate) struct BackbufferUsage {
-    pub(crate) exec_ids: HashSet<usize>,
-
     pub(crate) images: HashMap<super::ResourceName, gfx::format::Format>,
 }
 
 impl BackbufferUsage {
     pub(crate) fn new() -> Self {
         BackbufferUsage {
-            exec_ids: HashSet::new(),
             images: HashMap::new(),
-        }
-    }
-
-    pub(crate) fn add_graph(&mut self, graph: &crate::graph::GraphResourcesResolved) {
-        use crate::graph::ImageInfo;
-        use crate::graph::ResourceCreateInfo;
-
-        for (name, id) in &graph.backbuffer {
-            match &graph.infos[id] {
-                ResourceCreateInfo::Image(ImageInfo::BackbufferCreate(_, create, _usage)) => {
-                    self.images.insert(name.clone(), create.format.into());
-                }
-                _ => unreachable!(),
-            }
         }
     }
 }

@@ -257,6 +257,54 @@ impl SubmitGroup {
         Some(())
     }
 
+    pub unsafe fn blit_image(
+        &mut self,
+        ctx: &mut Context,
+        dst: image::ImageHandle,
+        src: image::ImageHandle,
+        dst_region: std::ops::Range<gfx::image::Offset>,
+        src_region: std::ops::Range<gfx::image::Offset>,
+    ) -> Option<()> {
+        let dst = ctx.image_storage.raw(dst)?;
+        let src = ctx.image_storage.raw(src)?;
+
+        let blit = transfer::ImageBlit {
+            dst: &dst.image,
+            src: &src.image,
+            filter: gfx::image::Filter::Nearest,
+            subresource_range: gfx::image::SubresourceRange {
+                aspects: dst.aspect,
+                levels: 0..1,
+                layers: 0..1,
+            },
+            // TODO layers? mipmaps?
+            copy_information: gfx::command::ImageBlit {
+                src_subresource: gfx::image::SubresourceLayers {
+                    aspects: src.aspect,
+                    level: 0,
+                    layers: 0..1,
+                },
+                src_bounds: src_region,
+                dst_subresource: gfx::image::SubresourceLayers {
+                    aspects: dst.aspect,
+                    level: 0,
+                    layers: 0..1,
+                },
+                dst_bounds: dst_region,
+            },
+        };
+
+        transfer::blit_image(
+            &ctx.device_ctx,
+            &self.sem_pool,
+            &mut self.sem_list,
+            &mut self.pool_graphics,
+            &[blit],
+        );
+
+        Some(())
+    }
+
     pub unsafe fn graph_execute(
         &mut self,
         ctx: &mut Context,
@@ -264,7 +312,7 @@ impl SubmitGroup {
         graph: graph::GraphHandle,
         store: &graph::Store,
         exec_context: &graph::ExecutionContext,
-    ) {
+    ) -> Result<(), graph::GraphExecError> {
         let mut storages = graph::Storages {
             render_pass: &mut ctx.render_pass_storage,
             pipeline: &mut ctx.pipeline_storage,
@@ -277,7 +325,7 @@ impl SubmitGroup {
 
         let res = self.graph_resources.remove(&graph);
 
-        if let Some(res) = ctx.graph_storage.execute(
+        match ctx.graph_storage.execute(
             &ctx.device_ctx,
             &mut self.sem_pool,
             &mut self.sem_list,
@@ -291,11 +339,16 @@ impl SubmitGroup {
             res,
             exec_context,
         ) {
-            self.graph_resources.insert(graph, res);
-        } else {
-            self.graph_resources.remove(&graph);
-            backbuffer.clear(&mut storages, &mut self.res_destroys);
+            Ok(res) => {
+                self.graph_resources.insert(graph, res);
+            }
+            Err(err) => {
+                self.graph_resources.remove(&graph);
+                Err(err)?;
+            }
         }
+
+        Ok(())
     }
 
     pub fn graph_destroy<G>(&mut self, ctx: &mut Context, graph: G)

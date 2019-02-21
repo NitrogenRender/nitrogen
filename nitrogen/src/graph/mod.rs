@@ -154,7 +154,6 @@ impl GraphStorage {
     /// (like pipelines and render passes)
     pub(crate) fn compile(
         &mut self,
-        backbuffer_usage: &mut BackbufferUsage,
         store: &mut Store,
         handle: GraphHandle,
     ) -> Result<(), Vec<GraphCompileError>> {
@@ -228,13 +227,6 @@ impl GraphStorage {
             .entry((*resolved_id, graph.output_resources.clone()))
             .or_insert(exec_id);
 
-        // if this backbuffer has not been used with this kind of graph yet,
-        // set it up to work with it!
-        if backbuffer_usage.exec_ids.contains(&exec_id) {
-            backbuffer_usage.exec_ids.insert(exec_id);
-            backbuffer_usage.add_graph(resolved);
-        }
-
         let output_slice = graph.output_resources.as_slice();
 
         for output in output_slice {
@@ -273,41 +265,23 @@ impl GraphStorage {
         backbuffer: &mut Backbuffer,
         prev_res: Option<GraphResources>,
         context: &ExecutionContext,
-    ) -> Option<GraphResources> {
-        // TODO error handling !!!
-        // TODO
-        // TODO change this ^ into Result<>
-        let graph = self.storage.get_mut(graph_handle)?;
+    ) -> Result<GraphResources, GraphExecError> {
+        let graph = self
+            .storage
+            .get_mut(graph_handle)
+            .ok_or(GraphExecError::InvalidGraph)?;
 
-        let input_hash = graph.last_input?;
+        let input_hash = graph.last_input.ok_or(GraphExecError::GraphNotCompiled)?;
 
-        let (resolved, id) = graph.resolve_cache.get(&input_hash)?;
+        let (resolved, id) = graph
+            .resolve_cache
+            .get(&input_hash)
+            .ok_or(GraphExecError::GraphNotCompiled)?;
 
         let exec_id = graph
             .exec_id_cache
-            .get(&(*id, graph.output_resources.clone()))?;
-
-        let mut remake_resources = false;
-
-        // The backbuffer has not been used with this kind of graph yet,
-        // make sure it works!
-        if !backbuffer.usage.exec_ids.contains(exec_id) {
-            backbuffer.usage.exec_ids.insert(*exec_id);
-            backbuffer.usage.add_graph(resolved);
-            remake_resources = true;
-        }
-
-        // At this point the backbuffer is compatible with the current graph
-        // but it might not have been made working with the currently *existing*
-        // graph configuration (exec + context).
-        //
-        // So we mark the graph as compatible and remove all resources
-        // and remake them.
-        if backbuffer.exec_contexts.get(exec_id) != Some(context) {
-            backbuffer.exec_contexts.insert(*exec_id, context.clone());
-            backbuffer.clear(storages, res_list);
-            remake_resources = true;
-        }
+            .get(&(*id, graph.output_resources.clone()))
+            .ok_or(GraphExecError::GraphNotCompiled)?;
 
         let exec = &graph.exec_graph_cache[exec_id];
 
@@ -338,7 +312,10 @@ impl GraphStorage {
                     });
 
                 // now read base again (some kind of reborrowing, need to investigate...)
-                let base = graph.exec_base_resources.get_mut(exec_id)?;
+                let base = graph
+                    .exec_base_resources
+                    .get_mut(exec_id)
+                    .ok_or(GraphExecError::GraphNotCompiled)?;
 
                 graph.exec_usages.entry(*exec_id).or_insert_with(|| {
                     execution::derive_resource_usage(
@@ -375,10 +352,7 @@ impl GraphStorage {
                     res
                 }
                 Some(res) => {
-                    if Some(res.exec_version) == graph.last_exec
-                        && &res.exec_context == context
-                        && !remake_resources
-                    {
+                    if Some(res.exec_version) == graph.last_exec && &res.exec_context == context {
                         // same old resources, we can keep them!
 
                         res
@@ -423,7 +397,7 @@ impl GraphStorage {
             context,
         );
 
-        Some(resources)
+        Ok(resources)
     }
 
     pub(crate) fn add_output<T: Into<ResourceName>>(&mut self, handle: GraphHandle, image: T) {
@@ -431,22 +405,6 @@ impl GraphStorage {
             graph.output_resources.push(image.into());
         });
     }
-
-    /*
-    pub(crate) fn output_buffer<T: Into<ResourceName>>(
-        &self,
-        handle: GraphHandle,
-        buffer: T,
-    ) -> Option<crate::buffer::BufferHandle> {
-        let graph = self.storage.get(handle)?;
-        let in_num = graph.last_input?;
-        let (resolve, _exec_num) = graph.resolve_cache.get(&in_num)?;
-        let id = *resolve.name_lookup.get(&buffer.into())?;
-        let (_, res) = graph.exec_resources.as_ref()?;
-
-        res.buffers.get(&id).map(|x| *x)
-    }
-    */
 }
 
 #[derive(Debug, Clone, Ord, PartialOrd, PartialEq, Eq)]
