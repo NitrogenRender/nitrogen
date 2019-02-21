@@ -151,7 +151,7 @@ fn create_graph(ctx: &mut Context) -> graph::GraphHandle {
         struct OpaquePass;
 
         impl graph::GraphicsPassImpl for OpaquePass {
-            fn setup(&mut self, store: &mut graph::Store, builder: &mut graph::GraphBuilder) {
+            fn setup(&mut self, _store: &mut graph::Store, builder: &mut graph::GraphBuilder) {
                 builder.image_create(
                     "Canvas",
                     graph::ImageCreateInfo {
@@ -257,7 +257,7 @@ fn create_graph(ctx: &mut Context) -> graph::GraphHandle {
         struct AlphaPass;
 
         impl graph::GraphicsPassImpl for AlphaPass {
-            fn setup(&mut self, store: &mut graph::Store, builder: &mut graph::GraphBuilder) {
+            fn setup(&mut self, _store: &mut graph::Store, builder: &mut graph::GraphBuilder) {
                 builder.image_move("Canvas", "CanvasFinal");
 
                 builder.image_write_color("CanvasFinal", 0);

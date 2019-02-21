@@ -81,7 +81,7 @@ fn main() {
     let mut store = Store::new();
     let mut backbuffer = Backbuffer::new();
 
-    let _res = ctx.graph_compile(graph, &mut backbuffer, &mut store);
+    let _res = ctx.graph_compile(graph, &mut store);
 
     unsafe {
         submit.graph_execute(
@@ -92,7 +92,7 @@ fn main() {
             &ExecutionContext {
                 reference_size: (1, 1),
             },
-        );
+        ).unwrap();
 
         submit.wait(&mut ctx);
     }

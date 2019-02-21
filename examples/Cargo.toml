@@ -43,7 +43,3 @@ path = "opaque-alpha/main.rs"
 [[example]]
 name = "model"
 path = "model/main.rs"
-
-[[example]]
-name = "multi-graph"
-path = "multi-graph/main.rs"

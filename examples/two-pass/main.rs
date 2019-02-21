@@ -282,7 +282,7 @@ fn main() {
         });
 
         // ntg.graph_compile(graph);
-        if let Err(errs) = ntg.graph_compile(graph, &mut backbuffer, &mut store) {
+        if let Err(errs) = ntg.graph_compile(graph, &mut store) {
             println!("Errors occured while compiling the graph");
             println!("{:?}", errs);
         }
@@ -302,13 +302,15 @@ fn main() {
                 resized = false;
             }
 
-            submits[frame_idx].graph_execute(
+            if let Err(err) = submits[frame_idx].graph_execute(
                 &mut ntg,
                 &mut backbuffer,
                 graph,
                 &store,
                 &exec_context,
-            );
+            ) {
+                println!("graph exec error: {}", err);
+            }
 
             let img = submits[frame_idx]
                 .graph_get_image(&ntg, graph, "IOutput")
