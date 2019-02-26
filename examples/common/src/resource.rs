@@ -86,6 +86,7 @@ pub unsafe fn image_create(
 
         format,
         kind: image::ViewKind::D2,
+        swizzle: Default::default(),
         is_transient: false,
 
         usage,

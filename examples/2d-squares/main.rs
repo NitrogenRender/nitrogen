@@ -247,7 +247,11 @@ fn create_graph(
                 builder.enable();
             }
 
-            fn execute(&self, store: &graph::Store, cmd: &mut graph::ComputeCommandBuffer<'_>) {
+            unsafe fn execute(
+                &self,
+                store: &graph::Store,
+                cmd: &mut graph::ComputeCommandBuffer<'_>,
+            ) {
                 let mut batch_size = 1024;
                 let mut wide = NUM_THINGS as u32 / batch_size;
 
@@ -259,18 +263,16 @@ fn create_graph(
                     }
                 }
 
-                unsafe {
-                    cmd.push_constant::<u32>(0, wide);
-                    cmd.push_constant::<u32>(1, NUM_THINGS as u32);
+                cmd.push_constant::<u32>(0, wide);
+                cmd.push_constant::<u32>(1, NUM_THINGS as u32);
 
-                    let Delta(delta) = store.get::<Delta>().unwrap();
+                let Delta(delta) = store.get::<Delta>().unwrap();
 
-                    cmd.push_constant::<f32>(2, *delta as f32);
+                cmd.push_constant::<f32>(2, *delta as f32);
 
-                    cmd.bind_material(0, self.mat_instance);
+                cmd.bind_material(0, self.mat_instance);
 
-                    cmd.dispatch([wide, batch_size, 1]);
-                }
+                cmd.dispatch([wide, batch_size, 1]);
             }
         }
 
@@ -332,25 +334,26 @@ fn create_graph(
                 builder.enable();
             }
 
-            fn execute(&self, store: &graph::Store, cmd: &mut graph::GraphicsCommandBuffer<'_>) {
+            unsafe fn execute(
+                &self,
+                store: &graph::Store,
+                cmd: &mut graph::GraphicsCommandBuffer<'_>,
+            ) {
                 let things = NUM_THINGS;
 
-                let mut cmd = unsafe {
-                    cmd.begin_render_pass(&[graph::ImageClearValue::Color([0.1, 0.1, 0.2, 1.0])])
-                        .unwrap()
-                };
+                let mut cmd = cmd
+                    .begin_render_pass(&[graph::ImageClearValue::Color([0.1, 0.1, 0.2, 1.0])])
+                    .unwrap();
 
-                unsafe {
-                    cmd.push_constant::<[f32; 4]>(0, [1.0, 1.0, 1.0, 1.0]);
+                cmd.push_constant::<[f32; 4]>(0, [1.0, 1.0, 1.0, 1.0]);
 
-                    let Scale(s) = store.get().unwrap();
-                    cmd.push_constant(4, *s);
+                let Scale(s) = store.get().unwrap();
+                cmd.push_constant(4, *s);
 
-                    cmd.bind_vertex_buffers(&[(self.buffer, 0)]);
-                    cmd.bind_material(0, self.mat_instance);
+                cmd.bind_vertex_buffers(&[(self.buffer, 0)]);
+                cmd.bind_material(0, self.mat_instance);
 
-                    cmd.draw(0..4, 0..things as u32);
-                }
+                cmd.draw(0..4, 0..things as u32);
             }
         }
 

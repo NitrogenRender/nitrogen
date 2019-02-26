@@ -360,15 +360,18 @@ where
             (self.setup)(builder);
         }
 
-        fn execute(&self, _: &graph::Store, command_buffer: &mut graph::GraphicsCommandBuffer) {
-            let mut cmd = unsafe {
-                command_buffer
-                    .begin_render_pass(
-                        std::iter::repeat(graph::ImageClearValue::Color([0.0, 0.0, 0.0, 1.0]))
-                            .take(self.num_attachments),
-                    )
-                    .unwrap()
-            };
+        unsafe fn execute(
+            &self,
+            _: &graph::Store,
+            command_buffer: &mut graph::GraphicsCommandBuffer,
+        ) {
+            let mut cmd = command_buffer
+                .begin_render_pass(
+                    std::iter::repeat(graph::ImageClearValue::Color([0.0, 0.0, 0.0, 1.0]))
+                        .take(self.num_attachments),
+                )
+                .unwrap();
+
             (self.exec)(&mut cmd);
         }
     }

@@ -33,7 +33,9 @@ pub trait UserData: Sized {
             return None;
         }
 
-        submit.graph_execute(ctx, &mut backbuffer, graph, store, context).ok()?;
+        submit
+            .graph_execute(ctx, &mut backbuffer, graph, store, context)
+            .ok()?;
 
         submit.backbuffer_destroy(ctx, backbuffer);
 

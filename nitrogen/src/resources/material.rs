@@ -18,7 +18,9 @@ pub type MaterialHandle = Handle<Material>;
 
 const MAX_SETS_PER_POOL: u8 = 16;
 
-pub type MaterialInstanceHandle = (MaterialHandle, Handle<MaterialInstance>);
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+pub struct MaterialInstanceHandle(pub MaterialHandle, pub Handle<MaterialInstance>);
 
 // A material contains its parameters for validation and later pool creation.
 // Since the number of material instances is not always known at program startup,
@@ -244,7 +246,7 @@ impl MaterialStorage {
 
         let instance = mat.create_instance(device)?;
 
-        Ok((material, instance))
+        Ok(MaterialInstanceHandle(material, instance))
     }
 
     pub(crate) unsafe fn write_instance<I>(
@@ -298,7 +300,7 @@ impl MaterialStorage {
     }
 
     pub(crate) unsafe fn destroy_instances(&mut self, instances: &[MaterialInstanceHandle]) {
-        for (mat_handle, inst) in instances {
+        for MaterialInstanceHandle(mat_handle, inst) in instances {
             let mat = match self.storage.get_mut(*mat_handle) {
                 Some(mat) => mat,
                 None => continue,

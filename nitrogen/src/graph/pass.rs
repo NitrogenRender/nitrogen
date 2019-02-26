@@ -133,10 +133,10 @@ impl Default for ShaderInfo {
 
 pub trait GraphicsPassImpl {
     fn setup(&mut self, store: &mut super::Store, builder: &mut builder::GraphBuilder);
-    fn execute(&self, store: &super::Store, cmd: &mut command::GraphicsCommandBuffer);
+    unsafe fn execute(&self, store: &super::Store, cmd: &mut command::GraphicsCommandBuffer);
 }
 
 pub trait ComputePassImpl {
     fn setup(&mut self, store: &mut super::Store, builder: &mut builder::GraphBuilder);
-    fn execute(&self, store: &super::Store, cmd: &mut command::ComputeCommandBuffer);
+    unsafe fn execute(&self, store: &super::Store, cmd: &mut command::ComputeCommandBuffer);
 }

@@ -84,15 +84,17 @@ fn main() {
     let _res = ctx.graph_compile(graph, &mut store);
 
     unsafe {
-        submit.graph_execute(
-            &mut ctx,
-            &mut backbuffer,
-            graph,
-            &store,
-            &ExecutionContext {
-                reference_size: (1, 1),
-            },
-        ).unwrap();
+        submit
+            .graph_execute(
+                &mut ctx,
+                &mut backbuffer,
+                graph,
+                &store,
+                &ExecutionContext {
+                    reference_size: (1, 1),
+                },
+            )
+            .unwrap();
 
         submit.wait(&mut ctx);
     }
@@ -155,13 +157,11 @@ fn create_graph(
                 builder.enable();
             }
 
-            fn execute(&self, _: &Store, command_buffer: &mut ComputeCommandBuffer<'_>) {
-                unsafe {
-                    command_buffer.bind_material(0, self.mat);
-                    command_buffer.push_constant(0, 1_f32);
+            unsafe fn execute(&self, _: &Store, command_buffer: &mut ComputeCommandBuffer<'_>) {
+                command_buffer.bind_material(0, self.mat);
+                command_buffer.push_constant(0, 1_f32);
 
-                    command_buffer.dispatch([NUM_ELEMS as _, 1, 1]);
-                }
+                command_buffer.dispatch([NUM_ELEMS as _, 1, 1]);
             }
         }
 
@@ -196,13 +196,11 @@ fn create_graph(
                 builder.enable();
             }
 
-            fn execute(&self, _: &Store, command_buffer: &mut ComputeCommandBuffer<'_>) {
-                unsafe {
-                    command_buffer.bind_material(0, self.mat);
-                    command_buffer.push_constant(0, 10.0_f32);
+            unsafe fn execute(&self, _: &Store, command_buffer: &mut ComputeCommandBuffer<'_>) {
+                command_buffer.bind_material(0, self.mat);
+                command_buffer.push_constant(0, 10.0_f32);
 
-                    command_buffer.dispatch([NUM_ELEMS as _, 1, 1]);
-                }
+                command_buffer.dispatch([NUM_ELEMS as _, 1, 1]);
             }
         }
 

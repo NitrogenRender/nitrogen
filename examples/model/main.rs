@@ -217,7 +217,11 @@ fn create_graph(
                 builder.enable();
             }
 
-            fn execute(&self, store: &graph::Store, cmd: &mut graph::GraphicsCommandBuffer<'_>) {
+            unsafe fn execute(
+                &self,
+                store: &graph::Store,
+                cmd: &mut graph::GraphicsCommandBuffer<'_>,
+            ) {
                 let m = {
                     let Rad(rad) = store.get().unwrap();
 
@@ -238,13 +242,12 @@ fn create_graph(
 
                 let mvp = p * m;
 
-                let mut cmd = unsafe {
-                    cmd.begin_render_pass(&[
+                let mut cmd = cmd
+                    .begin_render_pass(&[
                         graph::ImageClearValue::Color([0.1, 0.1, 0.1, 1.0]),
                         graph::ImageClearValue::DepthStencil(1.0, 0),
                     ])
-                    .unwrap()
-                };
+                    .unwrap();
 
                 unsafe fn push_matrix(
                     cmd: &mut graph::RenderPassEncoder<'_>,
@@ -257,16 +260,14 @@ fn create_graph(
                     cmd.push_constant(offset + 12, mat.w);
                 }
 
-                unsafe {
-                    push_matrix(&mut cmd, 0, mvp);
-                    push_matrix(&mut cmd, 16, m);
+                push_matrix(&mut cmd, 0, mvp);
+                push_matrix(&mut cmd, 16, m);
 
-                    cmd.bind_vertex_buffers(&[(self.position, 0), (self.normal, 0)]);
+                cmd.bind_vertex_buffers(&[(self.position, 0), (self.normal, 0)]);
 
-                    cmd.bind_index_buffer(self.index, 0, graph::IndexType::U32);
+                cmd.bind_index_buffer(self.index, 0, graph::IndexType::U32);
 
-                    cmd.draw_indexed(0..self.vertices as u32, 0, 0..1);
-                }
+                cmd.draw_indexed(0..self.vertices as u32, 0, 0..1);
             }
         }
 

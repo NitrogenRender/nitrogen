@@ -181,32 +181,31 @@ fn create_graph(ctx: &mut Context) -> graph::GraphHandle {
                 builder.enable();
             }
 
-            fn execute(&self, store: &graph::Store, cmd: &mut graph::GraphicsCommandBuffer<'_>) {
+            unsafe fn execute(
+                &self,
+                store: &graph::Store,
+                cmd: &mut graph::GraphicsCommandBuffer<'_>,
+            ) {
                 use nitrogen::graph::ImageClearValue::*;
 
                 let size = store.get::<main_loop::CanvasSize>().unwrap();
                 let quads = store.get::<Quads>().unwrap();
 
-                let mut cmd = unsafe {
-                    cmd.begin_render_pass(&[Color([0.7, 0.7, 1.0, 1.0]), DepthStencil(1.0, 0)])
-                        .unwrap()
-                };
+                let mut cmd = cmd
+                    .begin_render_pass(&[Color([0.7, 0.7, 1.0, 1.0]), DepthStencil(1.0, 0)])
+                    .unwrap();
 
-                unsafe {
-                    cmd.push_constant::<[f32; 2]>(0, [size.0, size.1]);
-                }
+                cmd.push_constant::<[f32; 2]>(0, [size.0, size.1]);
 
                 for quad in &quads.quads {
-                    unsafe {
-                        cmd.push_constant::<[f32; 2]>(2, quad.pos);
-                        cmd.push_constant::<[f32; 2]>(4, quad.size);
+                    cmd.push_constant::<[f32; 2]>(2, quad.pos);
+                    cmd.push_constant::<[f32; 2]>(4, quad.size);
 
-                        cmd.push_constant::<f32>(6, quad.depth);
+                    cmd.push_constant::<f32>(6, quad.depth);
 
-                        cmd.push_constant::<[f32; 4]>(8, quad.color);
+                    cmd.push_constant::<[f32; 4]>(8, quad.color);
 
-                        cmd.draw(0..4, 0..1);
-                    }
+                    cmd.draw(0..4, 0..1);
                 }
             }
         }
@@ -267,27 +266,27 @@ fn create_graph(ctx: &mut Context) -> graph::GraphHandle {
                 builder.enable();
             }
 
-            fn execute(&self, store: &graph::Store, cmd: &mut graph::GraphicsCommandBuffer<'_>) {
+            unsafe fn execute(
+                &self,
+                store: &graph::Store,
+                cmd: &mut graph::GraphicsCommandBuffer<'_>,
+            ) {
                 let size = store.get::<main_loop::CanvasSize>().unwrap();
                 let quads = store.get::<QuadsAlpha>().unwrap();
 
-                let mut cmd = unsafe { cmd.begin_render_pass(&[]).unwrap() };
+                let mut cmd = cmd.begin_render_pass(&[]).unwrap();
 
-                unsafe {
-                    cmd.push_constant::<[f32; 2]>(0, [size.0, size.1]);
-                }
+                cmd.push_constant::<[f32; 2]>(0, [size.0, size.1]);
 
                 for quad in &quads.quads {
-                    unsafe {
-                        cmd.push_constant::<[f32; 2]>(2, quad.pos);
-                        cmd.push_constant::<[f32; 2]>(4, quad.size);
+                    cmd.push_constant::<[f32; 2]>(2, quad.pos);
+                    cmd.push_constant::<[f32; 2]>(4, quad.size);
 
-                        cmd.push_constant::<f32>(6, quad.depth);
+                    cmd.push_constant::<f32>(6, quad.depth);
 
-                        cmd.push_constant::<[f32; 4]>(8, quad.color);
+                    cmd.push_constant::<[f32; 4]>(8, quad.color);
 
-                        cmd.draw(0..4, 0..1);
-                    }
+                    cmd.draw(0..4, 0..1);
                 }
             }
         }

@@ -661,6 +661,7 @@ unsafe fn create_resource(
                 num_samples: 1,
                 num_mipmaps: num_mips,
                 format,
+                swizzle: gfx::format::Swizzle::NO,
                 kind,
                 usage: usages.0.clone(),
                 is_transient: false,

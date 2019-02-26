@@ -22,6 +22,8 @@ use crate::resources::semaphore_pool::SemaphoreList;
 use crate::resources::semaphore_pool::SemaphorePool;
 use crate::submit_group::ResourceList;
 
+pub use gfx::format::{Component, Swizzle};
+
 #[derive(Copy, Clone, Debug)]
 pub enum ImageDimension {
     D1 { x: u32 },
@@ -88,6 +90,7 @@ pub struct ImageCreateInfo<T: Into<gfx::image::Usage>> {
     pub num_samples: u8,
     pub num_mipmaps: u8,
     pub format: ImageFormat,
+    pub swizzle: Swizzle,
     pub kind: ViewKind,
 
     pub usage: T,
@@ -369,7 +372,7 @@ impl ImageStorage {
             image.raw(),
             create_info.kind.into(),
             format,
-            gfx::format::Swizzle::NO,
+            create_info.swizzle,
             image::SubresourceRange {
                 aspects: aspect,
                 layers: 0..1,
