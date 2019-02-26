@@ -83,6 +83,12 @@ impl<T> IndexMut<Handle<T>> for Storage<T> {
     }
 }
 
+impl<T> Default for Storage<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> Storage<T> {
     pub fn new() -> Self {
         Self {
@@ -116,8 +122,8 @@ impl<T> Storage<T> {
         let storage_size_enough = self.generations.len() > handle.id();
 
         if storage_size_enough {
-            let is_generation_same = self.generations[handle.id()] == handle.generation();
-            is_generation_same
+            // is the generation the same?
+            self.generations[handle.id()] == handle.generation()
         } else {
             false
         }

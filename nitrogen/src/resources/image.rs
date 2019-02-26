@@ -48,7 +48,7 @@ impl ImageDimension {
     }
 }
 
-#[derive(PartialOrd, PartialEq, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum ImageSizeMode {
     ContextRelative { width: f32, height: f32 },
     Absolute { width: u32, height: u32 },
@@ -58,8 +58,8 @@ impl ImageSizeMode {
     pub fn absolute(&self, reference: (u32, u32)) -> (u32, u32) {
         match self {
             ImageSizeMode::ContextRelative { width, height } => (
-                (*width as f64 * reference.0 as f64) as u32,
-                (*height as f64 * reference.1 as f64) as u32,
+                (f64::from(*width) * f64::from(reference.0)) as u32,
+                (f64::from(*height) * f64::from(reference.1)) as u32,
             ),
             ImageSizeMode::Absolute { width, height } => (*width, *height),
         }
@@ -469,7 +469,7 @@ impl ImageStorage {
         let (upload_size, row_pitch, texel_size) = upload_nums;
 
         debug_assert!(
-            upload_size >= upload_width as u64 * upload_height as u64 * texel_size as u64
+            upload_size >= u64::from(upload_width) * u64::from(upload_height) * texel_size as u64
         );
 
         let buf_req = BufferRequest {
@@ -566,16 +566,13 @@ impl ImageStorage {
     {
         for handle in handles.into_iter() {
             let handle = *handle.borrow();
-            match self.storage.remove(handle) {
-                Some(image) => {
-                    res_list.queue_image(image.image);
-                    res_list.queue_image_view(image.view);
+            if let Some(image) = self.storage.remove(handle) {
+                res_list.queue_image(image.image);
+                res_list.queue_image_view(image.view);
 
-                    if self.transfer_dst.contains(&handle.id()) {
-                        self.transfer_dst.remove(&handle.id());
-                    }
+                if self.transfer_dst.contains(&handle.id()) {
+                    self.transfer_dst.remove(&handle.id());
                 }
-                None => {}
             }
         }
     }
@@ -618,7 +615,7 @@ fn image_copy_buffer_size(
     // We add the alignment mask, then cut away everything stuff on the right so it's all 0s
     let row_pitch = (width * texel_size as u32 + row_alignment_mask) & !row_alignment_mask;
 
-    let buffer_size = (height * row_pitch) as u64;
+    let buffer_size = u64::from(height * row_pitch);
 
     (buffer_size, row_pitch, texel_size)
 }

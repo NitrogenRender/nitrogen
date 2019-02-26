@@ -137,7 +137,7 @@ impl MaterialStorage {
             )
             .collect::<SmallVec<[_; 16]>>();
 
-        if descriptors.len() == 0 {
+        if descriptors.is_empty() {
             return Err(MaterialError::CreateEmptyMaterial);
         }
 
@@ -210,7 +210,7 @@ impl MaterialStorage {
             pools: vec![],
         };
 
-        if mat.parameters.len() == 0 {
+        if mat.parameters.is_empty() {
             use gfx::Device;
 
             device

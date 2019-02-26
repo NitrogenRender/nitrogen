@@ -224,7 +224,7 @@ impl BufferStorage {
         let upload_fits = info.offset + u8_data.len() as u64 <= buffer.size;
 
         if upload_fits {
-            write_data_to_buffer(device, &buffer.buffer, info.offset, u8_data).into()
+            write_data_to_buffer(device, &buffer.buffer, info.offset, u8_data)
         } else {
             Err(BufferError::UploadOutOfBounds)
         }
@@ -383,7 +383,7 @@ unsafe fn to_u8_slice<T>(slice: &[T]) -> &[u8] {
     let t_ptr = slice.as_ptr();
     let t_len = slice.len();
 
-    let b_ptr = mem::transmute(t_ptr);
+    let b_ptr = t_ptr as *const _;
     let b_len = t_len * mem::size_of::<T>();
 
     std::slice::from_raw_parts(b_ptr, b_len)
@@ -395,7 +395,7 @@ unsafe fn to_u8_mut_slice<T>(slice: &mut [T]) -> &mut [u8] {
     let t_ptr = slice.as_ptr();
     let t_len = slice.len();
 
-    let b_ptr = mem::transmute(t_ptr);
+    let b_ptr = t_ptr as *mut _;
     let b_len = t_len * mem::size_of::<T>();
 
     std::slice::from_raw_parts_mut(b_ptr, b_len)

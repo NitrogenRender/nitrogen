@@ -119,29 +119,26 @@ impl Display {
         // Since we directly blit, we don't need any framebuffers. This also means we ignore the
         // case where a framebuffer is handed to us.
         let images = match backbuffer {
-            gfx::Backbuffer::Images(images) => {
-                let pairs = images
-                    .into_iter()
-                    .map(|img| {
-                        let view = device
-                            .device
-                            .create_image_view(
-                                &img,
-                                gfx::image::ViewKind::D2,
-                                format,
-                                gfx::format::Swizzle::NO,
-                                gfx::image::SubresourceRange {
-                                    aspects: gfx::format::Aspects::COLOR,
-                                    levels: 0..1,
-                                    layers: 0..1,
-                                },
-                            )
-                            .unwrap();
-                        (img, view)
-                    })
-                    .collect::<Vec<_>>();
-                pairs
-            }
+            gfx::Backbuffer::Images(images) => images
+                .into_iter()
+                .map(|img| {
+                    let view = device
+                        .device
+                        .create_image_view(
+                            &img,
+                            gfx::image::ViewKind::D2,
+                            format,
+                            gfx::format::Swizzle::NO,
+                            gfx::image::SubresourceRange {
+                                aspects: gfx::format::Aspects::COLOR,
+                                levels: 0..1,
+                                layers: 0..1,
+                            },
+                        )
+                        .unwrap();
+                    (img, view)
+                })
+                .collect::<Vec<_>>(),
             gfx::Backbuffer::Framebuffer(_framebuffer) => unimplemented!(),
         };
 

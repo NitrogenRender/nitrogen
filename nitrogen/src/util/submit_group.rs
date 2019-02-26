@@ -95,7 +95,7 @@ impl SubmitGroup {
     }
 
     pub unsafe fn wait(&mut self, ctx: &mut Context) {
-        let mut fence = ctx.device_ctx.device.create_fence(false).unwrap();
+        let fence = ctx.device_ctx.device.create_fence(false).unwrap();
 
         {
             let submit = gfx::Submission {
@@ -114,7 +114,7 @@ impl SubmitGroup {
                     gfx::Transfer,
                     gfx::command::OneShot,
                     gfx::command::Primary,
-                >, _, _, _, _>(submit, Some(&mut fence));
+                >, _, _, _, _>(submit, Some(&fence));
 
             ctx.device_ctx.device.wait_for_fence(&fence, !0).unwrap();
         }
@@ -298,7 +298,7 @@ impl SubmitGroup {
             &ctx.device_ctx,
             &self.sem_pool,
             &mut self.sem_list,
-            &mut self.pool_graphics,
+            &self.pool_graphics,
             &[blit],
         );
 

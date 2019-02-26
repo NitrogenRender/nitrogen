@@ -113,13 +113,13 @@ impl GraphStorage {
         pass_info: GraphicsPassInfo,
         pass_impl: Box<dyn GraphicsPassImpl>,
     ) {
-        self.storage.get_mut(handle).map(|graph| {
+        if let Some(graph) = self.storage.get_mut(handle) {
             let id = graph.passes.len();
             graph
                 .passes
                 .push((name.into(), PassInfo::Graphics(pass_info)));
             graph.passes_gfx_impl.insert(id, pass_impl);
-        });
+        }
     }
 
     pub(crate) fn add_compute_pass<T: Into<PassName>>(
@@ -129,13 +129,13 @@ impl GraphStorage {
         pass_info: ComputePassInfo,
         pass_impl: Box<dyn ComputePassImpl>,
     ) {
-        self.storage.get_mut(handle).map(|graph| {
+        if let Some(graph) = self.storage.get_mut(handle) {
             let id = graph.passes.len();
             graph
                 .passes
                 .push((name.into(), PassInfo::Compute(pass_info)));
             graph.passes_cmpt_impl.insert(id, pass_impl);
-        });
+        }
     }
 
     /// Compile the graph so it is optimized for execution.
@@ -160,7 +160,7 @@ impl GraphStorage {
         let graph = self
             .storage
             .get_mut(handle)
-            .ok_or(vec![GraphCompileError::InvalidGraph])?;
+            .ok_or_else(|| vec![GraphCompileError::InvalidGraph])?;
 
         let mut input = GraphInput::default();
 
@@ -401,9 +401,9 @@ impl GraphStorage {
     }
 
     pub(crate) fn add_output<T: Into<ResourceName>>(&mut self, handle: GraphHandle, image: T) {
-        self.storage.get_mut(handle).map(|graph| {
+        if let Some(graph) = self.storage.get_mut(handle) {
             graph.output_resources.push(image.into());
-        });
+        }
     }
 }
 

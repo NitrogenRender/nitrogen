@@ -30,14 +30,14 @@ pub(crate) fn derive_resource_usage(
         .iter()
         .filter_map(|res| resolved.moved_from(*res))
         .for_each(|res| {
-            usages.image.get_mut(&res).map(|(usage, _)| {
+            if let Some((usage, _)) = usages.image.get_mut(&res) {
                 *usage |= IUsage::SAMPLED;
                 *usage |= IUsage::TRANSFER_SRC;
-            });
+            }
 
-            usages.buffer.get_mut(&res).map(|usage| {
+            if let Some(usage) = usages.buffer.get_mut(&res) {
                 *usage |= BUsage::TRANSFER_SRC;
-            });
+            }
         });
 
     usages
@@ -68,7 +68,7 @@ fn derive_batch(
             ResourceCreateInfo::Image(ImageInfo::BackbufferRead(n)) => {
                 // we don't really care about this, as all backbuffer resources have
                 // explicit usages
-                let format = backbuffer_usage.images[n].clone();
+                let format = backbuffer_usage.images[n];
                 usages
                     .image
                     .insert(*create, (gfx::image::Usage::empty(), format));
@@ -85,17 +85,16 @@ fn derive_batch(
         let orig = resolved.copies_from[copy];
 
         // if this is an image
-        if let Some((usage, format)) = usages.image.get(&orig).map(|x| x.clone()) {
+        if let Some((usage, format)) = usages.image.get(&orig).cloned() {
             // if an image is created by copying another image, that means the src
             // has to be marked as TRANSFER_SRC and the new image as TRANSFER_DST
             let mut orig_usage = usage;
 
             orig_usage |= IUsage::TRANSFER_SRC;
 
-            usages
-                .image
-                .get_mut(&orig)
-                .map(move |entry| entry.0 = orig_usage);
+            if let Some(entry) = usages.image.get_mut(&orig) {
+                entry.0 = orig_usage;
+            }
 
             // once we copy we can get rid of all the previous flags, as they no longer apply
             let new_usage = IUsage::TRANSFER_DST;
@@ -103,17 +102,16 @@ fn derive_batch(
         }
 
         // if this is a buffer
-        if let Some(usage) = usages.buffer.get(&orig).map(|x| x.clone()) {
+        if let Some(usage) = usages.buffer.get(&orig).cloned() {
             // Same as for images, if we copy a buffer the src has to be TRANSFER_SRC and the new
             // buffer has to be TRANSFER_DST
             let mut orig_usage = usage;
 
             orig_usage |= BUsage::TRANSFER_SRC;
 
-            usages
-                .buffer
-                .get_mut(&orig)
-                .map(move |entry| *entry = orig_usage);
+            if let Some(entry) = usages.buffer.get_mut(&orig) {
+                *entry = orig_usage;
+            }
 
             // old flags don't apply to copies
             let new_usage = BUsage::TRANSFER_DST;
@@ -140,7 +138,7 @@ fn derive_pass(
 
         match read_ty {
             ResourceReadType::Buffer(buf) => {
-                let mut usage = usages.buffer[&origin].clone();
+                let mut usage = usages.buffer[&origin];
 
                 match buf {
                     BufferReadType::Storage => {
@@ -160,7 +158,7 @@ fn derive_pass(
                 usages.buffer.insert(origin, usage);
             }
             ResourceReadType::Image(img) => {
-                let (mut usage, format) = usages.image[&origin].clone();
+                let (mut usage, format) = usages.image[&origin];
 
                 match img {
                     ImageReadType::Color => {
@@ -189,7 +187,7 @@ fn derive_pass(
 
         match write_ty {
             ResourceWriteType::Buffer(buf) => {
-                let mut usage = usages.buffer[&origin].clone();
+                let mut usage = usages.buffer[&origin];
 
                 match buf {
                     BufferWriteType::Storage => {

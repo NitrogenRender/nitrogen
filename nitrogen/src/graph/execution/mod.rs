@@ -121,7 +121,7 @@ impl GraphResources {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Backbuffer {
     pub(crate) usage: BackbufferUsage,
 
@@ -131,12 +131,7 @@ pub struct Backbuffer {
 
 impl Backbuffer {
     pub fn new() -> Self {
-        Backbuffer {
-            usage: BackbufferUsage::new(),
-
-            images: HashMap::new(),
-            samplers: HashMap::new(),
-        }
+        Default::default()
     }
 
     pub fn image_get<T: Into<super::ResourceName>>(&self, name: T) -> Option<ImageHandle> {
@@ -155,15 +150,7 @@ impl Backbuffer {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct BackbufferUsage {
     pub(crate) images: HashMap<super::ResourceName, gfx::format::Format>,
-}
-
-impl BackbufferUsage {
-    pub(crate) fn new() -> Self {
-        BackbufferUsage {
-            images: HashMap::new(),
-        }
-    }
 }

@@ -52,9 +52,9 @@ impl<'a> GraphicsCommandBuffer<'a> {
             clear_values.into_iter().map(|clear_value| {
                 use std::borrow::Borrow;
                 match clear_value.borrow() {
-                    ImageClearValue::Color(color) => gfx::command::ClearValue::Color(
-                        gfx::command::ClearColor::Float(color.clone()),
-                    ),
+                    ImageClearValue::Color(color) => {
+                        gfx::command::ClearValue::Color(gfx::command::ClearColor::Float(*color))
+                    }
                     ImageClearValue::DepthStencil(depth, stencil) => {
                         gfx::command::ClearValue::DepthStencil(gfx::command::ClearDepthStencil(
                             *depth, *stencil,
@@ -237,9 +237,9 @@ impl<'a> RenderPassEncoder<'a> {
 
     pub unsafe fn push_constant<T: Sized>(&mut self, offset: u32, data: T) {
         use smallvec::SmallVec;
-        let mut buf = SmallVec::<[u8; 1024]>::new();
+        let mut buf = SmallVec::<[u32; 256]>::new();
 
-        buf.set_len(1024);
+        buf.set_len(256);
 
         {
             let u32_slice = data_to_u32_slice(data, &mut buf[..]);
@@ -285,21 +285,20 @@ impl<'a> ComputeCommandBuffer<'a> {
 
     pub unsafe fn push_constant<T: Sized>(&mut self, offset: u32, data: T) {
         use smallvec::SmallVec;
-        let mut buf = SmallVec::<[u8; 1024]>::new();
+        let mut buf = SmallVec::<[u32; 256]>::new();
 
-        buf.set_len(1024);
+        buf.set_len(256);
 
         {
             let u32_slice = data_to_u32_slice(data, &mut buf[..]);
-
             self.push_constant_raw(offset, u32_slice);
         }
     }
 }
 
-unsafe fn data_to_u32_slice<T: Sized>(data: T, buf: &mut [u8]) -> &[u32] {
+// the "buf" slice **MUST** be aligned to u32
+unsafe fn data_to_u32_slice<T: Sized>(data: T, buf: &mut [u32]) -> &[u32] {
     use std::mem::size_of;
-    use std::mem::transmute;
     use std::ptr::copy_nonoverlapping;
     use std::slice::from_raw_parts;
 
@@ -316,21 +315,20 @@ unsafe fn data_to_u32_slice<T: Sized>(data: T, buf: &mut [u8]) -> &[u32] {
         data_size
     };
 
-    debug_assert!(buf.len() >= data_size);
+    debug_assert!(buf.len() * u32_size >= data_size);
 
     {
-        let data_ptr: *const u8 = transmute(&data as *const _);
-        let buf_ptr = &mut buf[0] as *mut _;
+        let data_ptr: *const u8 = &data as *const _ as *const u8;
+        let buf_ptr = &mut buf[0] as *mut u32 as *mut u8;
 
         copy_nonoverlapping(data_ptr, buf_ptr, data_size);
     }
 
-    let u32_slice = {
-        let buf_ptr: *const u32 = transmute(&buf[0] as *const _);
+    // create the "output" slice with correct size
+    {
+        let buf_ptr: *const u32 = &buf[0] as *const _ as *const u32;
         let slice_len = buf_size / u32_size;
 
         from_raw_parts(buf_ptr, slice_len)
-    };
-
-    u32_slice
+    }
 }

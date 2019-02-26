@@ -164,7 +164,7 @@ impl ExecutionGraph {
             for (res, pass) in last_use {
                 pass_destroys
                     .entry(pass)
-                    .or_insert(HashSet::new())
+                    .or_insert_with(HashSet::new)
                     .insert(res);
             }
 
@@ -196,7 +196,7 @@ impl ExecutionGraph {
                             .filter_map(|pass| pass_destroys.get(pass))
                             .flatten()
                             // If a resource was created by moving the original
-                            .filter_map(|res| resolved.moved_from(*res).or(Some(*res)))
+                            .filter_map(|res| resolved.moved_from(*res).or_else(|| Some(*res)))
                             .filter(|res| !keep_list.contains(res))
                             // Also don't destroy output resources. Ever.
                             .collect();

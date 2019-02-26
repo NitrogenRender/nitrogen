@@ -14,6 +14,7 @@ use std::marker::PhantomData;
 /// For the most prominent usage, see [`SubmitGroup::graph_execute`].
 ///
 /// [`SubmitGroup::graph_execute`]: ../../util/submit_group/struct.SubmitGroup.html#method.graph_execute
+#[derive(Default)]
 pub struct Store {
     map: HashMap<TypeId, Box<dyn Any + Send>>,
 }
@@ -28,9 +29,7 @@ impl Store {
     /// let store = Store::new();
     /// ```
     pub fn new() -> Self {
-        Store {
-            map: HashMap::new(),
-        }
+        Default::default()
     }
 
     /// Insert a value into the store
@@ -152,6 +151,11 @@ impl Store {
     pub fn len(&self) -> usize {
         self.map.len()
     }
+
+    /// Indicates if the store is empty
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// Representation of an entry of a [`Store`] that can be used to modify elements inplace
@@ -204,7 +208,7 @@ impl<'a, T: Any + Send> Entry<'a, T> {
     /// assert_eq!(store.get::<bool>(), Some(&false));
     /// ```
     pub fn or_insert(self, data: T) -> &'a mut T {
-        let entry = self.entry.or_insert(Box::new(data));
+        let entry = self.entry.or_insert_with(|| Box::new(data));
 
         entry.downcast_mut().unwrap()
     }

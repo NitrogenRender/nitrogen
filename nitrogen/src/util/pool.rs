@@ -180,11 +180,9 @@ where
     }
 
     pub(crate) unsafe fn from_idx(idx: usize, pool: &Pool<T, Impl>) -> Self {
-        use std::mem::transmute;
-
         PoolElem {
             idx,
-            pool: transmute(pool),
+            pool: pool as *const _ as *mut _,
             _marker: PhantomData,
         }
     }
@@ -195,9 +193,8 @@ where
     Impl: PoolImpl<T>,
 {
     fn drop(&mut self) {
-        use std::mem::transmute;
         unsafe {
-            let pool: &mut Pool<T, Impl> = transmute(self.pool);
+            let pool: &mut Pool<T, Impl> = &mut *(self.pool as *mut _);
             pool.free_on_drop(self.idx);
         }
     }
@@ -210,9 +207,8 @@ where
     type Target = T;
 
     fn deref(&self) -> &<Self as Deref>::Target {
-        use std::mem::transmute;
         unsafe {
-            let pool: &Pool<T, Impl> = transmute(self.pool);
+            let pool: &Pool<T, Impl> = &*(self.pool as *const _);
             &pool.get().values[self.idx]
         }
     }
@@ -223,9 +219,8 @@ where
     Impl: PoolImpl<T>,
 {
     fn deref_mut(&mut self) -> &mut <Self as Deref>::Target {
-        use std::mem::transmute;
         unsafe {
-            let pool: &mut Pool<T, Impl> = transmute(self.pool);
+            let pool: &mut Pool<T, Impl> = &mut *(self.pool as *mut _);
             &mut pool.get().values[self.idx]
         }
     }

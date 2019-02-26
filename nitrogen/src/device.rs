@@ -94,7 +94,7 @@ impl DeviceContext {
             .map(|group: &mut gfx::QueueGroup<_, _>| {
                 let queues = replace(&mut group.queues, vec![]);
 
-                queues.into_iter().map(|queue| Mutex::new(queue)).collect()
+                queues.into_iter().map(Mutex::new).collect()
             })
             .collect();
 
@@ -122,11 +122,12 @@ impl DeviceContext {
     }
 
     pub(crate) fn graphics_queue_group(&self) -> &types::QueueGroup<gfx::Graphics> {
-        use std::mem::transmute;
-
         let queue = &self.queue_groups[self.graphics_queue_idx];
 
-        unsafe { transmute(queue) }
+        unsafe {
+            // cast reference to pointer, then cast pointer to other type
+            &*(queue as *const _ as *const _)
+        }
     }
 
     pub(crate) fn graphics_queue(&self) -> MutexGuard<types::CommandQueue<gfx::Graphics>> {
@@ -135,11 +136,12 @@ impl DeviceContext {
     }
 
     pub(crate) fn compute_queue_group(&self) -> &types::QueueGroup<gfx::Compute> {
-        use std::mem::transmute;
-
         let queue = &self.queue_groups[self.compute_queue_idx];
 
-        unsafe { transmute(queue) }
+        unsafe {
+            // cast reference to pointer, then cast pointer to other type
+            &*(queue as *const _ as *const _)
+        }
     }
 
     pub(crate) fn compute_queue(&self) -> MutexGuard<types::CommandQueue<gfx::Compute>> {

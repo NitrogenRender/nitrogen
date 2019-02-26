@@ -220,20 +220,21 @@ pub(crate) unsafe fn prepare_pass(
                     .map(|(res_id, _, _)| -> Result<_, PrepareError> {
                         let res_id = resolved
                             .moved_from(*res_id)
-                            .ok_or(PrepareError::InvalidResource(*res_id))?;
+                            .ok_or_else(|| PrepareError::InvalidResource(*res_id))?;
                         let (_, create_info) = resolved
                             .create_info(res_id)
-                            .ok_or(PrepareError::InvalidResource(res_id))?;
+                            .ok_or_else(|| PrepareError::InvalidResource(res_id))?;
 
                         let handle = match create_info {
-                            ResourceCreateInfo::Image(ImageInfo::BackbufferRead(n)) => backbuffer
-                                .images
-                                .get(n)
-                                .ok_or(PrepareError::InvalidBackbufferResource(n.clone()))?,
+                            ResourceCreateInfo::Image(ImageInfo::BackbufferRead(n)) => {
+                                backbuffer.images.get(n).ok_or_else(|| {
+                                    PrepareError::InvalidBackbufferResource(n.clone())
+                                })?
+                            }
                             ResourceCreateInfo::Image(ImageInfo::Create(_)) => res
                                 .images
                                 .get(&res_id)
-                                .ok_or(PrepareError::InvalidImageResource(res_id))?,
+                                .ok_or_else(|| PrepareError::InvalidImageResource(res_id))?,
                             // buffer attachments???
                             _ => unreachable!(),
                         };
@@ -241,7 +242,7 @@ pub(crate) unsafe fn prepare_pass(
                         let image = storages
                             .image
                             .raw(*handle)
-                            .ok_or(PrepareError::InvalidImageHandle(*handle))?;
+                            .ok_or_else(|| PrepareError::InvalidImageHandle(*handle))?;
 
                         Ok((&image.view, &image.dimension))
                     })
@@ -256,14 +257,14 @@ pub(crate) unsafe fn prepare_pass(
                             .map(|(res_id, _, _, _)| -> Result<_, PrepareError> {
                                 let res_id = resolved
                                     .moved_from(*res_id)
-                                    .ok_or(PrepareError::InvalidResource(*res_id))?;
+                                    .ok_or_else(|| PrepareError::InvalidResource(*res_id))?;
 
                                 let handle = res.images[&res_id];
 
                                 let image = storages
                                     .image
                                     .raw(handle)
-                                    .ok_or(PrepareError::InvalidImageHandle(handle))?;
+                                    .ok_or_else(|| PrepareError::InvalidImageHandle(handle))?;
 
                                 Ok((&image.view, &image.dimension))
                             }),
@@ -412,7 +413,7 @@ unsafe fn create_render_pass(
                         ResourceReadType::Image(ImageReadType::DepthStencil) => true,
                         _ => false,
                     })
-                    .filter_map(|(res, _, _, _)| {
+                    .map(|(res, _, _, _)| {
                         has_depth_read = true;
 
                         let (_origin, info) = resolved_graph.create_info(*res).unwrap();
@@ -425,7 +426,7 @@ unsafe fn create_render_pass(
                             _ => unreachable!(),
                         };
 
-                        Some((
+                        (
                             u8::max_value(),
                             gfx::pass::Attachment {
                                 format: Some(format),
@@ -437,7 +438,7 @@ unsafe fn create_render_pass(
                                 stencil_ops: gfx::pass::AttachmentOps::DONT_CARE,
                                 layouts: gfx::image::Layout::General..gfx::image::Layout::General,
                             },
-                        ))
+                        )
                     }),
             )
             .collect::<SmallVec<[_; 16]>>()
@@ -573,7 +574,7 @@ unsafe fn create_pipeline_graphics(
         .collect::<Vec<_>>();
 
     let create_info = pipeline::GraphicsPipelineCreateInfo {
-        vertex_attribs: info.vertex_attrib.clone(),
+        vertex_attribs: info.vertex_attrib,
         primitive: info.primitive,
         shader_vertex: pipeline::ShaderInfo {
             content: &info.shaders.vertex.content,
@@ -663,7 +664,7 @@ unsafe fn create_resource(
                 format,
                 swizzle: gfx::format::Swizzle::NO,
                 kind,
-                usage: usages.0.clone(),
+                usage: usages.0,
                 is_transient: false,
             };
 
@@ -761,7 +762,7 @@ unsafe fn create_pipeline_base<'a>(
             samplers
                 .clone()
                 .map(|(_, _, _, binding)| gfx::pso::DescriptorSetLayoutBinding {
-                    binding: binding.unwrap() as u32,
+                    binding: u32::from(binding.unwrap()),
                     ty: gfx::pso::DescriptorType::Sampler,
                     count: 1,
                     stage_flags: gfx::pso::ShaderStageFlags::ALL,
@@ -791,7 +792,7 @@ unsafe fn create_pipeline_base<'a>(
             writes
                 .clone()
                 .map(|(_res, ty, binding)| gfx::pso::DescriptorSetLayoutBinding {
-                    binding: *binding as u32,
+                    binding: u32::from(*binding),
                     ty: match ty {
                         ResourceWriteType::Image(img) => match img {
                             ImageWriteType::Storage => gfx::pso::DescriptorType::StorageImage,
@@ -811,7 +812,7 @@ unsafe fn create_pipeline_base<'a>(
             .clone()
             .map(|(_res, ty, binding, _)| {
                 gfx::pso::DescriptorSetLayoutBinding {
-                    binding: (*binding as u32),
+                    binding: u32::from(*binding),
                     ty: match ty {
                         ResourceReadType::Image(img) => match img {
                             ImageReadType::Color => gfx::pso::DescriptorType::SampledImage,

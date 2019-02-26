@@ -8,6 +8,10 @@ use super::*;
 
 use super::GraphInput;
 
+// the Option<u8> represents a possible sampler binding
+pub(crate) type ReadsByPass = (PassId, ResourceReadType, u8, Option<u8>);
+pub(crate) type ReadsByResource = (ResourceId, ResourceReadType, u8, Option<u8>);
+
 #[derive(Debug)]
 pub(crate) struct GraphResourcesResolved {
     pub(crate) name_lookup: BTreeMap<ResourceName, ResourceId>,
@@ -17,7 +21,7 @@ pub(crate) struct GraphResourcesResolved {
     pub(crate) moves_from: BTreeMap<ResourceId, ResourceId>,
     pub(crate) moves_to: BTreeMap<ResourceId, ResourceId>,
 
-    pub(crate) reads: BTreeMap<ResourceId, BTreeSet<(PassId, ResourceReadType, u8, Option<u8>)>>,
+    pub(crate) reads: BTreeMap<ResourceId, BTreeSet<ReadsByPass>>,
     pub(crate) writes: BTreeMap<ResourceId, BTreeSet<(PassId, ResourceWriteType, u8)>>,
 
     /// Resources created by pass - includes copies and moves
@@ -29,8 +33,7 @@ pub(crate) struct GraphResourcesResolved {
     /// Resources that a pass reads from
     ///
     /// Last entry is the binding point for samplers
-    pub(crate) pass_reads:
-        BTreeMap<PassId, BTreeSet<(ResourceId, ResourceReadType, u8, Option<u8>)>>,
+    pub(crate) pass_reads: BTreeMap<PassId, BTreeSet<ReadsByResource>>,
 
     pub(crate) backbuffer: BTreeMap<ResourceName, ResourceId>,
 }
@@ -45,9 +48,7 @@ impl GraphResourcesResolved {
         }
 
         // Check if there's a resource
-        if self.infos.contains_key(&prev_id) {
-            Some(prev_id)
-        } else if self.copies_from.contains_key(&prev_id) {
+        if self.infos.contains_key(&prev_id) || self.copies_from.contains_key(&prev_id) {
             Some(prev_id)
         } else {
             None
@@ -99,7 +100,7 @@ pub(crate) fn resolve_input_graph(
     // generate IDs for all "new" resources.
 
     for (pass, ress) in input.resource_creates {
-        let creates = pass_creates.entry(pass).or_insert(BTreeSet::new());
+        let creates = pass_creates.entry(pass).or_insert_with(BTreeSet::new);
 
         for (name, info) in ress {
             if let Some(id) = resource_name_lookup.get(&name) {
@@ -121,7 +122,7 @@ pub(crate) fn resolve_input_graph(
     }
 
     for (pass, ress) in &input.resource_copies {
-        let creates = pass_creates.entry(*pass).or_insert(BTreeSet::new());
+        let creates = pass_creates.entry(*pass).or_insert_with(BTreeSet::new);
         for (new_name, _old_name) in ress {
             if let Some(id) = resource_name_lookup.get(new_name) {
                 errors.push(GraphCompileError::ResourceRedefined {
@@ -142,7 +143,7 @@ pub(crate) fn resolve_input_graph(
     }
 
     for (pass, ress) in &input.resource_moves {
-        let creates = pass_creates.entry(*pass).or_insert(BTreeSet::new());
+        let creates = pass_creates.entry(*pass).or_insert_with(BTreeSet::new);
         for (new_name, _old_name) in ress {
             if let Some(id) = resource_name_lookup.get(new_name) {
                 errors.push(GraphCompileError::ResourceRedefined {
@@ -165,7 +166,7 @@ pub(crate) fn resolve_input_graph(
     // "back-reference" old resources
 
     for (pass, ress) in input.resource_copies {
-        let depends = pass_ext_depends.entry(pass).or_insert(BTreeSet::new());
+        let depends = pass_ext_depends.entry(pass).or_insert_with(BTreeSet::new);
 
         for (new_name, old_name) in ress {
             let old_id = if let Some(id) = resource_name_lookup.get(&old_name) {
@@ -202,7 +203,7 @@ pub(crate) fn resolve_input_graph(
     }
 
     for (pass, ress) in input.resource_moves {
-        let depends = pass_ext_depends.entry(pass).or_insert(BTreeSet::new());
+        let depends = pass_ext_depends.entry(pass).or_insert_with(BTreeSet::new);
 
         for (new_name, old_name) in ress {
             let old_id = if let Some(id) = resource_name_lookup.get(&old_name) {
@@ -253,8 +254,8 @@ pub(crate) fn resolve_input_graph(
     }
 
     for (pass, ress) in input.resource_writes {
-        let depends = pass_ext_depends.entry(pass).or_insert(BTreeSet::new());
-        let pass_writes = pass_writes.entry(pass).or_insert(BTreeSet::new());
+        let depends = pass_ext_depends.entry(pass).or_insert_with(BTreeSet::new);
+        let pass_writes = pass_writes.entry(pass).or_insert_with(BTreeSet::new);
 
         for (name, ty, binding) in ress {
             let id = if let Some(id) = resource_name_lookup.get(&name) {
@@ -267,12 +268,12 @@ pub(crate) fn resolve_input_graph(
                 continue;
             };
 
-            writes.push((id, ty.clone(), pass));
+            writes.push((id, ty, pass));
 
             resource_writes
                 .entry(id)
-                .or_insert(BTreeSet::new())
-                .insert((pass, ty.clone(), binding));
+                .or_insert_with(BTreeSet::new)
+                .insert((pass, ty, binding));
 
             pass_writes.insert((id, ty, binding));
 
@@ -289,8 +290,8 @@ pub(crate) fn resolve_input_graph(
     }
 
     for (pass, ress) in input.resource_reads {
-        let depends = pass_ext_depends.entry(pass).or_insert(BTreeSet::new());
-        let pass_reads = pass_reads.entry(pass).or_insert(BTreeSet::new());
+        let depends = pass_ext_depends.entry(pass).or_insert_with(BTreeSet::new);
+        let pass_reads = pass_reads.entry(pass).or_insert_with(BTreeSet::new);
 
         for (name, ty, binding, sampler_binding) in ress {
             let id = if let Some(id) = resource_name_lookup.get(&name) {
@@ -303,14 +304,12 @@ pub(crate) fn resolve_input_graph(
                 continue;
             };
 
-            reads.push((id, ty.clone(), pass));
+            reads.push((id, ty, pass));
 
-            resource_reads.entry(id).or_insert(BTreeSet::new()).insert((
-                pass,
-                ty.clone(),
-                binding,
-                sampler_binding,
-            ));
+            resource_reads
+                .entry(id)
+                .or_insert_with(BTreeSet::new)
+                .insert((pass, ty, binding, sampler_binding));
 
             pass_reads.insert((id, ty, binding, sampler_binding));
 

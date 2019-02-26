@@ -129,11 +129,8 @@ impl SamplerStorage {
         for handle in handles.into_iter() {
             let handle = *handle.borrow();
 
-            match self.storage.remove(handle) {
-                Some(sampler) => {
-                    res_list.queue_sampler(sampler);
-                }
-                None => {}
+            if let Some(sampler) = self.storage.remove(handle) {
+                res_list.queue_sampler(sampler);
             }
         }
     }

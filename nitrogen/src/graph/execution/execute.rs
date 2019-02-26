@@ -74,7 +74,7 @@ pub(crate) unsafe fn execute(
                                         ImageReadType::Color => {
                                             let img_desc = gfx::pso::DescriptorSetWrite {
                                                 set,
-                                                binding: (*binding) as u32,
+                                                binding: u32::from(*binding),
                                                 array_offset: 0,
                                                 descriptors: std::iter::once(
                                                     gfx::pso::Descriptor::Image(
@@ -95,7 +95,7 @@ pub(crate) unsafe fn execute(
 
                                                 let sampler_desc = gfx::pso::DescriptorSetWrite {
                                                     set,
-                                                    binding: samp_bind as u32,
+                                                    binding: u32::from(samp_bind),
                                                     array_offset: 0,
                                                     descriptors: std::iter::once(
                                                         gfx::pso::Descriptor::Sampler(sampler),
@@ -109,7 +109,7 @@ pub(crate) unsafe fn execute(
                                         ImageReadType::Storage => {
                                             let desc = gfx::pso::DescriptorSetWrite {
                                                 set,
-                                                binding: (*binding) as u32,
+                                                binding: u32::from(*binding),
                                                 array_offset: 0,
                                                 descriptors: std::iter::once(
                                                     gfx::pso::Descriptor::Image(
@@ -154,7 +154,7 @@ pub(crate) unsafe fn execute(
                                             BufferWriteType::Storage => {
                                                 Some(gfx::pso::DescriptorSetWrite {
                                                     set,
-                                                    binding: (*binding) as u32,
+                                                    binding: u32::from(*binding),
                                                     array_offset: 0,
                                                     descriptors: std::iter::once(
                                                         gfx::pso::Descriptor::Buffer(
@@ -178,7 +178,7 @@ pub(crate) unsafe fn execute(
 
                                                 Some(gfx::pso::DescriptorSetWrite {
                                                     set,
-                                                    binding: (*binding) as u32,
+                                                    binding: u32::from(*binding),
                                                     array_offset: 0,
                                                     descriptors: std::iter::once(
                                                         gfx::pso::Descriptor::Image(
@@ -248,10 +248,10 @@ pub(crate) unsafe fn execute(
                             let mut command = crate::graph::command::GraphicsCommandBuffer {
                                 buf: &mut *raw_cmd,
                                 storages: &read_storages,
-                                framebuffer: framebuffer,
+                                framebuffer,
                                 viewport_rect: viewport.rect,
                                 pipeline_layout: &pipeline.layout,
-                                render_pass: render_pass,
+                                render_pass,
                             };
 
                             pass_impl.execute(store, &mut command);

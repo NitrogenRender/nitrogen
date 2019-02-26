@@ -134,7 +134,7 @@ impl PipelineStorage {
         };
 
         let layout = device.device.create_pipeline_layout(
-            create_info.descriptor_set_layout.iter().map(|d| *d),
+            create_info.descriptor_set_layout.iter().cloned(),
             create_info
                 .push_constants
                 .iter()
@@ -262,9 +262,13 @@ impl PipelineStorage {
 
             device.device.destroy_shader_module(vertex);
 
-            fragment.map(|frag| device.device.destroy_shader_module(frag));
+            if let Some(frag) = fragment {
+                device.device.destroy_shader_module(frag);
+            }
 
-            geometry.map(|geom| device.device.destroy_shader_module(geom));
+            if let Some(geom) = geometry {
+                device.device.destroy_shader_module(geom);
+            }
         }
 
         let handle = self.storage.insert(Pipeline::Graphics);
@@ -285,7 +289,7 @@ impl PipelineStorage {
             .create_shader_module(create_info.shader.content)?;
 
         let layout = device.device.create_pipeline_layout(
-            create_info.descriptor_set_layout.iter().map(|d| *d),
+            create_info.descriptor_set_layout.iter().cloned(),
             create_info
                 .push_constants
                 .iter()
