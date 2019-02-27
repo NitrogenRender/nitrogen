@@ -80,45 +80,6 @@ fn derive_batch(
         }
     }
 
-    // See if a resource is used for copying
-    for copy in &batch.resource_copies {
-        let orig = resolved.copies_from[copy];
-
-        // if this is an image
-        if let Some((usage, format)) = usages.image.get(&orig).cloned() {
-            // if an image is created by copying another image, that means the src
-            // has to be marked as TRANSFER_SRC and the new image as TRANSFER_DST
-            let mut orig_usage = usage;
-
-            orig_usage |= IUsage::TRANSFER_SRC;
-
-            if let Some(entry) = usages.image.get_mut(&orig) {
-                entry.0 = orig_usage;
-            }
-
-            // once we copy we can get rid of all the previous flags, as they no longer apply
-            let new_usage = IUsage::TRANSFER_DST;
-            usages.image.insert(*copy, (new_usage, format));
-        }
-
-        // if this is a buffer
-        if let Some(usage) = usages.buffer.get(&orig).cloned() {
-            // Same as for images, if we copy a buffer the src has to be TRANSFER_SRC and the new
-            // buffer has to be TRANSFER_DST
-            let mut orig_usage = usage;
-
-            orig_usage |= BUsage::TRANSFER_SRC;
-
-            if let Some(entry) = usages.buffer.get_mut(&orig) {
-                *entry = orig_usage;
-            }
-
-            // old flags don't apply to copies
-            let new_usage = BUsage::TRANSFER_DST;
-            usages.buffer.insert(*copy, new_usage);
-        }
-    }
-
     // Looking at all reads and writes in a pass
     for pass in &batch.passes {
         derive_pass(resolved, *pass, usages);

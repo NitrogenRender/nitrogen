@@ -30,20 +30,24 @@ impl SemaphorePool {
         &'a self,
         list: &'a SemaphoreList,
     ) -> Box<dyn Iterator<Item = &'a types::Semaphore> + 'a> {
-        Box::new(list.prev_semaphores.as_slice().iter().map(move |idx| {
-            let this = unsafe { self.0.get() };
-            &this.values[*idx]
-        }))
+        Box::new(
+            list.prev_semaphores
+                .as_slice()
+                .iter()
+                .map(move |idx| self.0.lookup(*idx)),
+        )
     }
 
     pub(crate) fn list_next_sems<'a>(
         &'a self,
         list: &'a SemaphoreList,
     ) -> Box<dyn Iterator<Item = &'a types::Semaphore> + 'a> {
-        Box::new(list.next_semaphores.as_slice().iter().map(move |idx| {
-            let this = unsafe { self.0.get() };
-            &this.values[*idx]
-        }))
+        Box::new(
+            list.next_semaphores
+                .as_slice()
+                .iter()
+                .map(move |idx| self.0.lookup(*idx)),
+        )
     }
 
     pub(crate) unsafe fn clear(&mut self) {

@@ -17,7 +17,6 @@ pub(crate) struct GraphResourcesResolved {
     pub(crate) name_lookup: BTreeMap<ResourceName, ResourceId>,
     pub(crate) defines: BTreeMap<ResourceId, PassId>,
     pub(crate) infos: BTreeMap<ResourceId, ResourceCreateInfo>,
-    pub(crate) copies_from: BTreeMap<ResourceId, ResourceId>,
     pub(crate) moves_from: BTreeMap<ResourceId, ResourceId>,
     pub(crate) moves_to: BTreeMap<ResourceId, ResourceId>,
 
@@ -31,8 +30,6 @@ pub(crate) struct GraphResourcesResolved {
     /// Resources that a pass writes to
     pub(crate) pass_writes: BTreeMap<PassId, BTreeSet<(ResourceId, ResourceWriteType, u8)>>,
     /// Resources that a pass reads from
-    ///
-    /// Last entry is the binding point for samplers
     pub(crate) pass_reads: BTreeMap<PassId, BTreeSet<ReadsByResource>>,
 
     pub(crate) backbuffer: BTreeMap<ResourceName, ResourceId>,
@@ -48,7 +45,7 @@ impl GraphResourcesResolved {
         }
 
         // Check if there's a resource
-        if self.infos.contains_key(&prev_id) || self.copies_from.contains_key(&prev_id) {
+        if self.infos.contains_key(&prev_id) {
             Some(prev_id)
         } else {
             None
@@ -56,23 +53,25 @@ impl GraphResourcesResolved {
     }
 
     pub(crate) fn create_info(&self, id: ResourceId) -> Option<(ResourceId, &ResourceCreateInfo)> {
-        let mut next_id = self.moved_from(id)?;
+        let next_id = self.moved_from(id)?;
 
-        // I'm tired and not sure if this will terminate in all cases. TODO...
-        loop {
-            if let Some(info) = self.infos.get(&next_id) {
-                return Some((next_id, info));
-            }
-
-            if let Some(prev) = self.copies_from.get(&next_id) {
-                next_id = self.moved_from(*prev)?;
-            } else {
-                return None;
-            }
+        if let Some(info) = self.infos.get(&next_id) {
+            return Some((next_id, info));
+        } else {
+            return None;
         }
     }
 }
 
+// This function looks way scarier than it is. (really!)
+// Its purpose is to go from collections of names to collections of IDs and a lookup table
+// to associate names with IDs.
+//
+// In the first pass, all new "definitions" are associated with IDs.
+// In the second pass, all "mentions" of resources by name are replaced by the now-known IDs.
+//
+// All this happens in two passes since "usage of resource" does not have to "physically" appear
+// after the definition.
 pub(crate) fn resolve_input_graph(
     input: GraphInput,
     reads: &mut Vec<(ResourceId, ResourceReadType, PassId)>,
@@ -85,7 +84,6 @@ pub(crate) fn resolve_input_graph(
 
     let mut resource_defines = BTreeMap::new();
     let mut resource_infos = BTreeMap::new();
-    let mut resource_copies_from = BTreeMap::new();
     let mut resource_moves_from = BTreeMap::new();
     let mut resource_moves_to = BTreeMap::new();
 
@@ -121,27 +119,6 @@ pub(crate) fn resolve_input_graph(
         }
     }
 
-    for (pass, ress) in &input.resource_copies {
-        let creates = pass_creates.entry(*pass).or_insert_with(BTreeSet::new);
-        for (new_name, _old_name) in ress {
-            if let Some(id) = resource_name_lookup.get(new_name) {
-                errors.push(GraphCompileError::ResourceRedefined {
-                    pass: *pass,
-                    res: new_name.clone(),
-                    prev: resource_defines[id],
-                });
-                continue;
-            }
-
-            let id = ResourceId(resource_defines.len());
-
-            resource_defines.insert(id, *pass);
-            resource_name_lookup.insert(new_name.clone(), id);
-
-            creates.insert(id);
-        }
-    }
-
     for (pass, ress) in &input.resource_moves {
         let creates = pass_creates.entry(*pass).or_insert_with(BTreeSet::new);
         for (new_name, _old_name) in ress {
@@ -164,43 +141,6 @@ pub(crate) fn resolve_input_graph(
     }
 
     // "back-reference" old resources
-
-    for (pass, ress) in input.resource_copies {
-        let depends = pass_ext_depends.entry(pass).or_insert_with(BTreeSet::new);
-
-        for (new_name, old_name) in ress {
-            let old_id = if let Some(id) = resource_name_lookup.get(&old_name) {
-                *id
-            } else {
-                errors.push(GraphCompileError::ReferencedInvalidResource {
-                    pass,
-                    res: old_name.clone(),
-                });
-                continue;
-            };
-            let new_id = if let Some(id) = resource_name_lookup.get(&new_name) {
-                *id
-            } else {
-                errors.push(GraphCompileError::ReferencedInvalidResource {
-                    pass,
-                    res: new_name.clone(),
-                });
-                continue;
-            };
-
-            resource_copies_from.insert(new_id, old_id);
-
-            // If the old id was something that is made in another pass it means we depend on
-            // another pass
-            if !pass_creates
-                .get(&pass)
-                .map(|s| s.contains(&old_id))
-                .unwrap_or(false)
-            {
-                depends.insert(old_id);
-            }
-        }
-    }
 
     for (pass, ress) in input.resource_moves {
         let depends = pass_ext_depends.entry(pass).or_insert_with(BTreeSet::new);
@@ -347,7 +287,6 @@ pub(crate) fn resolve_input_graph(
         defines: resource_defines,
         infos: resource_infos,
 
-        copies_from: resource_copies_from,
         moves_from: resource_moves_from,
         moves_to: resource_moves_to,
 

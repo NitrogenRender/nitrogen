@@ -155,10 +155,6 @@ pub(crate) unsafe fn prepare(
             );
         }
 
-        for _copy in &batch.resource_copies {
-            unimplemented!();
-        }
-
         for pass in &batch.passes {
             let info = &passes[pass.0].1;
 
