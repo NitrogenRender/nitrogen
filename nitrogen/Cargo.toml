@@ -14,7 +14,6 @@ alloc_gfxm = ["gfx-memory"]
 
 
 [dependencies]
-ash = { version = "0.24.4", optional = true }
 slab = "0.4.1"
 derive_more = "0.14.0"
 bitflags = "1.0.4"
