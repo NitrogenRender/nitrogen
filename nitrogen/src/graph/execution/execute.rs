@@ -21,7 +21,7 @@ use crate::resources::semaphore_pool::{SemaphoreList, SemaphorePool};
 
 pub(crate) unsafe fn execute(
     device: &DeviceContext,
-    sem_pool: &mut SemaphorePool,
+    sem_pool: &SemaphorePool,
     sem_list: &mut SemaphoreList,
     cmd_pool_gfx: &CommandPoolGraphics,
     cmd_pool_cmpt: &CommandPoolCompute,
