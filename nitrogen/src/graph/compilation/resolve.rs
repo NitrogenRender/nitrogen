@@ -9,7 +9,6 @@ use super::*;
 use super::GraphInput;
 
 // the Option<u8> represents a possible sampler binding
-pub(crate) type ReadsByPass = (PassId, ResourceReadType, u8, Option<u8>);
 pub(crate) type ReadsByResource = (ResourceId, ResourceReadType, u8, Option<u8>);
 
 #[derive(Debug)]
@@ -18,10 +17,6 @@ pub(crate) struct GraphResourcesResolved {
     pub(crate) defines: BTreeMap<ResourceId, PassId>,
     pub(crate) infos: BTreeMap<ResourceId, ResourceCreateInfo>,
     pub(crate) moves_from: BTreeMap<ResourceId, ResourceId>,
-    pub(crate) moves_to: BTreeMap<ResourceId, ResourceId>,
-
-    pub(crate) reads: BTreeMap<ResourceId, BTreeSet<ReadsByPass>>,
-    pub(crate) writes: BTreeMap<ResourceId, BTreeSet<(PassId, ResourceWriteType, u8)>>,
 
     /// Resources created by pass - includes copies and moves
     pub(crate) pass_creates: BTreeMap<PassId, BTreeSet<ResourceId>>,
@@ -31,8 +26,6 @@ pub(crate) struct GraphResourcesResolved {
     pub(crate) pass_writes: BTreeMap<PassId, BTreeSet<(ResourceId, ResourceWriteType, u8)>>,
     /// Resources that a pass reads from
     pub(crate) pass_reads: BTreeMap<PassId, BTreeSet<ReadsByResource>>,
-
-    pub(crate) backbuffer: BTreeMap<ResourceName, ResourceId>,
 }
 
 impl GraphResourcesResolved {
@@ -79,6 +72,7 @@ pub(crate) fn resolve_input_graph(
     errors: &mut Vec<GraphCompileError>,
 ) -> GraphResourcesResolved {
     // TODO check for duplicated binding points everywhere?
+    // TODO cycle detection?
 
     let mut resource_name_lookup = BTreeMap::new();
 
@@ -87,18 +81,15 @@ pub(crate) fn resolve_input_graph(
     let mut resource_moves_from = BTreeMap::new();
     let mut resource_moves_to = BTreeMap::new();
 
-    let mut resource_reads = BTreeMap::new();
-    let mut resource_writes = BTreeMap::new();
-
-    let mut pass_creates = BTreeMap::new();
-    let mut pass_ext_depends = BTreeMap::new();
-    let mut pass_writes = BTreeMap::new();
-    let mut pass_reads = BTreeMap::new();
+    let mut pass_creates = BTreeMap::<_, BTreeSet<_>>::new();
+    let mut pass_ext_depends = BTreeMap::<_, BTreeSet<_>>::new();
+    let mut pass_writes = BTreeMap::<_, BTreeSet<_>>::new();
+    let mut pass_reads = BTreeMap::<_, BTreeSet<_>>::new();
 
     // generate IDs for all "new" resources.
 
     for (pass, ress) in input.resource_creates {
-        let creates = pass_creates.entry(pass).or_insert_with(BTreeSet::new);
+        let creates = pass_creates.entry(pass).or_default();
 
         for (name, info) in ress {
             if let Some(id) = resource_name_lookup.get(&name) {
@@ -120,7 +111,7 @@ pub(crate) fn resolve_input_graph(
     }
 
     for (pass, ress) in &input.resource_moves {
-        let creates = pass_creates.entry(*pass).or_insert_with(BTreeSet::new);
+        let creates = pass_creates.entry(*pass).or_default();
         for (new_name, _old_name) in ress {
             if let Some(id) = resource_name_lookup.get(new_name) {
                 errors.push(GraphCompileError::ResourceRedefined {
@@ -143,7 +134,7 @@ pub(crate) fn resolve_input_graph(
     // "back-reference" old resources
 
     for (pass, ress) in input.resource_moves {
-        let depends = pass_ext_depends.entry(pass).or_insert_with(BTreeSet::new);
+        let depends = pass_ext_depends.entry(pass).or_default();
 
         for (new_name, old_name) in ress {
             let old_id = if let Some(id) = resource_name_lookup.get(&old_name) {
@@ -194,8 +185,8 @@ pub(crate) fn resolve_input_graph(
     }
 
     for (pass, ress) in input.resource_writes {
-        let depends = pass_ext_depends.entry(pass).or_insert_with(BTreeSet::new);
-        let pass_writes = pass_writes.entry(pass).or_insert_with(BTreeSet::new);
+        let depends = pass_ext_depends.entry(pass).or_default();
+        let pass_writes = pass_writes.entry(pass).or_default();
 
         for (name, ty, binding) in ress {
             let id = if let Some(id) = resource_name_lookup.get(&name) {
@@ -209,11 +200,6 @@ pub(crate) fn resolve_input_graph(
             };
 
             writes.push((id, ty, pass));
-
-            resource_writes
-                .entry(id)
-                .or_insert_with(BTreeSet::new)
-                .insert((pass, ty, binding));
 
             pass_writes.insert((id, ty, binding));
 
@@ -230,8 +216,8 @@ pub(crate) fn resolve_input_graph(
     }
 
     for (pass, ress) in input.resource_reads {
-        let depends = pass_ext_depends.entry(pass).or_insert_with(BTreeSet::new);
-        let pass_reads = pass_reads.entry(pass).or_insert_with(BTreeSet::new);
+        let depends = pass_ext_depends.entry(pass).or_default();
+        let pass_reads = pass_reads.entry(pass).or_default();
 
         for (name, ty, binding, sampler_binding) in ress {
             let id = if let Some(id) = resource_name_lookup.get(&name) {
@@ -245,11 +231,6 @@ pub(crate) fn resolve_input_graph(
             };
 
             reads.push((id, ty, pass));
-
-            resource_reads
-                .entry(id)
-                .or_insert_with(BTreeSet::new)
-                .insert((pass, ty, binding, sampler_binding));
 
             pass_reads.insert((id, ty, binding, sampler_binding));
 
@@ -265,13 +246,9 @@ pub(crate) fn resolve_input_graph(
         }
     }
 
-    let mut resource_backbuffer = BTreeMap::new();
-
     for (pass, creates) in input.resource_backbuffer {
-        for (bname, lname) in creates {
-            if let Some(id) = resource_name_lookup.get(&lname) {
-                resource_backbuffer.insert(bname, *id);
-            } else {
+        for (_bname, lname) in creates {
+            if resource_name_lookup.get(&lname).is_none() {
                 errors.push(GraphCompileError::ReferencedInvalidResource {
                     res: lname.clone(),
                     pass,
@@ -288,12 +265,6 @@ pub(crate) fn resolve_input_graph(
         infos: resource_infos,
 
         moves_from: resource_moves_from,
-        moves_to: resource_moves_to,
-
-        reads: resource_reads,
-        writes: resource_writes,
-
-        backbuffer: resource_backbuffer,
 
         pass_creates,
         pass_ext_depends,

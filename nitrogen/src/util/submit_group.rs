@@ -327,7 +327,7 @@ impl SubmitGroup {
 
         match ctx.graph_storage.execute(
             &ctx.device_ctx,
-            &mut self.sem_pool,
+            &self.sem_pool,
             &mut self.sem_list,
             &self.pool_graphics,
             &self.pool_compute,
