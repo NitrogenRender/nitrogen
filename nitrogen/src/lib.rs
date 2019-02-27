@@ -48,6 +48,8 @@
 //!
 //! [`Context`]: ./struct.Context.html
 
+#![warn(missing_docs)]
+
 #[macro_use]
 extern crate derive_more;
 
@@ -66,8 +68,6 @@ pub use crate::util::storage;
 pub use crate::util::submit_group;
 pub(crate) use crate::util::transfer;
 
-pub use crate::util::CowString;
-
 use crate::storage::{Handle, Storage};
 
 pub mod resources;
@@ -83,6 +83,7 @@ pub mod graph;
 
 use std::sync::Arc;
 
+/// An opaque handle to a display
 pub type DisplayHandle = Handle<Display>;
 
 // DON'T CHANGE THE ORDER OF THE MEMBERS HERE!!!!
@@ -246,7 +247,7 @@ impl Context {
     pub unsafe fn image_create<I: Into<gfx::image::Usage> + Clone>(
         &mut self,
         create_info: image::ImageCreateInfo<I>,
-    ) -> image::Result<image::ImageHandle> {
+    ) -> Result<image::ImageHandle, image::ImageError> {
         self.image_storage.create(&self.device_ctx, create_info)
     }
 
@@ -266,7 +267,7 @@ impl Context {
     pub unsafe fn buffer_cpu_visible_create<U>(
         &mut self,
         create_info: buffer::CpuVisibleCreateInfo<U>,
-    ) -> buffer::Result<buffer::BufferHandle>
+    ) -> Result<buffer::BufferHandle, buffer::BufferError>
     where
         U: Into<gfx::buffer::Usage> + Clone,
     {
@@ -274,10 +275,14 @@ impl Context {
             .cpu_visible_create(&self.device_ctx, create_info)
     }
 
+    /// Create a buffer object that is backed by device-local memory.
+    ///
+    /// A buffer that resides in device-local memory can not be accessed directly by the CPU.
+    /// Instead, "staging buffers" are used (which are CPU visible) to read or set data.
     pub unsafe fn buffer_device_local_create<U>(
         &mut self,
         create_info: buffer::DeviceLocalCreateInfo<U>,
-    ) -> buffer::Result<buffer::BufferHandle>
+    ) -> Result<buffer::BufferHandle, buffer::BufferError>
     where
         U: Into<gfx::buffer::Usage> + Clone,
     {
@@ -432,6 +437,12 @@ impl Context {
         submit_group::SubmitGroup::new(self.device_ctx.clone())
     }
 
+    /// Blocks on the calling site until the device is idling.
+    ///
+    /// This can be used to make sure that no resources are currently in use and are free to be
+    /// destroyed or changed.
+    ///
+    /// This function should generally only be used upon application shutdown.
     pub unsafe fn wait_idle(&self) {
         use gfx::Device;
         // TODO handle this error?

@@ -233,7 +233,7 @@ fn create_graph(
                 entry: "ComputeMain".into(),
             },
             materials: vec![(0, material)],
-            push_constants: vec![(0..4)],
+            push_constants: Some(0..4),
         };
 
         struct MovePass {

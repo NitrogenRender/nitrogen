@@ -529,13 +529,18 @@ unsafe fn create_pipeline_compute(
         .map(|(_, data)| data)
         .collect::<Vec<_>>();
 
+    let mut push_constants = SmallVec::<[_; 1]>::new();
+    if let Some(range) = &info.push_constants {
+        push_constants.push(range.clone());
+    }
+
     let create_info = crate::pipeline::ComputePipelineCreateInfo {
         shader: crate::pipeline::ShaderInfo {
             entry: &info.shader.entry,
             content: &info.shader.content,
         },
         descriptor_set_layout: &layouts[..],
-        push_constants: &info.push_constants[..],
+        push_constants: push_constants.as_slice(),
     };
 
     let pipeline_handle = storages

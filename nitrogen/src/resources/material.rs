@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+//! Description of "input data to shaders".
+
 use crate::util::storage::{Handle, Storage};
 
 use crate::device::DeviceContext;
@@ -12,19 +14,48 @@ use crate::resources::sampler::{SamplerHandle, SamplerStorage};
 
 use crate::types;
 
+use std::ops::Range;
+
 use smallvec::SmallVec;
 
+/// Opaque handle to a [`Material`].
+///
+/// [`Material`]: ./struct.Material.html
 pub type MaterialHandle = Handle<Material>;
 
 const MAX_SETS_PER_POOL: u8 = 16;
 
+/// Opaque handle to a [`MaterialInstance`].
+///
+/// [`MaterialInstance`]: ./struct.MaterialInstance.html
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub struct MaterialInstanceHandle(pub MaterialHandle, pub Handle<MaterialInstance>);
 
+// Implementation detail:
 // A material contains its parameters for validation and later pool creation.
 // Since the number of material instances is not always known at program startup,
 // a list of pools is maintained and expanded if needed.
+
+/// A "blue print" for input-data to shader programs.
+///
+/// Materials are a collection of associated data that acts as a "description" for abstract objects.
+///
+/// ## Conceptual example:
+///
+/// A PBR pipeline might require mesh instances to provide following information:
+///  - albedo texture
+///  - roughness texture
+///  - normal texture
+///  - emission texture
+///  - uniform buffer (model matrix, roughness multiplier, normal multiplier, ...)
+///  - uniform buffer (bone transforms, ...)
+///
+/// A 2D pipeline instead might only require canvas-objects to provide following information:
+///  - Color texture
+///
+/// Materials are used to "talk about" those properties, so that pipelines can be prepared
+/// accordingly. Material instances provide concrete values for each of those properties.
 pub struct Material {
     sets_per_pool: u8,
 
@@ -37,11 +68,17 @@ pub struct Material {
     instances: Storage<MaterialInstance>,
 }
 
+/// Information needed to create a material object.
 pub struct MaterialCreateInfo<'a> {
     // TODO add support for arrays later on?
+    /// Paramters of the material.
     pub parameters: &'a [(u32, MaterialParameterType)],
 }
 
+/// An instance of a material.
+///
+/// Material instances are specific instantiations of a material which can be used as bindings in
+/// shader programs. (DescriptorSets in Vulkan terminology)
 pub struct MaterialInstance {
     pool: usize,
     pub(crate) set: types::DescriptorSet,
@@ -51,6 +88,8 @@ pub(crate) struct MaterialStorage {
     storage: Storage<Material>,
 }
 
+/// Type of material parameter.
+#[allow(missing_docs)]
 #[derive(Copy, Clone, Debug)]
 pub enum MaterialParameterType {
     Sampler,
@@ -82,21 +121,32 @@ impl From<MaterialParameterType> for gfx::pso::DescriptorType {
     }
 }
 
+/// Description of a data-write to a material-instance.
 pub struct InstanceWrite {
+    /// Binding point of the data.
     pub binding: u32,
+    /// Data to write.
     pub data: InstanceWriteData,
 }
 
+/// Data to write to an instance.
 pub enum InstanceWriteData {
+    /// A sampler object.
     Sampler {
+        /// Handle to sampler object.
         sampler: SamplerHandle,
     },
+    /// An image object.
     Image {
+        /// Handle to image object.
         image: ImageHandle,
     },
+    /// A buffer object.
     Buffer {
+        /// Handle to buffer object.
         buffer: BufferHandle,
-        region: ::std::ops::Range<Option<u64>>,
+        /// Region of the buffer to map (in bytes).
+        region: Range<Option<u64>>,
     },
     // TODO buffer views for texel buffers?
     /*
@@ -417,6 +467,8 @@ impl Material {
 
 // error stuff
 
+/// Possible errors that can occur when creating materials or material instances.
+#[allow(missing_docs)]
 #[derive(Clone, Display, From, Debug)]
 pub enum MaterialError {
     #[display(fmt = "Cannot create empty material")]

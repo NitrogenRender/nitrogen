@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+//! Description of sampler objects.
+
 use gfx::image;
 use gfx::Device;
 
@@ -15,9 +17,12 @@ use crate::types::Sampler;
 
 use std::borrow::Borrow;
 
+/// Filter mode used when sampling.
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum Filter {
+    /// Use color of the nearest texel.
     Nearest,
+    /// Use linear interpolation between the nearest texels.
     Linear,
 }
 
@@ -30,6 +35,8 @@ impl From<Filter> for image::Filter {
     }
 }
 
+/// Wrap mode used when sampling outside of `[0..1]` range occurs
+#[allow(missing_docs)]
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum WrapMode {
     Tile,
@@ -49,12 +56,18 @@ impl From<WrapMode> for image::WrapMode {
     }
 }
 
+/// Description of a sampler object
 #[derive(Copy, Clone)]
 pub struct SamplerCreateInfo {
+    /// Filter mode used for "minifying" samples.
     pub min_filter: Filter,
+    /// Fitler mode used for magnifying samplers
     pub mag_filter: Filter,
+    /// Filter mode used for mip-map sampling.
     pub mip_filter: Filter,
+    /// Wrap modes used when sampling outside of the `[0..1]` range occurs.
     pub wrap_mode: (WrapMode, WrapMode, WrapMode),
+    // TODO anisotropy?
 }
 
 impl From<SamplerCreateInfo> for image::SamplerInfo {
@@ -77,6 +90,7 @@ impl From<SamplerCreateInfo> for image::SamplerInfo {
     }
 }
 
+/// Opaque handle to a sampler object.
 pub type SamplerHandle = storage::Handle<Sampler>;
 
 pub(crate) struct SamplerStorage {

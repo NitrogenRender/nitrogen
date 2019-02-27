@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+//! Synchronization management of GPU operations.
+
 use gfx::Device;
 
 use crate::buffer::BufferTypeInternal;
@@ -33,6 +35,7 @@ use std::sync::Arc;
 /// called to block the caller-thread until the operations finished executing.
 ///
 /// [`Context::create_submit_group`]: ../../struct.Context.html#method.create_submit_group
+/// [`Context`]: ../../struct.Context.html
 /// [`wait`]: #method.wait
 /// [`release`]: #method.release
 pub struct SubmitGroup {
@@ -94,6 +97,7 @@ impl SubmitGroup {
         }
     }
 
+    /// Block the calling thread until all queued operations finished executing.
     pub unsafe fn wait(&mut self, ctx: &mut Context) {
         let fence = ctx.device_ctx.device.create_fence(false).unwrap();
 
@@ -154,10 +158,12 @@ impl SubmitGroup {
         )
     }
 
+    /// Setup a new swapchain for a given `Display`, recreating it if an old one already exists.
     pub unsafe fn display_setup_swapchain(&mut self, ctx: &mut Context, display: DisplayHandle) {
         ctx.displays[display].setup_swapchain(&ctx.device_ctx, &mut self.res_destroys);
     }
 
+    /// Queue the clearing of an `Image` with a given `ClearValue`.
     pub unsafe fn clear_image(
         &mut self,
         ctx: &mut Context,
@@ -257,6 +263,7 @@ impl SubmitGroup {
         Some(())
     }
 
+    /// Queue the blitting of one image into another.
     pub unsafe fn blit_image(
         &mut self,
         ctx: &mut Context,
@@ -305,6 +312,7 @@ impl SubmitGroup {
         Some(())
     }
 
+    /// Queue the execution of a graph.
     pub unsafe fn graph_execute(
         &mut self,
         ctx: &mut Context,
@@ -351,6 +359,7 @@ impl SubmitGroup {
         Ok(())
     }
 
+    /// Queue the deletion of a graph and all its associated resources.
     pub fn graph_destroy<G>(&mut self, ctx: &mut Context, graph: G)
     where
         G: IntoIterator,
@@ -376,6 +385,7 @@ impl SubmitGroup {
         }
     }
 
+    /// Retrieve an `ImageHandle` from a named graph resource.
     pub fn graph_get_image<I: Into<graph::ResourceName>>(
         &self,
         ctx: &Context,
@@ -392,17 +402,23 @@ impl SubmitGroup {
         res.images.get(&id).cloned()
     }
 
+    /// Queue the deletion of a [`Backbuffer`] object and all its associated resources.
+    ///
+    /// [`Backbuffer`]: ../../graph/struct.Backbuffer.html
     pub fn backbuffer_destroy(&mut self, ctx: &mut Context, backbuffer: graph::Backbuffer) {
         ctx.image_storage
             .destroy(&mut self.res_destroys, backbuffer.images.values())
     }
 
+    /// Queue the upload of data to an [`Image`] object.
+    ///
+    /// [`Image`]: ../../resources/image/struct.Image.html
     pub unsafe fn image_upload_data(
         &mut self,
         ctx: &mut Context,
         image: image::ImageHandle,
         data: image::ImageUploadInfo,
-    ) -> image::Result<()> {
+    ) -> Result<(), image::ImageError> {
         ctx.image_storage.upload_data(
             &ctx.device_ctx,
             &self.sem_pool,
@@ -414,20 +430,29 @@ impl SubmitGroup {
         )
     }
 
+    /// Queue the deletion of an [`Image`] object.
+    ///
+    /// [`Image`]: ../../resources/image/struct.Image.html
     pub fn image_destroy(&mut self, ctx: &mut Context, images: &[image::ImageHandle]) {
         ctx.image_storage.destroy(&mut self.res_destroys, images)
     }
 
+    /// Queue the upload of data to a [cpu-visible] buffer object.
+    ///
+    /// [cpu-visible]: ../../resources/buffer/struct.CpuVisibleCreateInfo.html
     pub unsafe fn buffer_cpu_visible_upload<T>(
         &mut self,
         ctx: &mut Context,
         buffer: buffer::BufferHandle,
         info: buffer::BufferUploadInfo<T>,
-    ) -> buffer::Result<()> {
+    ) -> Result<(), buffer::BufferError> {
         ctx.buffer_storage
             .cpu_visible_upload(&ctx.device_ctx, buffer, info)
     }
 
+    /// Queue the reading of data from a [cpu-visible] buffer object.
+    ///
+    /// [cpu-visible]: ../../resources/buffer/struct.CpuVisibleCreateInfo.html
     pub unsafe fn buffer_cpu_visible_read<T>(
         &mut self,
         ctx: &Context,
@@ -438,12 +463,15 @@ impl SubmitGroup {
             .cpu_visible_read(&ctx.device_ctx, buffer, data);
     }
 
+    /// Queue the upload of data to a [device-local] buffer object.
+    ///
+    /// [device-local]: ../../resources/buffer/struct.DeviceLocalCreateInfo.html
     pub unsafe fn buffer_device_local_upload<T>(
         &mut self,
         ctx: &mut Context,
         buffer: buffer::BufferHandle,
         info: buffer::BufferUploadInfo<T>,
-    ) -> buffer::Result<()> {
+    ) -> Result<(), buffer::BufferError> {
         ctx.buffer_storage.device_local_upload(
             &ctx.device_ctx,
             &self.sem_pool,
@@ -455,27 +483,40 @@ impl SubmitGroup {
         )
     }
 
+    /// Queue the deltion of a [`Buffer`] object.
+    ///
+    /// [`Buffer`]: ../../resources/buffer/struct.Buffer.html
     pub fn buffer_destroy(&mut self, ctx: &mut Context, buffers: &[buffer::BufferHandle]) {
         ctx.buffer_storage.destroy(&mut self.res_destroys, buffers);
     }
 
+    /// Queue the deletion of a [`Sampler`] object.
+    ///
+    /// [`Sampler`]: ../../resources/sampler/index.html
     pub fn sampler_destroy(&mut self, ctx: &mut Context, samplers: &[sampler::SamplerHandle]) {
         ctx.sampler_storage
             .destroy(&mut self.res_destroys, samplers)
     }
 
+    /// Queue the deletion of a [`Material`].
+    ///
+    /// [`Material`]: ../../resources/material/struct.Material.html
     pub fn material_destroy(&mut self, materials: &[material::MaterialHandle]) {
         for m in materials {
             self.res_destroys.queue_material(*m);
         }
     }
 
+    /// Queue the deletion of a [`MaterialInstance`].
+    ///
+    /// [`MaterialInstance`]: ../../resources/material/struct.MaterialInstance.html
     pub fn material_instance_destroy(&mut self, instances: &[material::MaterialInstanceHandle]) {
         for i in instances {
             self.res_destroys.queue_material_instance(*i);
         }
     }
 
+    /// Release the `SubmitGroup` and all associated resources.
     pub unsafe fn release(mut self, ctx: &mut Context) {
         let mut storages = graph::Storages {
             render_pass: &mut ctx.render_pass_storage,

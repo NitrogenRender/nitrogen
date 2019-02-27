@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+//! Displays allow images to be presented to a window surface.
+
 use gfx::Device;
 
 use crate::device::DeviceContext;
@@ -15,6 +17,7 @@ use crate::resources::semaphore_pool::{SemaphoreList, SemaphorePool};
 use crate::submit_group::ResourceList;
 use std;
 
+/// A `Display` object represents a window surface.
 pub struct Display {
     pub(crate) surface: Surface,
 

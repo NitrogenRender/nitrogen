@@ -121,23 +121,35 @@ impl GraphResources {
     }
 }
 
+/// Backbuffers contain resources which can persist graph executions.
 #[derive(Debug, Default)]
 pub struct Backbuffer {
     pub(crate) usage: BackbufferUsage,
 
     pub(crate) images: HashMap<super::ResourceName, ImageHandle>,
+
+    // TODO there are no writes to this, only one read. removing??
     pub(crate) samplers: HashMap<super::ResourceName, SamplerHandle>,
 }
 
 impl Backbuffer {
+    /// Create a new (and empty) backbuffer.
     pub fn new() -> Self {
         Default::default()
     }
 
+    /// Retrieve the handle for an image with the given name from the backbuffer
     pub fn image_get<T: Into<super::ResourceName>>(&self, name: T) -> Option<ImageHandle> {
         self.images.get(&name.into()).cloned()
     }
 
+    /// Insert an image into the Backbuffer with a given name.
+    ///
+    /// Since an image-handle on its own does not carry format information with it,
+    /// the format has to be passed explicitly.
+    ///
+    /// impl-note: Maybe this should be a method on `Context` instead, so the format can be read
+    /// automatically?
     pub fn image_put<T: Into<super::ResourceName>>(
         &mut self,
         name: T,

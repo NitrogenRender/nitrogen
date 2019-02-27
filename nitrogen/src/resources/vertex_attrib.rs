@@ -2,10 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+//! Description of vertex buffers and elements used in graphics pipelines.
+
 use crate::storage::{Handle, Storage};
 
+/// Opaque handle to a vertex attribute description.
 pub type VertexAttribHandle = Handle<VertexAttrib>;
 
+/// Vertex attribute description.
 #[derive(Debug)]
 pub struct VertexAttrib {
     /// stride and attributes
@@ -19,19 +23,29 @@ pub(crate) struct VertexBufferDesc {
     pub(crate) binding: usize,
 }
 
+/// Description of vertex information used in a graphics pipeline.
 pub struct VertexAttribInfo<'a> {
+    /// Description of all buffers used for vertex data.
     pub buffer_infos: &'a [VertexAttribBufferInfo<'a>],
 }
 
+/// Description of a vertex buffer.
 pub struct VertexAttribBufferInfo<'a> {
+    /// Size in bytes between two vertices.
     pub stride: usize,
+    /// Index used when binding a vertex buffer.
     pub index: u32,
+    /// Description of the vertex-data.
     pub elements: &'a [VertexAttribBufferElementInfo],
 }
 
+/// Description of an element in a vertex buffer.
 pub struct VertexAttribBufferElementInfo {
+    /// Location used to identify element in shader programs.
     pub location: u32,
+    /// Format of the element data.
     pub format: gfx::format::Format,
+    /// Offset in bytes inside the buffer.
     pub offset: u32,
 }
 
