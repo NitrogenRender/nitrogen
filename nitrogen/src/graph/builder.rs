@@ -30,8 +30,6 @@ pub struct GraphBuilder {
     /// Mapping from names to resource create information
     pub(crate) resource_creates: Vec<(ResourceName, ResourceCreateInfo)>,
     /// Mapping from new name to src name
-    pub(crate) resource_copies: Vec<(ResourceName, ResourceName)>,
-    /// Mapping from new name to src name
     pub(crate) resource_moves: Vec<(ResourceName, ResourceName)>,
 
     /// List of resources that will be read from. Also contains read type and binding
@@ -68,10 +66,6 @@ impl GraphBuilder {
             local_name.into(),
             ResourceCreateInfo::Image(ImageInfo::BackbufferRead(backbuffer_name.into())),
         ));
-    }
-
-    pub fn image_copy<T0: Into<ResourceName>, T1: Into<ResourceName>>(&mut self, src: T0, new: T1) {
-        self.resource_copies.push((new.into(), src.into()));
     }
 
     pub fn image_move<T0: Into<ResourceName>, T1: Into<ResourceName>>(&mut self, from: T0, to: T1) {
@@ -130,13 +124,7 @@ impl GraphBuilder {
         self.resource_creates
             .push((name.into(), ResourceCreateInfo::Buffer(create_info)));
     }
-    pub fn buffer_copy<T0: Into<ResourceName>, T1: Into<ResourceName>>(
-        &mut self,
-        src: T0,
-        new: T1,
-    ) {
-        self.resource_copies.push((new.into(), src.into()));
-    }
+
     pub fn buffer_move<T0: Into<ResourceName>, T1: Into<ResourceName>>(
         &mut self,
         from: T0,

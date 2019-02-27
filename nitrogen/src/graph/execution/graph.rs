@@ -15,8 +15,6 @@ pub enum ExecutionGraphError {
 pub(crate) struct ExecutionBatch {
     /// Resources that have to be created from scratch
     pub(crate) resource_create: HashSet<ResourceId>,
-    /// Resources that have to be created via copying
-    pub(crate) resource_copies: HashSet<ResourceId>,
     /// Passes to execute
     pub(crate) passes: Vec<PassId>,
     /// Resources to destroy
@@ -171,7 +169,7 @@ impl ExecutionGraph {
             pass_execs
                 .into_iter()
                 .map(|batch| {
-                    let (creates, copies, deletes) = {
+                    let (creates, deletes) = {
                         let all_creates = batch
                             .iter()
                             .filter_map(|pass| resolved.pass_creates.get(pass))
@@ -185,12 +183,6 @@ impl ExecutionGraph {
                             .cloned()
                             .collect();
 
-                        let copies = all_creates
-                            // Here we are only interested in the things we need to copy
-                            .filter(|res| resolved.copies_from.contains_key(res))
-                            .cloned()
-                            .collect();
-
                         let deletes = batch
                             .iter()
                             .filter_map(|pass| pass_destroys.get(pass))
@@ -201,12 +193,11 @@ impl ExecutionGraph {
                             // Also don't destroy output resources. Ever.
                             .collect();
 
-                        (creates, copies, deletes)
+                        (creates, deletes)
                     };
 
                     ExecutionBatch {
                         resource_create: creates,
-                        resource_copies: copies,
                         resource_destroy: deletes,
                         passes: batch,
                     }

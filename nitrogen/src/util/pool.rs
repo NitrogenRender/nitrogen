@@ -69,17 +69,13 @@ impl<T, Impl: PoolImpl<T>> Pool<T, Impl> {
         }
     }
 
-    pub(crate) unsafe fn get(&self) -> &mut PoolInner<T, Impl> {
-        &mut *self.inner.get()
-    }
-
     #[allow(unused)]
     pub(crate) fn len(&self) -> usize {
-        unsafe { self.get().size }
+        unsafe { &*self.inner.get() }.size
     }
 
     pub(crate) fn alloc(&self) -> PoolElem<'_, Impl, T> {
-        let this = unsafe { self.get() };
+        let this = unsafe { &mut *self.inner.get() };
 
         let next = if this.size == this.values.len() {
             let next = this.values.len();
@@ -98,6 +94,11 @@ impl<T, Impl: PoolImpl<T>> Pool<T, Impl> {
         unsafe { PoolElem::from_idx(next, self) }
     }
 
+    pub(crate) fn lookup(&self, idx: usize) -> &T {
+        let this = unsafe { &*self.inner.get() };
+        &this.values[idx]
+    }
+
     unsafe fn free_on_drop(&self, idx: usize) {
         if Impl::free_on_drop() {
             self.free(idx);
@@ -105,7 +106,7 @@ impl<T, Impl: PoolImpl<T>> Pool<T, Impl> {
     }
 
     unsafe fn free(&self, idx: usize) {
-        let this = self.get();
+        let this = &mut *self.inner.get();
 
         this.pool_impl.reset_elem(&mut this.values[idx]);
 
@@ -116,7 +117,7 @@ impl<T, Impl: PoolImpl<T>> Pool<T, Impl> {
     }
 
     pub(crate) fn clear(&mut self) {
-        let this = unsafe { self.get() };
+        let this = unsafe { &mut *self.inner.get() };
 
         this.size = 0;
 
@@ -134,7 +135,7 @@ impl<T, Impl: PoolImpl<T>> Pool<T, Impl> {
     }
 
     pub(crate) fn reset(&mut self) {
-        let this = unsafe { self.get() };
+        let this = unsafe { &mut *self.inner.get() };
 
         for val in this.values.drain(0..) {
             this.pool_impl.free_elem(val);
@@ -144,7 +145,7 @@ impl<T, Impl: PoolImpl<T>> Pool<T, Impl> {
     }
 
     pub(crate) fn impl_ref_mut(&mut self) -> &mut Impl {
-        let this = unsafe { self.get() };
+        let this = unsafe { &mut *self.inner.get() };
 
         &mut this.pool_impl
     }
@@ -209,7 +210,7 @@ where
     fn deref(&self) -> &<Self as Deref>::Target {
         unsafe {
             let pool: &Pool<T, Impl> = &*(self.pool as *const _);
-            &pool.get().values[self.idx]
+            &(*pool.inner.get()).values[self.idx]
         }
     }
 }
@@ -221,7 +222,7 @@ where
     fn deref_mut(&mut self) -> &mut <Self as Deref>::Target {
         unsafe {
             let pool: &mut Pool<T, Impl> = &mut *(self.pool as *mut _);
-            &mut pool.get().values[self.idx]
+            &mut (*pool.inner.get()).values[self.idx]
         }
     }
 }

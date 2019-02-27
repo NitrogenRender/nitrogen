@@ -159,17 +159,18 @@ impl<U: UserData> MainLoop<U> {
         {
             let mut close_requested = false;
             let mut new_size = None;
-            self.events_loop.poll_events(|event| match event {
-                Event::WindowEvent { event, .. } => match event {
-                    WindowEvent::CloseRequested => {
-                        close_requested = true;
+            self.events_loop.poll_events(|event| {
+                if let Event::WindowEvent { event, .. } = event {
+                    match event {
+                        WindowEvent::CloseRequested => {
+                            close_requested = true;
+                        }
+                        WindowEvent::Resized(size) => {
+                            new_size = Some((size.width as f32, size.height as f32));
+                        }
+                        _ => {}
                     }
-                    WindowEvent::Resized(size) => {
-                        new_size = Some((size.width as f32, size.height as f32));
-                    }
-                    _ => {}
-                },
-                _ => {}
+                }
             });
 
             self.running = !close_requested;
@@ -191,7 +192,7 @@ impl<U: UserData> MainLoop<U> {
             const NANOS_PER_SEC: u32 = 1_000_000_000;
 
             let secs = dur.as_secs() as f64;
-            let subsecs = dur.subsec_nanos() as f64 / NANOS_PER_SEC as f64;
+            let subsecs = f64::from(dur.subsec_nanos()) / f64::from(NANOS_PER_SEC);
 
             secs + subsecs
         };
