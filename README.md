@@ -92,7 +92,7 @@ cargo doc --open
  - more robust and better performing graph compilation
  - use SPIR-V reflection to have more fine resource usage inference
  - use SPIR-V reflection to verify materials work with certain shaders
- - complete documentation 
+ - split out some util code into independent crates (`Storage`, `Pool`, etc...)
  
 ## License
 
