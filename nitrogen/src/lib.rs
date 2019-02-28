@@ -60,12 +60,14 @@ pub(crate) mod types;
 pub mod display;
 use crate::display::Display;
 
+pub mod submit_group;
+pub use crate::submit_group::SubmitGroup;
+
 pub(crate) mod device;
 use crate::device::DeviceContext;
 
 pub mod util;
 pub use crate::util::storage;
-pub use crate::util::submit_group;
 pub(crate) use crate::util::transfer;
 
 use crate::storage::{Handle, Storage};
@@ -432,7 +434,7 @@ impl Context {
 
     /// Create a new [`SubmitGroup`] to record and execute commands
     ///
-    /// [`SubmitGroup`]: ./util/submit_group/struct.SubmitGroup.html
+    /// [`SubmitGroup`]: ./submit_group/struct.SubmitGroup.html
     pub unsafe fn create_submit_group(&self) -> submit_group::SubmitGroup {
         submit_group::SubmitGroup::new(self.device_ctx.clone())
     }
