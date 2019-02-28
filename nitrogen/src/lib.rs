@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#![doc(html_logo_url = "https://raw.githubusercontent.com/NitrogenRender/nitrogen/master/logo.png")]
+
 //! A render graph based rendering engine.
 //!
 //! Nitrogen is intended to provide high-level abstractions to build well performing graphics
