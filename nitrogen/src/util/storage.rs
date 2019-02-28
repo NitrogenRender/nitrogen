@@ -2,15 +2,29 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+//! A container used for managing data using opaque handles.
+
 use slab::Slab;
 use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
 
+/// The "generation" of a handle.
+///
+/// Since entries in a `Storage` can be re-used after an element has been freed, there has to be a
+/// mechanism to avoid accidentally referring to old resources while manipulating new ones.
+///
+/// The generation of a "cell" in the storage will be incremented each time an element is removed
+/// from it. This way, the generation refers to a "point in time where an element is alive".
 pub type Generation = u64;
+
+/// The "index" of a handle.
+///
+/// Used to refer to an "element cell" in a `Storage`.
 pub type Id = usize;
 
+/// A strongly-typed opaque handle to a value in a `Storage`.
 #[repr(C)]
 pub struct Handle<T>(pub Id, pub Generation, PhantomData<T>);
 
@@ -42,23 +56,33 @@ impl<T> Debug for Handle<T> {
 }
 
 impl<T> Handle<T> {
-    pub unsafe fn new(id: Id, gen: Generation) -> Self {
+    /// Create a new handle by providing an index and a generation.
+    ///
+    /// Using this method should generally be avoided.
+    ///
+    /// It is useful for initializing structs which contain handles *without inserting elements into
+    /// a store before*. In that case `Option<Handle<T>>` could be used, but since a handle is only
+    /// valid for a certain generation, there are no safety violations.
+    pub fn new(id: Id, gen: Generation) -> Self {
         Handle(id, gen, PhantomData)
     }
 
-    pub fn id(&self) -> usize {
+    /// "index" part of the handle.
+    pub fn id(&self) -> Id {
         self.0
     }
 
-    pub fn generation(&self) -> u64 {
+    /// "generation" part of the handle.
+    pub fn generation(&self) -> Generation {
         self.1
     }
 }
 
+/// A container used to refer to elements using opaque handles.
 #[derive(Debug)]
 pub struct Storage<T> {
-    pub generations: Vec<Generation>,
-    pub entries: Slab<T>,
+    generations: Vec<Generation>,
+    entries: Slab<T>,
 }
 
 impl<T> Index<Handle<T>> for Storage<T> {
@@ -90,6 +114,7 @@ impl<T> Default for Storage<T> {
 }
 
 impl<T> Storage<T> {
+    /// Create a new empty `Storage`, containing no elements.
     pub fn new() -> Self {
         Self {
             generations: vec![],
@@ -97,6 +122,7 @@ impl<T> Storage<T> {
         }
     }
 
+    /// Insert an element into the store, returning a `Handle` to the element.
     pub fn insert(&mut self, data: T) -> Handle<T> {
         let (entry, handle) = {
             let entry = self.entries.vacant_entry();
@@ -110,7 +136,7 @@ impl<T> Storage<T> {
 
             let generation = self.generations[key];
 
-            (entry, unsafe { Handle::new(key, generation) })
+            (entry, Handle::new(key, generation))
         };
 
         entry.insert(data);
@@ -118,6 +144,7 @@ impl<T> Storage<T> {
         handle
     }
 
+    /// Checks if an element pointed to by `handle` is alive.
     pub fn is_alive(&self, handle: Handle<T>) -> bool {
         let storage_size_enough = self.generations.len() > handle.id();
 
@@ -129,6 +156,7 @@ impl<T> Storage<T> {
         }
     }
 
+    /// Remove an element from the `Storage`, return the removed value if it exists.
     pub fn remove(&mut self, handle: Handle<T>) -> Option<T> {
         if self.is_alive(handle) {
             let data = self.entries.remove(handle.id());
@@ -139,6 +167,7 @@ impl<T> Storage<T> {
         }
     }
 
+    /// Retrieve a shared reference to the element pointed at by `handle`, if it is alive.
     pub fn get(&self, handle: Handle<T>) -> Option<&T> {
         if self.is_alive(handle) {
             self.entries.get(handle.id())
@@ -147,6 +176,7 @@ impl<T> Storage<T> {
         }
     }
 
+    /// Retrieve a mutable/unique reference to the element pointed at by `handle`, if it is alive.
     pub fn get_mut(&mut self, handle: Handle<T>) -> Option<&mut T> {
         if self.is_alive(handle) {
             self.entries.get_mut(handle.id())
@@ -158,6 +188,9 @@ impl<T> Storage<T> {
 
 use std::iter::IntoIterator;
 
+/// An iterator over the elements of a [`Storage`].
+///
+/// [`Storage`]: ./struct.Storage.html
 pub struct StorageIter<T> {
     storage: Storage<T>,
     index: usize,

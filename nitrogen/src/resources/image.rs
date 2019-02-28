@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+//! Description of image objects.
+
 use gfx::image;
 use gfx::Device;
 
@@ -24,10 +26,19 @@ use crate::submit_group::ResourceList;
 
 pub use gfx::format::{Component, Swizzle};
 
+/// Dimensions of an image object.
 #[derive(Copy, Clone, Debug)]
 pub enum ImageDimension {
+    /// Dimensions for a 1D-image.
+    #[allow(missing_docs)]
     D1 { x: u32 },
+
+    /// Dimensions for a 2D-image.
+    #[allow(missing_docs)]
     D2 { x: u32, y: u32 },
+
+    /// Dimensions for a 3D-image.
+    #[allow(missing_docs)]
     D3 { x: u32, y: u32, z: u32 },
 }
 
@@ -38,6 +49,10 @@ impl Default for ImageDimension {
 }
 
 impl ImageDimension {
+    /// Calculate the "size-triple" (width, height, depth) of the image.
+    ///
+    /// In some situations, an "empty component" (for example depth when dealing with 2D images)
+    /// should be filled with a certain value. The `fill` argument is be used to provide that value.
     pub fn as_triple(&self, fill: u32) -> (u32, u32, u32) {
         use self::ImageDimension::*;
         match self {
@@ -48,13 +63,22 @@ impl ImageDimension {
     }
 }
 
+/// Size mode used for image resources created in graphs.
 #[derive(Debug, Clone, Copy)]
 pub enum ImageSizeMode {
+    /// The size of the image depends on the context reference size. See [`ExecutionContext`].
+    ///
+    /// [`ExecutionContext`]: ../graph/struct.ExecutionContext.html
+    #[allow(missing_docs)]
     ContextRelative { width: f32, height: f32 },
+
+    /// The size of the image is specified directly.
+    #[allow(missing_docs)]
     Absolute { width: u32, height: u32 },
 }
 
 impl ImageSizeMode {
+    ///
     pub fn absolute(&self, reference: (u32, u32)) -> (u32, u32) {
         match self {
             ImageSizeMode::ContextRelative { width, height } => (
@@ -81,23 +105,36 @@ impl Hash for ImageSizeMode {
     }
 }
 
+/// Opaque handle to an image object.
 pub type ImageHandle = Handle<Image>;
 
+/// Description of an image object's properties.
 #[derive(Default, Clone)]
 pub struct ImageCreateInfo<T: Into<gfx::image::Usage>> {
+    /// Dimensions ("size") of the image.
     pub dimension: ImageDimension,
+    /// Number of layers of the image. Used for image arrays and cube images.
     pub num_layers: u16,
+    /// Number of samples used for multisampling.
     pub num_samples: u8,
+    /// Number of mipmap images.
     pub num_mipmaps: u8,
+    /// Format of the image.
     pub format: ImageFormat,
+    /// "rewriting" of components when sampling.
     pub swizzle: Swizzle,
+    /// Kind of image, this can affect internal memory layout and sampling behavior.
     pub kind: ViewKind,
 
+    /// Usage flags of the image.
     pub usage: T,
 
+    /// Flag to indicate whether the image object is short-lived or not.
     pub is_transient: bool,
 }
 
+/// Flags describing how an image object can be used.
+#[allow(missing_docs)]
 #[derive(Default, Debug, Clone, Copy, Hash)]
 pub struct ImageUsage {
     pub transfer_src: bool,
@@ -142,13 +179,25 @@ impl From<ImageUsage> for gfx::image::Usage {
     }
 }
 
+/// Data provided for uploading data to an image object.
 pub struct ImageUploadInfo<'a> {
+    /// The data to be uploaded.
     pub data: &'a [u8],
+    /// The format of the data. This has to match or be compatible with the format of the
+    /// destination image.
     pub format: ImageFormat,
+    /// The dimensions of the upload.
+    ///
+    /// The same data provided can be written to the destination image in different ways.
+    /// For example a 2x2x2 3D upload will be written differently than a 4x2x1 upload, while having
+    /// the same representation in memory.
     pub dimension: ImageDimension,
+    /// Offset in the target image to write to.
     pub target_offset: (u32, u32, u32),
 }
 
+/// Image formats
+#[allow(missing_docs)]
 #[derive(Copy, Clone, Debug, PartialEq, Hash)]
 pub enum ImageFormat {
     RUnorm,
@@ -191,6 +240,7 @@ impl From<ImageFormat> for gfx::format::Format {
 }
 
 impl ImageFormat {
+    /// Determine if the given format contains a depth component
     pub fn is_depth(self) -> bool {
         match self {
             ImageFormat::D32FloatS8Uint => true,
@@ -199,6 +249,7 @@ impl ImageFormat {
         }
     }
 
+    /// Determine if the given format contains a stencil component
     pub fn is_stencil(self) -> bool {
         match self {
             ImageFormat::D32FloatS8Uint => true,
@@ -206,19 +257,32 @@ impl ImageFormat {
         }
     }
 
+    /// Determine if the given format contains both a depth and a stencil component
     pub fn is_depth_stencil(self) -> bool {
         self.is_depth() && self.is_stencil()
     }
 }
 
+/// Kind of image
+///
+/// Different kinds of images may contains the same "physical" data, but sampling might be
+/// different between kinds (for example, an array of 2-dimensional images is sampled differently
+/// than a 3D image in regards to mipmaps)
 #[derive(Copy, Clone, Debug)]
 pub enum ViewKind {
+    /// One dimensional (N x 1 x 1)
     D1,
+    /// An array of one dimensional images ((N x 1 x 1) x L)
     D1Array,
+    /// Two dimensional (N x M x 1)
     D2,
+    /// An array of two dimensional images ((N x M x 1) x L)
     D2Array,
+    /// Three dimensional (N x M x K)
     D3,
+    /// N sides using two-dimensional images (N x M) x Sides
     Cube,
+    /// An array of "N-sided" two-dimensional images ((N x M) x Sides) x L)
     CubeArray,
 }
 
@@ -246,14 +310,20 @@ impl From<ViewKind> for gfx::image::ViewKind {
 pub(crate) type ImageType = AllocImage;
 pub(crate) type ImageView = <back::Backend as gfx::Backend>::ImageView;
 
+/// Image objects can hold 1 to 3-dimensional data.
+///
+/// The most common use case is for storing color information ("pictures"), but technically
+/// any kind of data can be stored.
 pub struct Image {
     pub(crate) image: ImageType,
     pub(crate) aspect: gfx::format::Aspects,
-    pub view: ImageView,
-    pub dimension: ImageDimension,
-    pub format: gfx::format::Format,
+    pub(crate) view: ImageView,
+    pub(crate) dimension: ImageDimension,
+    pub(crate) _format: gfx::format::Format,
 }
 
+/// Errors that can occur while operating on image resources.
+#[allow(missing_docs)]
 #[derive(Debug, Display, From, Clone)]
 pub enum ImageError {
     #[display(fmt = "The specified image handle was invalid")]
@@ -284,8 +354,6 @@ pub(crate) struct ImageStorage {
     storage: Storage<Image>,
 }
 
-pub type Result<T> = std::result::Result<T, ImageError>;
-
 impl ImageStorage {
     pub(crate) fn new() -> Self {
         ImageStorage {
@@ -307,7 +375,7 @@ impl ImageStorage {
         &mut self,
         device: &DeviceContext,
         create_info: ImageCreateInfo<T>,
-    ) -> Result<ImageHandle> {
+    ) -> Result<ImageHandle, ImageError> {
         use gfx::format::Format;
 
         let mut allocator = device.allocator();
@@ -382,7 +450,7 @@ impl ImageStorage {
 
         let img_store = Image {
             image,
-            format,
+            _format: format,
             aspect,
             dimension: create_info.dimension,
             view: image_view,
@@ -406,7 +474,7 @@ impl ImageStorage {
         res_list: &mut ResourceList,
         handle: ImageHandle,
         data: ImageUploadInfo,
-    ) -> Result<()> {
+    ) -> Result<(), ImageError> {
         use gfx::memory::Properties;
         use gfx::PhysicalDevice;
 

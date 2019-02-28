@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+//! Functionality for the setup-phase of passes.
+
 use super::ResourceName;
 
 use crate::image;
@@ -9,10 +11,14 @@ use crate::image;
 use self::ResourceReadType as R;
 use self::ResourceWriteType as W;
 
+/// Resource types that can be used in graphs and passes.
 #[derive(Hash, Debug, Clone, Copy)]
 pub enum ResourceType {
+    /// An image resource
     Image,
+    /// A buffer resource
     Buffer,
+    /// A virtual resource
     Virtual,
 }
 
@@ -23,6 +29,7 @@ pub(crate) enum ResourceCreateInfo {
     Virtual,
 }
 
+/// Type used to record which resources are used in what ways.
 #[derive(Hash, Default)]
 pub struct GraphBuilder {
     pub(crate) enabled: bool,
@@ -48,8 +55,7 @@ impl GraphBuilder {
         Default::default()
     }
 
-    // image
-
+    /// Create a new image resource.
     pub fn image_create<T: Into<ResourceName>>(&mut self, name: T, create_info: ImageCreateInfo) {
         self.resource_creates.push((
             name.into(),
@@ -57,6 +63,7 @@ impl GraphBuilder {
         ));
     }
 
+    /// Read an image resource from the backbuffer and give it a graph-local name.
     pub fn image_backbuffer_get<BN, LN>(&mut self, backbuffer_name: BN, local_name: LN)
     where
         BN: Into<ResourceName>,
@@ -68,15 +75,20 @@ impl GraphBuilder {
         ));
     }
 
+    /// State the dependence on an image resource that will be moved to a new name.
     pub fn image_move<T0: Into<ResourceName>, T1: Into<ResourceName>>(&mut self, from: T0, to: T1) {
         self.resource_moves.push((to.into(), from.into()));
     }
 
+    /// State the dependence on a color image that will be used as a color attachment of the
+    /// framebuffer.
     pub fn image_write_color<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
         self.resource_writes
             .push((name.into(), W::Image(ImageWriteType::Color), binding));
     }
 
+    /// State the dependence on a depth-stencil image used for reading or writing as a framebuffer
+    /// attachment.
     pub fn image_write_depth_stencil<T: Into<ResourceName>>(&mut self, name: T) {
         self.resource_writes.push((
             name.into(),
@@ -85,11 +97,13 @@ impl GraphBuilder {
         ));
     }
 
+    /// State the dependence on a storage image used for reading or writing.
     pub fn image_write_storage<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
         self.resource_writes
             .push((name.into(), W::Image(ImageWriteType::Storage), binding));
     }
 
+    /// State the dependence on a color image used for reading.
     pub fn image_read_color<T: Into<ResourceName>>(
         &mut self,
         name: T,
@@ -104,6 +118,7 @@ impl GraphBuilder {
         ));
     }
 
+    /// State the dependence on a depth-stencil image used for reading as a framebuffer attachment.
     pub fn image_read_depth_stencil<T: Into<ResourceName>>(&mut self, name: T) {
         self.resource_reads.push((
             name.into(),
@@ -113,18 +128,19 @@ impl GraphBuilder {
         ));
     }
 
+    /// State the dependence on a storage-image used for reading.
     pub fn image_read_storage<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
         self.resource_reads
             .push((name.into(), R::Image(ImageReadType::Storage), binding, None));
     }
 
-    // buffer
-
+    /// Create a new buffer resource.
     pub fn buffer_create<T: Into<ResourceName>>(&mut self, name: T, create_info: BufferCreateInfo) {
         self.resource_creates
             .push((name.into(), ResourceCreateInfo::Buffer(create_info)));
     }
 
+    /// State the dependence on a buffer resource that will be moved to a new name.
     pub fn buffer_move<T0: Into<ResourceName>, T1: Into<ResourceName>>(
         &mut self,
         from: T0,
@@ -133,10 +149,13 @@ impl GraphBuilder {
         self.resource_moves.push((to.into(), from.into()));
     }
 
+    /// State the dependence on a storage buffer that will be used for reading or writing.
     pub fn buffer_write_storage<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
         self.resource_writes
             .push((name.into(), W::Buffer(BufferWriteType::Storage), binding));
     }
+
+    /// State the dependence on a storage-texel buffer that will be used for reading or writing.
     pub fn buffer_write_storage_texel<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
         self.resource_writes.push((
             name.into(),
@@ -145,6 +164,7 @@ impl GraphBuilder {
         ));
     }
 
+    /// State the dependence on a storage buffer that will be used for reading.
     pub fn buffer_read_storage<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
         self.resource_reads.push((
             name.into(),
@@ -153,6 +173,8 @@ impl GraphBuilder {
             None,
         ));
     }
+
+    /// State the dependence on a storage-texel buffer that will be used for reading.
     pub fn buffer_read_storage_texel<T: Into<ResourceName>>(&mut self, name: T, binding: u8) {
         self.resource_reads.push((
             name.into(),
@@ -162,13 +184,17 @@ impl GraphBuilder {
         ));
     }
 
-    // extern
-
+    /// Create a new "virtual resource". Virtual resources do not contain any data, nor do they
+    /// have a runtime representation.
+    /// They are only used to explicitly state a dependence relationship between passes.
+    ///
+    /// This is needed when a pass modifies a graph-untracked resource.
     pub fn virtual_create<T: Into<ResourceName>>(&mut self, name: T) {
         self.resource_creates
             .push((name.into(), ResourceCreateInfo::Virtual));
     }
 
+    /// State the dependence on a "virtual" resource that will be moved to a new name.
     pub fn virtual_move<T0: Into<ResourceName>, T1: Into<ResourceName>>(
         &mut self,
         from: T0,
@@ -177,23 +203,29 @@ impl GraphBuilder {
         self.resource_moves.push((to.into(), from.into()));
     }
 
+    /// State the dependence on a "virtual" resource.
     pub fn virtual_read<T: Into<ResourceName>>(&mut self, name: T) {
         self.resource_reads.push((name.into(), R::Virtual, 0, None));
     }
 
-    // control flow control
-
+    /// Enable this pass so it will be considered during the compilation phase.
     pub fn enable(&mut self) {
         self.enabled = true;
     }
 }
 
+/// Value type used for depth data.
 pub type DepthValue = f32;
+/// Value type used for stencil data.
 pub type StencilValue = u32;
 
+/// Values an image can be cleared with.
 #[derive(Debug, Clone, Copy)]
 pub enum ImageClearValue {
+    /// Float values used for color/storage images.
     Color([f32; 4]),
+
+    /// Depth and stencil values for depth/+stencil images.
     DepthStencil(DepthValue, StencilValue),
 }
 
@@ -203,62 +235,83 @@ pub(crate) enum ImageInfo {
     BackbufferRead(ResourceName),
 }
 
+/// Information needed to create an image resource
 #[derive(Debug, Clone, Hash)]
 pub struct ImageCreateInfo {
+    /// Image format used.
     pub format: image::ImageFormat,
+    /// Size mode used to determine the dimensions of the image.
     pub size_mode: image::ImageSizeMode,
 }
 
+/// Information needed to create a buffer resource.
 #[derive(Debug, Clone, Hash)]
 pub struct BufferCreateInfo {
+    /// Size of the buffer in bytes.
     pub size: u64,
+    /// Storage type of the buffer memory.
     pub storage: BufferStorageType,
 }
 
+/// Types of memory that a buffer can be backed by.
 #[derive(Debug, Clone, Hash)]
 pub enum BufferStorageType {
+    /// Memory visible to the CPU - slower to access but easier to update.
     HostVisible,
+
+    /// Memory local to the device - faster to access but can't be updated directly.
     DeviceLocal,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub enum ResourceReadType {
+pub(crate) enum ResourceReadType {
     Image(ImageReadType),
     Buffer(BufferReadType),
     Virtual,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub enum ImageReadType {
+pub(crate) enum ImageReadType {
     Color,
     Storage,
     DepthStencil,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub enum BufferReadType {
+pub(crate) enum BufferReadType {
     Storage,
     StorageTexel,
     Uniform,
     UniformTexel,
 }
 
+///
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub enum ResourceWriteType {
+pub(crate) enum ResourceWriteType {
     Image(ImageWriteType),
     Buffer(BufferWriteType),
 }
 
+/// Ways an image can be used when writing to it.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub enum ImageWriteType {
+pub(crate) enum ImageWriteType {
+    /// A color attachment of a Framebuffer
     Color,
+
+    /// A depth-stencil attachment of a Framebuffer
     DepthStencil,
+
+    /// A storage descriptor used for reading or writing.
     Storage,
 }
 
+/// Ways a buffer can be used when writing to it
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub enum BufferWriteType {
+pub(crate) enum BufferWriteType {
+    /// A buffer used for reading or writing.
     Storage,
+
+    /// A buffer used for reading or writing backed by a texture.
     StorageTexel,
 }
 

@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+//! Descriptions for various kinds of resources useful for rendering.
+
 pub use super::*;
 
 pub mod buffer;

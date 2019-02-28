@@ -143,7 +143,7 @@ fn create_graph(
                 ),)),
             },
             materials: vec![(0, material_instance.0)],
-            push_constants: vec![0..1],
+            push_constants: Some(0..1),
         };
 
         struct Adder {
@@ -182,7 +182,7 @@ fn create_graph(
                 ),)),
             },
             materials: vec![(0, material_instance.0)],
-            push_constants: vec![0..1],
+            push_constants: Some(0..1),
         };
 
         struct Adder {

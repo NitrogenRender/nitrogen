@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+//! Functionalities for describing and implementing render graphs and passes.
+
 use crate::util::storage::{Handle, Storage};
 use crate::util::CowString;
 
@@ -53,11 +55,24 @@ pub(crate) struct Storages<'a> {
     pub material: &'a mut MaterialStorage,
 }
 
+/// Opaque handle to a graph.
 pub type GraphHandle = Handle<Graph>;
 
+/// Type used to name passes.
 pub type PassName = CowString;
+
+/// Type used to name resources.
 pub type ResourceName = CowString;
 
+/// Graphs are "modules" of rendering pipelines.
+///
+/// A graph should describe a sequence of related rendering-transformations.
+///
+/// Graphs are conceptually made up of a set of *passes*. Each pass is a single step transformation
+/// in the graph.
+///
+/// A Graph has to be compiled before usage, as compiling does resolution of resource dependencies
+/// as well as create the necessary resources up-front.
 #[derive(Default)]
 pub struct Graph {
     passes: Vec<(PassName, PassInfo)>,
@@ -189,6 +204,7 @@ impl GraphStorage {
         // TODO hash the above things and make a lookup table to spare doing the work below.
 
         let mut errors = vec![];
+        // TODO are those needed in future? Right now they don't do anything except use heap allocs
         let mut read_types = vec![];
         let mut write_types = vec![];
 
@@ -407,7 +423,13 @@ impl GraphStorage {
     }
 }
 
+/// Reference data used during graph executions.
 #[derive(Debug, Clone, Ord, PartialOrd, PartialEq, Eq)]
 pub struct ExecutionContext {
+    /// Reference size of the current execution.
+    ///
+    /// These values are used as the reference when [`ImageSizeMode::ContextRelative`] is used.
+    ///
+    /// [`ImageSizeMode::ContextRelative`]: ../resources/image/enum.ImageSizeMode.html#variant.ContextRelative
     pub reference_size: (u32, u32),
 }

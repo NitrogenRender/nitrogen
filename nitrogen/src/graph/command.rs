@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+//! Types and functions used during execution of passes.
+
 use std::ops::Range;
 
 use gfx;
@@ -15,9 +17,13 @@ use crate::buffer::{BufferHandle, BufferStorage};
 use crate::graph::ImageClearValue;
 use crate::image::{ImageHandle, ImageStorage};
 
+/// Type used for the indices in the index buffer.
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum IndexType {
+    /// Unsigned 16-bit integers
     U16,
+
+    /// Unsigned 32-bit integers
     U32,
 }
 
@@ -28,6 +34,7 @@ pub(crate) struct ReadStorages<'a> {
     pub(crate) image: &'a ImageStorage,
 }
 
+/// CommandBuffer object used to issue commands to a graphics queue.
 pub struct GraphicsCommandBuffer<'a> {
     pub(crate) buf: &'a mut crate::resources::command_pool::CmdBufType<gfx::Graphics>,
     pub(crate) storages: &'a ReadStorages<'a>,
@@ -40,6 +47,12 @@ pub struct GraphicsCommandBuffer<'a> {
 }
 
 impl<'a> GraphicsCommandBuffer<'a> {
+    /// Start a render pass. Draw calls can only be issued from a [`RenderPassEncoder`].
+    ///
+    /// If any attachments have to be cleared, values from `clear_values` are used **in order of
+    /// declaration**.
+    ///
+    /// [`RenderPassEncoder`]: ./struct.RenderPassEncoder.html
     pub unsafe fn begin_render_pass<C>(&mut self, clear_values: C) -> Option<RenderPassEncoder<'_>>
     where
         C: IntoIterator,
@@ -71,6 +84,7 @@ impl<'a> GraphicsCommandBuffer<'a> {
         })
     }
 
+    /// Dispatch a clearing command for image `image` using the clear value `clear`.
     pub unsafe fn clear_image(&mut self, image: ImageHandle, clear: ImageClearValue) -> Option<()> {
         let img = self.storages.image.raw(image)?;
 
@@ -139,6 +153,7 @@ impl<'a> GraphicsCommandBuffer<'a> {
     }
 }
 
+/// An Encoder used to dispatch commands inside a render pass
 pub struct RenderPassEncoder<'a> {
     pub(crate) encoder: gfx::command::RenderPassInlineEncoder<'a, back::Backend>,
     pub(crate) storages: &'a ReadStorages<'a>,
@@ -147,10 +162,19 @@ pub struct RenderPassEncoder<'a> {
 }
 
 impl<'a> RenderPassEncoder<'a> {
+    /// Dispatch a draw call for "array" rendering.
+    ///
+    /// This draw mode treats every vertex in the vertex buffer as an input-vertex.
     pub unsafe fn draw(&mut self, vertices: Range<u32>, instances: Range<u32>) {
         self.encoder.draw(vertices, instances);
     }
 
+    /// Dispatch a draw call for indexed rendering.
+    ///
+    /// This draw mode uses an index buffer to point to actual vertices in the vertex buffer.
+    /// This is useful when a lot of vertices in the vertex data are shared.
+    ///
+    /// The base-vertex is an offset into the index buffer.
     pub unsafe fn draw_indexed(
         &mut self,
         indices: Range<u32>,
@@ -182,6 +206,7 @@ impl<'a> RenderPassEncoder<'a> {
         self.encoder.bind_vertex_buffers(0, bufs);
     }
 
+    /// Bind an index buffer, starting from `offset` bytes in the buffer represented by `buffer`.
     pub unsafe fn bind_index_buffer(
         &mut self,
         buffer: BufferHandle,
@@ -208,6 +233,9 @@ impl<'a> RenderPassEncoder<'a> {
             });
     }
 
+    /// Bind [`MaterialInstance`] to a descriptor set in the pipeline.
+    ///
+    /// [`MaterialInstance`]: ../../resources/material/struct.MaterialInstance.html
     pub unsafe fn bind_material(
         &mut self,
         binding: usize,
@@ -226,7 +254,7 @@ impl<'a> RenderPassEncoder<'a> {
         Some(())
     }
 
-    pub unsafe fn push_constant_raw(&mut self, offset: u32, data: &[u32]) {
+    unsafe fn push_constant_raw(&mut self, offset: u32, data: &[u32]) {
         self.encoder.push_graphics_constants(
             self.pipeline_layout,
             gfx::pso::ShaderStageFlags::ALL,
@@ -235,7 +263,10 @@ impl<'a> RenderPassEncoder<'a> {
         )
     }
 
-    pub unsafe fn push_constant<T: Sized>(&mut self, offset: u32, data: T) {
+    /// Upload a value to the push-constant memory.
+    ///
+    /// **NOTE**: the offset is in 4-bytes, not bytes!!!
+    pub unsafe fn push_constant<T: Sized + Copy>(&mut self, offset: u32, data: T) {
         use smallvec::SmallVec;
         let mut buf = SmallVec::<[u32; 256]>::new();
 
@@ -248,6 +279,7 @@ impl<'a> RenderPassEncoder<'a> {
     }
 }
 
+/// A command buffer used in compute passes.
 pub struct ComputeCommandBuffer<'a> {
     pub(crate) buf: &'a mut crate::resources::command_pool::CmdBufType<gfx::Compute>,
     pub(crate) storages: &'a ReadStorages<'a>,
@@ -256,10 +288,12 @@ pub struct ComputeCommandBuffer<'a> {
 }
 
 impl<'a> ComputeCommandBuffer<'a> {
+    /// Execute a workgroup.
     pub unsafe fn dispatch(&mut self, workgroup_count: [u32; 3]) {
         self.buf.dispatch(workgroup_count)
     }
 
+    /// bind a [`MaterialInstance`] to a descriptor set in the pipeline.
     pub unsafe fn bind_material(
         &mut self,
         binding: usize,
@@ -278,12 +312,15 @@ impl<'a> ComputeCommandBuffer<'a> {
         Some(())
     }
 
-    pub unsafe fn push_constant_raw(&mut self, offset: u32, data: &[u32]) {
+    unsafe fn push_constant_raw(&mut self, offset: u32, data: &[u32]) {
         self.buf
             .push_compute_constants(self.pipeline_layout, offset, data);
     }
 
-    pub unsafe fn push_constant<T: Sized>(&mut self, offset: u32, data: T) {
+    /// Upload a value to the push-constant memory.
+    ///
+    /// **NOTE**: the offset is in 4-bytes, not bytes!!!
+    pub unsafe fn push_constant<T: Sized + Copy>(&mut self, offset: u32, data: T) {
         use smallvec::SmallVec;
         let mut buf = SmallVec::<[u32; 256]>::new();
 

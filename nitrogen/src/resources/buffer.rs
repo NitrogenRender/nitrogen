@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+//! Description of buffer objects.
+
 use bitflags::bitflags;
 
 use std;
@@ -20,6 +22,12 @@ use crate::submit_group::ResourceList;
 
 pub(crate) type BufferTypeInternal = AllocBuffer;
 
+/// A buffer object represents a chunk of (conceptually) linear memory.
+///
+/// Buffer objects can be used to store arbitrary data.
+///
+/// The most common uses are for storing vertex data for 2D or 3D objects, as well as storing
+/// properties and values used for rendering (uniform inputs).
 #[derive(Debug)]
 pub struct Buffer {
     pub(crate) buffer: BufferTypeInternal,
@@ -28,11 +36,12 @@ pub struct Buffer {
     _properties: gfx::memory::Properties,
 }
 
+/// Opaque handle to a buffer object.
 pub type BufferHandle = Handle<Buffer>;
 
-pub type Result<T> = std::result::Result<T, BufferError>;
-
+/// Errors that can occur when operating on buffer objects.
 #[derive(Debug, Display, From, Clone)]
+#[allow(missing_docs)]
 pub enum BufferError {
     #[display(fmt = "The specified buffer handle was invalid")]
     HandleInvalid,
@@ -56,14 +65,23 @@ bitflags!(
 
     /// Buffer usage flags.
     pub struct BufferUsage: u32 {
+        /// Buffer can be used as a source in transfer operations.
         const TRANSFER_SRC  = 0x1;
+        /// Buffer can be used as a destination in a transfer operation.
         const TRANSFER_DST = 0x2;
+        /// Buffer can be used as a uniform-texel input to a shader.
         const UNIFORM_TEXEL = 0x4;
+        /// Buffer can be used as a storage-texel input to a shader.
         const STORAGE_TEXEL = 0x8;
+        /// Buffer can be used as a uniform input to a shader.
         const UNIFORM = 0x10;
+        /// Buffer can be used as a storage input to a shader.
         const STORAGE = 0x20;
+        /// Buffer can be used as an index buffer for draw operations.
         const INDEX = 0x40;
+        /// Buffer can be used as a source for vertex data.
         const VERTEX = 0x80;
+        /// Buffer can be used as an indirect buffer for draw operations.
         const INDIRECT = 0x100;
     }
 );
@@ -105,24 +123,41 @@ impl From<BufferUsage> for gfx::buffer::Usage {
     }
 }
 
+/// Description of a cpu-visible buffer's properties.
+///
+/// A cpu-visible buffer is backed by memory visible both from the host and the device.
+/// This memory is typically faster to update from the host but slower to access from the device.
 pub struct CpuVisibleCreateInfo<U: Into<gfx::buffer::Usage> + Clone> {
+    /// Size of the buffer (in bytes).
     pub size: u64,
 
     // TODO persistent mapping?
+    /// Flag indicating whether the buffer object is short-lived or not.
     pub is_transient: bool,
+    /// Usage flags indicating how the buffer object can be used.
     pub usage: U,
 }
 
+/// Description of a device-local buffer's properties.
+///
+/// A device-local buffer is backed by device-local memory, which is faster to access from the
+/// device but cannot be accessed directly from the host.
 pub struct DeviceLocalCreateInfo<U: Into<gfx::buffer::Usage> + Clone> {
+    /// Size of the buffer (in bytes).
     pub size: u64,
 
+    /// Flag indicating whether the buffer object is short-lived or not.
     pub is_transient: bool,
+    /// Usage flags indicating how the buffer object can be used.
     pub usage: U,
 }
 
+/// Data provided for uploading data to a buffer.
 #[derive(Copy, Clone)]
 pub struct BufferUploadInfo<'a, T: 'a> {
+    /// Target offset (in bytes) of the upload.
     pub offset: u64,
+    /// Data to be uploaded to the buffer.
     pub data: &'a [T],
 }
 
@@ -162,7 +197,7 @@ impl BufferStorage {
         &mut self,
         device: &DeviceContext,
         create_info: CpuVisibleCreateInfo<U>,
-    ) -> Result<BufferHandle>
+    ) -> Result<BufferHandle, BufferError>
     where
         U: Clone,
         U: Into<gfx::buffer::Usage>,
@@ -212,7 +247,7 @@ impl BufferStorage {
         device: &DeviceContext,
         buffer: BufferHandle,
         info: BufferUploadInfo<'a, T>,
-    ) -> Result<()> {
+    ) -> Result<(), BufferError> {
         if !self.cpu_visible.contains(&buffer.0) {
             return Err(BufferError::HandleInvalid);
         }
@@ -251,7 +286,7 @@ impl BufferStorage {
         &mut self,
         device: &DeviceContext,
         create_info: DeviceLocalCreateInfo<U>,
-    ) -> Result<BufferHandle>
+    ) -> Result<BufferHandle, BufferError>
     where
         U: Clone,
         U: Into<gfx::buffer::Usage>,
@@ -306,7 +341,7 @@ impl BufferStorage {
         res_list: &mut ResourceList,
         buffer: BufferHandle,
         info: BufferUploadInfo<'a, T>,
-    ) -> Result<()> {
+    ) -> Result<(), BufferError> {
         use gfx::buffer::Usage;
         use gfx::memory::Properties;
 
@@ -406,7 +441,7 @@ unsafe fn write_data_to_buffer(
     buffer: &BufferTypeInternal,
     offset: u64,
     data: &[u8],
-) -> Result<()> {
+) -> Result<(), BufferError> {
     use gfx::Device;
 
     use crate::util::allocator::Block;
@@ -431,7 +466,7 @@ unsafe fn read_data_from_buffer(
     buffer: &BufferTypeInternal,
     offset: u64,
     data: &mut [u8],
-) -> Result<()> {
+) -> Result<(), BufferError> {
     use crate::util::allocator::Block;
     use gfx::Device;
 
