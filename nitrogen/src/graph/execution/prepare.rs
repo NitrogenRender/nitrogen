@@ -95,6 +95,8 @@ pub(crate) unsafe fn prepare_pass_base(
     }
 }
 
+/// Errors that can occur when trying to prepare resources for a graph execution.
+#[allow(missing_docs)]
 #[derive(Debug, Clone, From, Display)]
 pub enum PrepareError {
     #[display(fmt = "Renderpass invalid. Is the graph compiled?")]

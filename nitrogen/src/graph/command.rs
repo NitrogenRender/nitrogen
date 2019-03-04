@@ -79,6 +79,7 @@ impl<'a> GraphicsCommandBuffer<'a> {
 
         Some(RenderPassEncoder {
             encoder,
+            viewport_rect: self.viewport_rect,
             storages: self.storages,
             pipeline_layout: self.pipeline_layout,
         })
@@ -159,6 +160,7 @@ pub struct RenderPassEncoder<'a> {
     pub(crate) storages: &'a ReadStorages<'a>,
 
     pub(crate) pipeline_layout: &'a types::PipelineLayout,
+    pub(crate) viewport_rect: gfx::pso::Rect,
 }
 
 impl<'a> RenderPassEncoder<'a> {
@@ -276,6 +278,24 @@ impl<'a> RenderPassEncoder<'a> {
             let u32_slice = data_to_u32_slice(data, &mut buf[..]);
             self.push_constant_raw(offset, u32_slice);
         }
+    }
+
+    /// Set the scissor "cutoff".
+    pub unsafe fn set_scissor(&mut self, origin: (i16, i16), size: (i16, i16)) {
+        self.encoder.set_scissors(
+            0,
+            &[gfx::pso::Rect {
+                x: origin.0,
+                y: origin.1,
+                w: size.0,
+                h: size.1,
+            }],
+        );
+    }
+
+    /// Reset the scissor state. This sets the scissor rect to the area of the framebuffer.
+    pub unsafe fn reset_scissor(&mut self) {
+        self.encoder.set_scissors(0, &[self.viewport_rect]);
     }
 }
 

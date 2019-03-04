@@ -12,6 +12,8 @@ pub(crate) use self::execute::*;
 pub(crate) use self::graph::*;
 pub(crate) use self::prepare::*;
 
+pub use self::prepare::PrepareError;
+
 use super::{PassId, PassName, ResourceId, Storages};
 use crate::resources::{
     buffer::BufferHandle, image::ImageHandle, pipeline::PipelineHandle,
@@ -28,6 +30,8 @@ use smallvec::SmallVec;
 use crate::resources::image::ImageFormat;
 use gfx;
 
+/// Errors that can occur when executing a graph.
+#[allow(missing_docs)]
 #[derive(Clone, Debug, From, Display)]
 pub enum GraphExecError {
     #[display(fmt = "Invalid graph handle")]

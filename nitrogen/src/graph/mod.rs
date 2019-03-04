@@ -34,11 +34,14 @@ pub mod command;
 pub use self::command::*;
 
 pub(crate) mod compilation;
-pub(crate) use self::compilation::*;
 pub(crate) mod execution;
-pub(crate) use self::execution::*;
 
 pub use self::execution::Backbuffer;
+pub use self::execution::GraphExecError;
+pub use self::execution::PrepareError;
+
+pub(crate) use self::compilation::*;
+pub(crate) use self::execution::*;
 
 pub mod store;
 pub use self::store::*;
