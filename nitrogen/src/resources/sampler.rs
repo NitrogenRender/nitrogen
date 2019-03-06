@@ -13,11 +13,18 @@ use crate::util::storage;
 use crate::util::storage::Storage;
 
 use crate::submit_group::ResourceList;
-use crate::types::Sampler;
+
+/// Samplers are used to determine how texture lookups should be performed.
+///
+/// The most common use for samplers is to enable "linear filtering" to "unpixelate" images, or
+/// "nearest filtering" to have a pixelated look. There are many more options for samplers apart
+/// from filter modes.
+pub struct Sampler(pub crate::types::Sampler);
 
 use std::borrow::Borrow;
 
 /// Filter mode used when sampling.
+#[repr(u8)]
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum Filter {
     /// Use color of the nearest texel.
@@ -37,6 +44,7 @@ impl From<Filter> for image::Filter {
 
 /// Wrap mode used when sampling outside of `[0..1]` range occurs
 #[allow(missing_docs)]
+#[repr(u8)]
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum WrapMode {
     Tile,
@@ -106,7 +114,7 @@ impl SamplerStorage {
 
     pub(crate) unsafe fn release(self, device: &DeviceContext) {
         for (_, sampler) in self.storage {
-            device.device.destroy_sampler(sampler);
+            device.device.destroy_sampler(sampler.0);
         }
     }
 
@@ -124,7 +132,7 @@ impl SamplerStorage {
                 .expect("Can't create sampler")
         };
 
-        self.storage.insert(sampler)
+        self.storage.insert(Sampler(sampler))
     }
 
     pub(crate) fn raw(&self, sampler: SamplerHandle) -> Option<&Sampler> {
@@ -144,7 +152,7 @@ impl SamplerStorage {
             let handle = *handle.borrow();
 
             if let Some(sampler) = self.storage.remove(handle) {
-                res_list.queue_sampler(sampler);
+                res_list.queue_sampler(sampler.0);
             }
         }
     }

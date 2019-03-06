@@ -55,7 +55,7 @@
 #[macro_use]
 extern crate derive_more;
 
-pub use gfx;
+pub extern crate gfx;
 
 pub(crate) mod types;
 
@@ -85,6 +85,7 @@ pub use crate::resources::vertex_attrib;
 
 pub mod graph;
 
+use crate::resources::image::ImageHandle;
 use std::sync::Arc;
 
 /// An opaque handle to a display
@@ -173,18 +174,16 @@ impl Context {
 
     /// Attach an X11 display to the `Context`
     #[cfg(feature = "x11")]
-    pub fn display_add_x11(
+    pub unsafe fn display_add_x11(
         &mut self,
         display: *mut std::os::raw::c_void,
         window: std::os::raw::c_ulong,
     ) -> DisplayHandle {
         use gfx::Surface;
-        use std::mem::transmute;
 
-        let surface = unsafe {
-            self.instance
-                .create_surface_from_xlib(transmute(display), transmute(window))
-        };
+        let surface = self
+            .instance
+            .create_surface_from_xlib(display as *mut _, window);
 
         let _ = self
             .device_ctx
@@ -253,6 +252,16 @@ impl Context {
         create_info: image::ImageCreateInfo<I>,
     ) -> Result<image::ImageHandle, image::ImageError> {
         self.image_storage.create(&self.device_ctx, create_info)
+    }
+
+    /// Get the format of an image.
+    pub fn image_format(&self, image: ImageHandle) -> Option<gfx::format::Format> {
+        self.image_storage.format(image)
+    }
+
+    /// Get the usage flags of an image.
+    pub fn image_usage(&self, image: ImageHandle) -> Option<gfx::image::Usage> {
+        self.image_storage.usage(image)
     }
 
     // sampler

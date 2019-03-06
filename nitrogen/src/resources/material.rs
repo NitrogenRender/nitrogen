@@ -330,7 +330,7 @@ impl MaterialStorage {
                 descriptors: Some(match write.data {
                     InstanceWriteData::Sampler { sampler } => {
                         let raw = sampler_storage.raw(sampler)?;
-                        gfx::pso::Descriptor::Sampler(raw)
+                        gfx::pso::Descriptor::Sampler(&raw.0)
                     }
                     InstanceWriteData::Image { image } => {
                         let raw = image_storage.raw(image)?;

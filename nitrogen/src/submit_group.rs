@@ -179,9 +179,10 @@ impl SubmitGroup {
         self.sem_list.add_next_semaphore(sem);
 
         let mut cmd = self.pool_graphics.alloc();
+        cmd.begin();
 
         let entry_barrier = gfx::memory::Barrier::Image {
-            states: (gfx::image::Access::empty(), gfx::image::Layout::General)
+            states: (gfx::image::Access::empty(), gfx::image::Layout::Undefined)
                 ..(
                     gfx::image::Access::TRANSFER_WRITE,
                     gfx::image::Layout::TransferDstOptimal,

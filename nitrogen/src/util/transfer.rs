@@ -46,6 +46,7 @@ pub(crate) unsafe fn copy_buffers<'a, T>(
 
     let submit = {
         let mut cmd = cmd_pool.alloc();
+        cmd.begin();
 
         for buffer_transfer in buffers.into_iter() {
             let buffer_transfer = buffer_transfer.borrow();
@@ -122,6 +123,7 @@ pub(crate) unsafe fn copy_buffers_to_images(
 
     let submit = {
         let mut cmd = cmd_pool.alloc();
+        cmd.begin();
 
         for transfer in images {
             let entry_barrier = Barrier::Image {
@@ -208,6 +210,7 @@ pub(crate) unsafe fn blit_image(
 
     let submit = {
         let mut cmd = cmd_pool.alloc();
+        cmd.begin();
 
         for transfer in blits {
             let entry_barrier_dst = Barrier::Image {

@@ -184,6 +184,7 @@ impl Display {
 
             let submit = {
                 let mut cmd = command_pool.alloc();
+                cmd.begin();
 
                 let src_image = image.image.raw();
                 let dst_image = &self.images[index as usize].0;

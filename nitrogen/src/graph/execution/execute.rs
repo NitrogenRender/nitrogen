@@ -98,7 +98,7 @@ pub(crate) unsafe fn execute(
                                                     binding: u32::from(samp_bind),
                                                     array_offset: 0,
                                                     descriptors: std::iter::once(
-                                                        gfx::pso::Descriptor::Sampler(sampler),
+                                                        gfx::pso::Descriptor::Sampler(&sampler.0),
                                                     ),
                                                 };
                                                 vec.push(sampler_desc);
@@ -227,6 +227,7 @@ pub(crate) unsafe fn execute(
 
                     let submit = {
                         let mut raw_cmd = cmd_pool_gfx.alloc();
+                        raw_cmd.begin();
 
                         raw_cmd.bind_graphics_pipeline(&pipeline.pipeline);
 
@@ -280,6 +281,7 @@ pub(crate) unsafe fn execute(
 
                     let submit = {
                         let mut raw_cmd = cmd_pool_cmpt.alloc();
+                        raw_cmd.begin();
 
                         raw_cmd.bind_compute_pipeline(&pipeline.pipeline);
 

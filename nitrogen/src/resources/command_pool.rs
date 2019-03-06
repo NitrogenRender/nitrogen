@@ -20,18 +20,10 @@ where
     C: gfx::queue::capability::Capability,
 {
     fn new_elem(&mut self) -> CmdBufType<C> {
-        let mut buf = self.pool.acquire_command_buffer::<gfx::command::OneShot>();
-        unsafe {
-            buf.begin();
-        }
-        buf
+        self.pool.acquire_command_buffer::<gfx::command::OneShot>()
     }
 
-    fn reset_elem(&mut self, elem: &mut CmdBufType<C>) {
-        unsafe {
-            elem.begin();
-        }
-    }
+    fn reset_elem(&mut self, _elem: &mut CmdBufType<C>) {}
 
     fn free_elem(&mut self, elem: CmdBufType<C>) {
         unsafe {
