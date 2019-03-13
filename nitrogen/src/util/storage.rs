@@ -191,27 +191,27 @@ use std::iter::IntoIterator;
 /// An iterator over the elements of a [`Storage`].
 ///
 /// [`Storage`]: ./struct.Storage.html
-pub struct StorageIter<T> {
+pub struct StorageIntoIter<T> {
     storage: Storage<T>,
-    index: usize,
+    index: Id,
 }
 
 impl<T> IntoIterator for Storage<T> {
-    type Item = (usize, T);
-    type IntoIter = StorageIter<T>;
+    type Item = (Id, T);
+    type IntoIter = StorageIntoIter<T>;
 
     fn into_iter(self) -> <Self as IntoIterator>::IntoIter {
-        StorageIter {
+        StorageIntoIter {
             storage: self,
             index: 0,
         }
     }
 }
 
-impl<T> Iterator for StorageIter<T> {
-    type Item = (usize, T);
+impl<T> Iterator for StorageIntoIter<T> {
+    type Item = (Id, T);
 
-    fn next(&mut self) -> Option<(usize, T)> {
+    fn next(&mut self) -> Option<(Id, T)> {
         // In order to iterate we need to go over all possible indices.
         // Because there can be holes in the entry list, we have to
         // search until we find the next element OR we reached the end.
@@ -226,6 +226,52 @@ impl<T> Iterator for StorageIter<T> {
                 self.index = idx + 1;
 
                 let data = self.storage.entries.remove(idx);
+                return Some((idx, data));
+            }
+
+            idx += 1;
+        }
+
+        None
+    }
+}
+
+/// Iterator over an immutably borrowed storage.
+pub struct StorageIter<'a, T> {
+    storage: &'a Storage<T>,
+    index: Id,
+}
+
+impl<'a, T> IntoIterator for &'a Storage<T> {
+    type Item = (Id, &'a T);
+    type IntoIter = StorageIter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        StorageIter {
+            storage: self,
+            index: 0,
+        }
+    }
+}
+
+impl<'a, T> Iterator for StorageIter<'a, T> {
+    type Item = (Id, &'a T);
+
+    fn next(&mut self) -> Option<(Id, &'a T)> {
+        // In order to iterate we need to go over all possible indices.
+        // Because there can be holes in the entry list, we have to
+        // search until we find the next element OR we reached the end.
+
+        let mut idx = self.index;
+
+        let len = self.storage.entries.capacity();
+
+        while idx < len {
+            if self.storage.entries.contains(idx) {
+                // start searching at the next one the next iteration
+                self.index = idx + 1;
+
+                let data = &self.storage.entries[idx];
                 return Some((idx, data));
             }
 

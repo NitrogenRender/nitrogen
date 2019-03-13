@@ -24,7 +24,58 @@ use crate::resources::semaphore_pool::SemaphoreList;
 use crate::resources::semaphore_pool::SemaphorePool;
 use crate::submit_group::ResourceList;
 
-pub use gfx::format::{Component, Swizzle};
+/// Source channel for a `Swizzle`
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Component {
+    /// Hardcoded zero
+    Zero,
+    /// Hardcoded one
+    One,
+    /// Red channel
+    R,
+    /// Green channel
+    G,
+    /// Blue channel
+    B,
+    /// Alpha channel
+    A,
+}
+
+/// Swizzles can be used for remapping components of a format.
+#[repr(C)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct Swizzle(pub Component, pub Component, pub Component, pub Component);
+
+impl Swizzle {
+    /// Swizzle configuration which maps all channels to themselves.
+    pub const NO: Swizzle = Swizzle(Component::R, Component::G, Component::B, Component::A);
+}
+
+impl Default for Swizzle {
+    fn default() -> Self {
+        Swizzle::NO
+    }
+}
+
+impl From<Component> for gfx::format::Component {
+    fn from(c: Component) -> Self {
+        match c {
+            Component::Zero => gfx::format::Component::Zero,
+            Component::One => gfx::format::Component::One,
+            Component::R => gfx::format::Component::R,
+            Component::G => gfx::format::Component::G,
+            Component::B => gfx::format::Component::B,
+            Component::A => gfx::format::Component::A,
+        }
+    }
+}
+
+impl From<Swizzle> for gfx::format::Swizzle {
+    fn from(Swizzle(r, g, b, a): Swizzle) -> Self {
+        gfx::format::Swizzle(r.into(), g.into(), b.into(), a.into())
+    }
+}
 
 /// Dimensions of an image object.
 #[derive(Copy, Clone, Debug)]
@@ -135,6 +186,7 @@ pub struct ImageCreateInfo<T: Into<gfx::image::Usage>> {
 
 /// Flags describing how an image object can be used.
 #[allow(missing_docs)]
+#[repr(C)]
 #[derive(Default, Debug, Clone, Copy, Hash)]
 pub struct ImageUsage {
     pub transfer_src: bool,
@@ -197,6 +249,7 @@ pub struct ImageUploadInfo<'a> {
 }
 
 /// Image formats
+#[repr(u8)]
 #[allow(missing_docs)]
 #[derive(Copy, Clone, Debug, PartialEq, Hash)]
 pub enum ImageFormat {
@@ -239,6 +292,28 @@ impl From<ImageFormat> for gfx::format::Format {
     }
 }
 
+impl Into<ImageFormat> for gfx::format::Format {
+    fn into(self) -> ImageFormat {
+        use gfx::format::Format;
+
+        match self {
+            Format::R8Unorm => ImageFormat::RUnorm,
+            Format::Rg8Unorm => ImageFormat::RgUnorm,
+            Format::Rgb8Unorm => ImageFormat::RgbUnorm,
+            Format::Rgba8Unorm => ImageFormat::RgbaUnorm,
+
+            Format::Rgba32Float => ImageFormat::Rgba32Float,
+
+            Format::E5b9g9r9Ufloat => ImageFormat::E5b9g9r9Float,
+
+            Format::D32Float => ImageFormat::D32Float,
+            Format::D32FloatS8Uint => ImageFormat::D32FloatS8Uint,
+
+            _ => unimplemented!(),
+        }
+    }
+}
+
 impl ImageFormat {
     /// Determine if the given format contains a depth component
     pub fn is_depth(self) -> bool {
@@ -268,6 +343,7 @@ impl ImageFormat {
 /// Different kinds of images may contains the same "physical" data, but sampling might be
 /// different between kinds (for example, an array of 2-dimensional images is sampled differently
 /// than a 3D image in regards to mipmaps)
+#[repr(u8)]
 #[derive(Copy, Clone, Debug)]
 pub enum ViewKind {
     /// One dimensional (N x 1 x 1)
@@ -319,7 +395,8 @@ pub struct Image {
     pub(crate) aspect: gfx::format::Aspects,
     pub(crate) view: ImageView,
     pub(crate) dimension: ImageDimension,
-    pub(crate) _format: gfx::format::Format,
+    pub(crate) format: gfx::format::Format,
+    pub(crate) usage: gfx::image::Usage,
 }
 
 /// Errors that can occur while operating on image resources.
@@ -440,7 +517,7 @@ impl ImageStorage {
             image.raw(),
             create_info.kind.into(),
             format,
-            create_info.swizzle,
+            create_info.swizzle.into(),
             image::SubresourceRange {
                 aspects: aspect,
                 layers: 0..1,
@@ -450,7 +527,8 @@ impl ImageStorage {
 
         let img_store = Image {
             image,
-            _format: format,
+            format,
+            usage,
             aspect,
             dimension: create_info.dimension,
             view: image_view,
@@ -619,12 +697,20 @@ impl ImageStorage {
         Ok(())
     }
 
-    pub fn raw(&self, image: ImageHandle) -> Option<&Image> {
+    pub(crate) fn raw(&self, image: ImageHandle) -> Option<&Image> {
         if self.storage.is_alive(image) {
             Some(&self.storage[image])
         } else {
             None
         }
+    }
+
+    pub(crate) fn format(&self, image: ImageHandle) -> Option<gfx::format::Format> {
+        self.storage.get(image).map(|img| img.format)
+    }
+
+    pub(crate) fn usage(&self, image: ImageHandle) -> Option<gfx::image::Usage> {
+        self.storage.get(image).map(|img| img.usage)
     }
 
     pub fn destroy<I>(&mut self, res_list: &mut ResourceList, handles: I)
