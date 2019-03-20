@@ -76,12 +76,10 @@ fn main() {
         );
     }
 
-    let graph = create_graph(&mut ctx, material_instance);
+    let graph = create_graph(&mut ctx, material_instance).unwrap();
 
     let mut store = Store::new();
     let mut backbuffer = Backbuffer::new();
-
-    let _res = ctx.graph_compile(graph, &mut store);
 
     unsafe {
         submit
@@ -127,80 +125,59 @@ fn main() {
     }
 }
 
+/*
+let info = ComputePassInfo {
+    shader: ShaderInfo {
+        entry: "ComputeMain".into(),
+        content: Cow::Borrowed(include_bytes!(concat!(
+            env!("OUT_DIR"),
+            "/compute/add.hlsl.comp.spirv"
+        ),)),
+    },
+    materials: vec![(0, material_instance.0)],
+    push_constants: Some(0..1),
+};
+*/
+
+
 fn create_graph(
     ctx: &mut Context,
     material_instance: material::MaterialInstanceHandle,
-) -> GraphHandle {
-    let graph = ctx.graph_create();
+) -> Result<GraphHandle, Vec<CompileError>> {
+
+    let mut builder = GraphBuilder::new("Adder");
 
     {
-        let info = ComputePassInfo {
-            shader: ShaderInfo {
-                entry: "ComputeMain".into(),
-                content: Cow::Borrowed(include_bytes!(concat!(
-                    env!("OUT_DIR"),
-                    "/compute/add.hlsl.comp.spirv"
-                ),)),
-            },
-            materials: vec![(0, material_instance.0)],
-            push_constants: Some(0..1),
-        };
-
         struct Adder {
             mat: material::MaterialInstanceHandle,
         }
 
-        impl ComputePassImpl for Adder {
-            fn setup(&mut self, _: &mut Store, builder: &mut GraphBuilder) {
+        impl ComputePass for Adder {
+            type Config = ();
+
+            fn configure(&self, _config: Self::Config) -> ComputePipelineInfo {
+                ComputePipelineInfo {
+                    shader: Shader {
+                        handle: (),
+                        specialization: vec![],
+                    },
+                    materials: vec![(0, self.mat.0)],
+                    push_constant_range: Some(0..1),
+                }
+            }
+
+            fn describe(&mut self, builder: &mut ResourceDescriptor) {
                 builder.virtual_create("Test");
-
-                builder.enable();
             }
 
-            unsafe fn execute(&self, _: &Store, command_buffer: &mut ComputeCommandBuffer<'_>) {
-                command_buffer.bind_material(0, self.mat);
-                command_buffer.push_constant(0, 1_f32);
+            unsafe fn execute(&self, _: &Store, cmd: &mut ComputeDispatcher<'_, Self>) {
 
-                command_buffer.dispatch([NUM_ELEMS as _, 1, 1]);
-            }
-        }
+                cmd.with_config((), |cmd| {
+                    cmd.bind_material(0, self.mat);
+                    cmd.push_constant(0, 1_f32);
 
-        let adder = Adder {
-            mat: material_instance,
-        };
-
-        ctx.graph_add_compute_pass(graph, "AddFirst", info, adder);
-    }
-
-    {
-        let info = ComputePassInfo {
-            shader: ShaderInfo {
-                entry: "ComputeMain".into(),
-                content: Cow::Borrowed(include_bytes!(concat!(
-                    env!("OUT_DIR"),
-                    "/compute/add.hlsl.comp.spirv"
-                ),)),
-            },
-            materials: vec![(0, material_instance.0)],
-            push_constants: Some(0..1),
-        };
-
-        struct Adder {
-            mat: material::MaterialInstanceHandle,
-        }
-
-        impl ComputePassImpl for Adder {
-            fn setup(&mut self, _: &mut Store, builder: &mut GraphBuilder) {
-                builder.virtual_move("Test", "TestFinal");
-
-                builder.enable();
-            }
-
-            unsafe fn execute(&self, _: &Store, command_buffer: &mut ComputeCommandBuffer<'_>) {
-                command_buffer.bind_material(0, self.mat);
-                command_buffer.push_constant(0, 10.0_f32);
-
-                command_buffer.dispatch([NUM_ELEMS as _, 1, 1]);
+                    cmd.dispatch([NUM_ELEMS as _, 1, 1]);
+                });
             }
         }
 
@@ -208,10 +185,10 @@ fn create_graph(
             mat: material_instance,
         };
 
-        ctx.graph_add_compute_pass(graph, "AddSecond", info, adder);
+        builder.add_compute_pass("Add", adder);
     }
 
-    ctx.graph_add_output(graph, "TestFinal");
+    builder.add_target("Test");
 
-    graph
+    ctx.graph_create(builder)
 }

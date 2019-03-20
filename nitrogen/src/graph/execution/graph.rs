@@ -3,13 +3,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use super::*;
-use crate::graph::{GraphResourcesResolved, ResourceName};
+use crate::graph::{GraphWithNamesResolved, ResourceName};
 
 use std::collections::HashSet;
-
-pub enum ExecutionGraphError {
-    OutputUndefined { name: ResourceName },
-}
+use crate::graph::compilation::CompiledGraph;
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ExecutionBatch {
@@ -27,25 +24,10 @@ pub(crate) struct ExecutionGraph {
 }
 
 impl ExecutionGraph {
-    pub(crate) fn new(resolved: &GraphResourcesResolved, outputs: &[ResourceName]) -> Self {
+    pub(crate) fn new(compiled: &CompiledGraph) -> Self {
         let mut pass_execs: Vec<Vec<PassId>> = vec![];
 
-        let mut needed_resources = HashSet::with_capacity(outputs.len());
-
-        let mut errors = vec![];
-
-        let outputs = outputs
-            .iter()
-            .filter_map(|res_name| match resolved.name_lookup.get(res_name) {
-                None => {
-                    errors.push(ExecutionGraphError::OutputUndefined {
-                        name: res_name.clone(),
-                    });
-                    None
-                }
-                Some(id) => Some(*id),
-            })
-            .collect::<HashSet<_>>();
+        let mut needed_resources = HashSet::with_capacity(compiled.targets.len());
 
         // We keep a list of things we should **not** destroy.
         // At the time of this writing, the only special case is the original
@@ -59,11 +41,11 @@ impl ExecutionGraph {
         // in case new options are added.
         let mut keep_list = HashSet::new();
         {
-            keep_list.extend(outputs.iter().cloned());
+            keep_list.extend(compiled.targets.iter().cloned());
 
-            for output in &outputs {
-                let mut prev_id = *output;
-                while let Some(id) = resolved.moves_from.get(&prev_id) {
+            for target in &compiled.targets {
+                let mut prev_id = *target;
+                while let Some(id) = compiled.graph_resources.moves_from.get(&prev_id) {
                     keep_list.insert(*id);
                     prev_id = *id;
                 }
@@ -71,8 +53,8 @@ impl ExecutionGraph {
         }
 
         // Insert initial resources that we want.
-        for output in &outputs {
-            needed_resources.insert(*output);
+        for target in &compiled.targets {
+            needed_resources.insert(*target);
         }
 
         let mut next_passes = HashSet::new();
@@ -80,7 +62,7 @@ impl ExecutionGraph {
         while !needed_resources.is_empty() {
             // find passes that create the resource
             for res in &needed_resources {
-                next_passes.insert(resolved.defines[res]);
+                next_passes.insert(compiled.graph_resources.defines[res]);
             }
 
             // Emit passes
@@ -91,7 +73,7 @@ impl ExecutionGraph {
 
             // Find resources that are needed in order for the passes to execute
             for pass in &next_passes {
-                for res in &resolved.pass_ext_depends[pass] {
+                for res in &compiled.graph_resources.pass_ext_depends[pass] {
                     needed_resources.insert(*res);
                 }
             }
@@ -147,11 +129,11 @@ impl ExecutionGraph {
 
             for batch in &pass_execs {
                 for pass in batch {
-                    for res in &resolved.pass_creates[pass] {
+                    for res in &compiled.graph_resources.pass_creates[pass] {
                         last_use.insert(*res, *pass);
                     }
 
-                    for dep in &resolved.pass_ext_depends[pass] {
+                    for dep in &compiled.graph_resources.pass_ext_depends[pass] {
                         last_use.insert(*dep, *pass);
                     }
                 }
@@ -172,14 +154,14 @@ impl ExecutionGraph {
                     let (creates, deletes) = {
                         let all_creates = batch
                             .iter()
-                            .filter_map(|pass| resolved.pass_creates.get(pass))
+                            .filter_map(|pass| compiled.graph_resources.pass_creates.get(pass))
                             .flatten();
 
                         let creates = all_creates
                             .clone()
                             // We really only care about *new* things that are created.
                             // (no copies or moves)
-                            .filter(|res| resolved.infos.contains_key(res))
+                            .filter(|res| compiled.graph_resources.infos.contains_key(res))
                             .cloned()
                             .collect();
 
@@ -188,9 +170,9 @@ impl ExecutionGraph {
                             .filter_map(|pass| pass_destroys.get(pass))
                             .flatten()
                             // If a resource was created by moving the original
-                            .filter_map(|res| resolved.moved_from(*res).or_else(|| Some(*res)))
+                            .filter_map(|res| compiled.graph_resources.moved_from(*res).or_else(|| Some(*res)))
+                            // Also don't destroy target resources. Ever.
                             .filter(|res| !keep_list.contains(res))
-                            // Also don't destroy output resources. Ever.
                             .collect();
 
                         (creates, deletes)

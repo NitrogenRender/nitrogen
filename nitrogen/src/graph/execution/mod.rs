@@ -37,9 +37,6 @@ pub enum GraphExecError {
     #[display(fmt = "Invalid graph handle")]
     InvalidGraph,
 
-    #[display(fmt = "The graph has not been compiled before executing")]
-    GraphNotCompiled,
-
     #[display(fmt = "Graph resources could not be created: {}", _0)]
     ResourcePrepareError(PrepareError),
 }
@@ -83,7 +80,6 @@ impl GraphBaseResources {
 
 #[derive(Debug)]
 pub(crate) struct GraphResources {
-    pub(crate) exec_version: usize,
     pub(crate) exec_context: super::ExecutionContext,
 
     pub(crate) external_resources: HashSet<ResourceId>,

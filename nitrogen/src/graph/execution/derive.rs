@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use super::*;
-use crate::graph::GraphResourcesResolved;
+use crate::graph::GraphWithNamesResolved;
 
 use gfx::buffer::Usage as BUsage;
 use gfx::image::Usage as IUsage;
@@ -16,7 +16,7 @@ use crate::graph::{
 pub(crate) fn derive_resource_usage(
     backbuffer_usage: &BackbufferUsage,
     exec: &ExecutionGraph,
-    resolved: &GraphResourcesResolved,
+    resolved: &GraphWithNamesResolved,
     outputs: &[ResourceId],
 ) -> ResourceUsages {
     let mut usages = ResourceUsages::default();
@@ -46,7 +46,7 @@ pub(crate) fn derive_resource_usage(
 fn derive_batch(
     backbuffer_usage: &BackbufferUsage,
     batch: &ExecutionBatch,
-    resolved: &GraphResourcesResolved,
+    resolved: &GraphWithNamesResolved,
     usages: &mut ResourceUsages,
 ) {
     // Start with info from creation
@@ -87,7 +87,7 @@ fn derive_batch(
 }
 
 fn derive_pass(
-    resolved: &GraphResourcesResolved,
+    resolved: &GraphWithNamesResolved,
     pass: PassId,
     usages: &mut ResourceUsages,
 ) -> Option<()> {

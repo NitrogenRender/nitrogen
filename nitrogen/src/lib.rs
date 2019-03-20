@@ -50,7 +50,7 @@
 //!
 //! [`Context`]: ./struct.Context.html
 
-#![warn(missing_docs)]
+// #![warn(missing_docs)]
 
 #[macro_use]
 extern crate derive_more;
@@ -87,6 +87,9 @@ pub mod graph;
 
 use crate::resources::image::ImageHandle;
 use std::sync::Arc;
+use crate::graph::ComputePassAccessor;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 /// An opaque handle to a display
 pub type DisplayHandle = Handle<Display>;
@@ -372,73 +375,11 @@ impl Context {
     // graph
 
     /// Create a new graph and retrieve the handle.
-    pub fn graph_create(&mut self) -> graph::GraphHandle {
-        self.graph_storage.create()
-    }
-
-    /// Attach a graphics pass to a graph, adding it into the dependency chain when
-    /// compiling the graph.
-    pub fn graph_add_graphics_pass<T: Into<graph::PassName>>(
+    pub fn graph_create(
         &mut self,
-        graph: graph::GraphHandle,
-        name: T,
-        info: graph::GraphicsPassInfo,
-        pass_impl: impl graph::GraphicsPassImpl + 'static,
-    ) {
-        self.graph_storage
-            .add_graphics_pass(graph, name, info, Box::new(pass_impl));
-    }
-
-    /// Attach a compute pass to a graph, adding it into the dependency chain when
-    /// compiling the graph.
-    pub fn graph_add_compute_pass<T: Into<graph::PassName>>(
-        &mut self,
-        graph: graph::GraphHandle,
-        name: T,
-        info: graph::ComputePassInfo,
-        pass_impl: impl graph::ComputePassImpl + 'static,
-    ) {
-        self.graph_storage
-            .add_compute_pass(graph, name, info, Box::new(pass_impl));
-    }
-
-    /// Add a resource to the *output list* of a graph.
-    ///
-    /// Output resources can be retrieved using the [`graph_get_output_image`] and
-    /// [`graph_get_output_buffer`] methods.
-    ///
-    /// [`graph_get_output_image`]: #method.graph_get_output_image
-    /// [`graph_get_output_buffer`]: #method.graph_get_output_buffer
-    pub fn graph_add_output<T: Into<graph::ResourceName>>(
-        &mut self,
-        graph: graph::GraphHandle,
-        name: T,
-    ) {
-        self.graph_storage.add_output(graph, name);
-    }
-
-    /// Compile a graph so it is optimized for execution.
-    ///
-    /// Compiling a graph is potentially a rather expensive operation, so results are cached when
-    /// it makes sense to do so. As a result it is safe to call this method every frame as it will
-    /// only perform computations the first time a "new configuration" of graph is encountered.
-    ///
-    /// The "user facing" graph operates with resource *names* and any dependencies are only
-    /// implied, not manifested in a datastructure somewhere, so the first thing to do is to
-    /// get all the "unrelated" nodes into a graph structure that has direct or indirect links to
-    /// all dependent nodes.
-    ///
-    /// This representation is then hashed to see if any further work has been done already
-    /// in the past.
-    ///
-    /// Any "backend" resources (pipelines, render passes...) for this graph permutation are
-    /// created and cached as well.
-    pub fn graph_compile(
-        &mut self,
-        graph: graph::GraphHandle,
-        store: &mut graph::Store,
-    ) -> Result<(), Vec<graph::GraphCompileError>> {
-        self.graph_storage.compile(store, graph)
+        builder: graph::GraphBuilder,
+    ) -> Result<graph::GraphHandle, Vec<graph::CompileError>> {
+        self.graph_storage.create(builder)
     }
 
     // submit group

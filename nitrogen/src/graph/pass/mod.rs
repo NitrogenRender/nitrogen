@@ -4,8 +4,14 @@
 
 //! Functionalities for describing and implementing passes.
 
-use crate::graph::builder;
-use crate::graph::command;
+
+pub mod command;
+pub use self::command::*;
+
+pub mod dispatcher;
+pub use self::dispatcher::*;
+
+use crate::graph::{builder, ComputePassAccessor};
 
 use crate::material::MaterialHandle;
 use crate::vertex_attrib::VertexAttribHandle;
@@ -13,6 +19,9 @@ use crate::vertex_attrib::VertexAttribHandle;
 use crate::util::CowString;
 
 use std::borrow::Cow;
+use smallvec::SmallVec;
+use std::marker::PhantomData;
+use crate::graph::command::ComputeCommandBuffer;
 
 /// Numerical identifier for a pass.
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, Debug)]
@@ -186,18 +195,46 @@ pub trait GraphicsPassImpl {
     unsafe fn execute(&self, store: &super::Store, cmd: &mut command::GraphicsCommandBuffer);
 }
 
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub struct Specialization {
+    pub id: u32,
+    pub value: SmallVec<[u8; 256]>,
+}
+
+pub type ShaderHandle = ();
+
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub struct Shader {
+    pub handle: ShaderHandle,
+    pub specialization: Vec<Specialization>,
+}
+
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub struct ComputePipelineInfo {
+    pub materials: Vec<(usize, MaterialHandle)>,
+    pub push_constant_range: Option<std::ops::Range<u32>>,
+    pub shader: Shader,
+}
+
 /// Trait used to implement compute pass functionality.
-pub trait ComputePassImpl {
-    /// The `setup` function is called during graph compilation and records all resource
-    /// creations and dependencies in the graph-`builder`.
+pub trait ComputePass: Sized {
+
+    /// Configuration type of the pass.
     ///
-    /// The `store` can be used to modify the data recorded into `builder`.
-    fn setup(&mut self, store: &mut super::Store, builder: &mut builder::GraphBuilder);
+    /// The configuration is used to dispatch work on potentially different pipelines.
+    type Config: Sized;
+
+    /// Create a compute-pipeline info
+    fn configure(&self, config: Self::Config) -> ComputePipelineInfo;
+
+    /// The `describe` function is called during graph compilation and records all resource
+    /// creations and dependencies in the graph-`builder`.
+    fn describe(&mut self, res: &mut builder::ResourceDescriptor);
 
     /// The `execute` function is called once for every graph execution.
     ///
     /// Dispatch commands can be recorded into the `cmd`-command buffer.
     ///
     /// Data can be read from the `store` as inputs to the execution.
-    unsafe fn execute(&self, store: &super::Store, cmd: &mut command::ComputeCommandBuffer);
+    unsafe fn execute(&self, store: &super::Store, cmd: &mut ComputeDispatcher<Self>);
 }

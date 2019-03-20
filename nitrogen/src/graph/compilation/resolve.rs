@@ -7,13 +7,18 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::*;
 
 use super::GraphInput;
+use crate::graph::PassType;
+use crate::graph::builder::resource_descriptor::{ImageCreateInfo, ImageInfo};
 
 // the Option<u8> represents a possible sampler binding
 pub(crate) type ReadsByResource = (ResourceId, ResourceReadType, u8, Option<u8>);
 
 #[derive(Debug)]
-pub(crate) struct GraphResourcesResolved {
+pub(crate) struct GraphWithNamesResolved {
     pub(crate) name_lookup: BTreeMap<ResourceName, ResourceId>,
+
+    pub(crate) pass_types: BTreeMap<PassId, PassType>,
+
     pub(crate) defines: BTreeMap<ResourceId, PassId>,
     pub(crate) infos: BTreeMap<ResourceId, ResourceCreateInfo>,
     pub(crate) moves_from: BTreeMap<ResourceId, ResourceId>,
@@ -28,7 +33,7 @@ pub(crate) struct GraphResourcesResolved {
     pub(crate) pass_reads: BTreeMap<PassId, BTreeSet<ReadsByResource>>,
 }
 
-impl GraphResourcesResolved {
+impl GraphWithNamesResolved {
     pub(crate) fn moved_from(&self, id: ResourceId) -> Option<ResourceId> {
         let mut prev_id = id;
 
@@ -54,6 +59,58 @@ impl GraphResourcesResolved {
             return None;
         }
     }
+
+    pub(crate) fn is_resource_context_dependent(&self, id: ResourceId) -> bool {
+        use crate::image;
+
+        let (id, info) = if let Some((id, info)) = self.create_info(id) {
+            (id, info)
+        }  else {
+            return false;
+        };
+
+        match info {
+            ResourceCreateInfo::Image(img_info) => {
+
+                match &img_info {
+                    ImageInfo::BackbufferRead(_) => false,
+                    ImageInfo::Create(create) => {
+                        match create.size_mode {
+                            image::ImageSizeMode::ContextRelative { .. } => true,
+                            image::ImageSizeMode::Absolute { .. } => false,
+                        }
+                    }
+                }
+            },
+            ResourceCreateInfo::Buffer(_buf) => false,
+            ResourceCreateInfo::Virtual => false,
+        }
+    }
+
+    pub(crate) fn is_pass_context_dependent(&self, id: PassId) -> bool {
+        false
+    }
+
+    pub(crate) fn is_backbuffer_resource(&self, id: ResourceId) -> bool {
+        use crate::image;
+
+        let (id, info) = if let Some((id, info)) = self.create_info(id) {
+            (id, info)
+        }  else {
+            return false;
+        };
+
+        match info {
+            ResourceCreateInfo::Image(img_info) => {
+                match &img_info {
+                    ImageInfo::BackbufferRead(_) => true,
+                    ImageInfo::Create(_) => false,
+                }
+            },
+            ResourceCreateInfo::Buffer(_buf) => false,
+            ResourceCreateInfo::Virtual => false,
+        }
+    }
 }
 
 // This function looks way scarier than it is. (really!)
@@ -65,12 +122,10 @@ impl GraphResourcesResolved {
 //
 // All this happens in two passes since "usage of resource" does not have to "physically" appear
 // after the definition.
-pub(crate) fn resolve_input_graph(
+pub(crate) fn resolve_input(
     input: GraphInput,
-    reads: &mut Vec<(ResourceId, ResourceReadType, PassId)>,
-    writes: &mut Vec<(ResourceId, ResourceWriteType, PassId)>,
-    errors: &mut Vec<GraphCompileError>,
-) -> GraphResourcesResolved {
+    errors: &mut Vec<CompileError>,
+) -> GraphWithNamesResolved {
     // TODO check for duplicated binding points everywhere?
     // TODO cycle detection?
 
@@ -93,7 +148,7 @@ pub(crate) fn resolve_input_graph(
 
         for (name, info) in ress {
             if let Some(id) = resource_name_lookup.get(&name) {
-                errors.push(GraphCompileError::ResourceRedefined {
+                errors.push(CompileError::ResourceRedefined {
                     pass,
                     res: name.clone(),
                     prev: resource_defines[id],
@@ -114,7 +169,7 @@ pub(crate) fn resolve_input_graph(
         let creates = pass_creates.entry(*pass).or_default();
         for (new_name, _old_name) in ress {
             if let Some(id) = resource_name_lookup.get(new_name) {
-                errors.push(GraphCompileError::ResourceRedefined {
+                errors.push(CompileError::ResourceRedefined {
                     pass: *pass,
                     res: new_name.clone(),
                     prev: resource_defines[id],
@@ -140,7 +195,7 @@ pub(crate) fn resolve_input_graph(
             let old_id = if let Some(id) = resource_name_lookup.get(&old_name) {
                 *id
             } else {
-                errors.push(GraphCompileError::ReferencedInvalidResource {
+                errors.push(CompileError::ReferencedInvalidResource {
                     pass,
                     res: old_name.clone(),
                 });
@@ -149,7 +204,7 @@ pub(crate) fn resolve_input_graph(
             let new_id = if let Some(id) = resource_name_lookup.get(&new_name) {
                 *id
             } else {
-                errors.push(GraphCompileError::ReferencedInvalidResource {
+                errors.push(CompileError::ReferencedInvalidResource {
                     pass,
                     res: new_name.clone(),
                 });
@@ -158,7 +213,7 @@ pub(crate) fn resolve_input_graph(
 
             if let Some(prev_res) = resource_moves_to.get(&old_id) {
                 if let Some(prev_pass) = resource_defines.get(prev_res) {
-                    errors.push(GraphCompileError::ResourceAlreadyMoved {
+                    errors.push(CompileError::ResourceAlreadyMoved {
                         res: old_name.clone(),
                         pass,
                         prev_move: *prev_pass,
@@ -192,14 +247,12 @@ pub(crate) fn resolve_input_graph(
             let id = if let Some(id) = resource_name_lookup.get(&name) {
                 *id
             } else {
-                errors.push(GraphCompileError::ReferencedInvalidResource {
+                errors.push(CompileError::ReferencedInvalidResource {
                     pass,
                     res: name.clone(),
                 });
                 continue;
             };
-
-            writes.push((id, ty, pass));
 
             pass_writes.insert((id, ty, binding));
 
@@ -223,14 +276,12 @@ pub(crate) fn resolve_input_graph(
             let id = if let Some(id) = resource_name_lookup.get(&name) {
                 *id
             } else {
-                errors.push(GraphCompileError::ReferencedInvalidResource {
+                errors.push(CompileError::ReferencedInvalidResource {
                     pass,
                     res: name.clone(),
                 });
                 continue;
             };
-
-            reads.push((id, ty, pass));
 
             pass_reads.insert((id, ty, binding, sampler_binding));
 
@@ -249,7 +300,7 @@ pub(crate) fn resolve_input_graph(
     for (pass, creates) in input.resource_backbuffer {
         for (_bname, lname) in creates {
             if resource_name_lookup.get(&lname).is_none() {
-                errors.push(GraphCompileError::ReferencedInvalidResource {
+                errors.push(CompileError::ReferencedInvalidResource {
                     res: lname.clone(),
                     pass,
                 });
@@ -258,8 +309,10 @@ pub(crate) fn resolve_input_graph(
         }
     }
 
-    GraphResourcesResolved {
+    GraphWithNamesResolved {
         name_lookup: resource_name_lookup,
+
+        pass_types: input.pass_types,
 
         defines: resource_defines,
         infos: resource_infos,

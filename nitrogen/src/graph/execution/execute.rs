@@ -4,7 +4,7 @@
 
 use super::*;
 
-use crate::graph::resolve::GraphResourcesResolved;
+use crate::graph::resolve::GraphWithNamesResolved;
 use crate::graph::ExecutionContext;
 
 use crate::graph::{
@@ -28,12 +28,13 @@ pub(crate) unsafe fn execute(
     storages: &mut Storages,
     store: &crate::graph::Store,
     exec_graph: &ExecutionGraph,
-    resolved_graph: &GraphResourcesResolved,
+    resolved_graph: &GraphWithNamesResolved,
     graph: &crate::graph::Graph,
     base_res: &GraphBaseResources,
     res: &GraphResources,
     _context: &ExecutionContext,
 ) {
+    /*
     for batch in &exec_graph.pass_execution {
         // perform copies
         {}
@@ -275,6 +276,7 @@ pub(crate) unsafe fn execute(
                     }
                 }
 
+                /*
                 // process compute pass
                 if let Some(handle) = base_res.pipelines_compute.get(pass) {
                     let pipeline = storages.pipeline.raw_compute(*handle).unwrap();
@@ -322,9 +324,11 @@ pub(crate) unsafe fn execute(
                         device.compute_queue().submit(submission, None);
                     }
                 }
+                */
 
                 sem_list.advance();
             }
         }
     }
+    */
 }

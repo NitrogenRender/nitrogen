@@ -4,7 +4,7 @@
 
 //! Functionality for the setup-phase of passes.
 
-use super::ResourceName;
+use crate::graph::ResourceName;
 
 use crate::image;
 
@@ -31,8 +31,7 @@ pub(crate) enum ResourceCreateInfo {
 
 /// Type used to record which resources are used in what ways.
 #[derive(Hash, Default)]
-pub struct GraphBuilder {
-    pub(crate) enabled: bool,
+pub struct ResourceDescriptor {
 
     /// Mapping from names to resource create information
     pub(crate) resource_creates: Vec<(ResourceName, ResourceCreateInfo)>,
@@ -50,7 +49,7 @@ pub struct GraphBuilder {
     pub(crate) resource_backbuffer: Vec<(ResourceName, ResourceName)>,
 }
 
-impl GraphBuilder {
+impl ResourceDescriptor {
     pub(crate) fn new() -> Self {
         Default::default()
     }
@@ -206,11 +205,6 @@ impl GraphBuilder {
     /// State the dependence on a "virtual" resource.
     pub fn virtual_read<T: Into<ResourceName>>(&mut self, name: T) {
         self.resource_reads.push((name.into(), R::Virtual, 0, None));
-    }
-
-    /// Enable this pass so it will be considered during the compilation phase.
-    pub fn enable(&mut self) {
-        self.enabled = true;
     }
 }
 

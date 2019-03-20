@@ -9,7 +9,7 @@ use gfx;
 
 use crate::graph::{
     BufferReadType, BufferStorageType, BufferWriteType, ComputePassInfo, ExecutionContext,
-    GraphResourcesResolved, GraphicsPassInfo, ImageInfo, ImageReadType, ImageWriteType, PassInfo,
+    GraphWithNamesResolved, GraphicsPassInfo, ImageInfo, ImageReadType, ImageWriteType, PassInfo,
     ResourceCreateInfo, ResourceReadType, ResourceWriteType,
 };
 
@@ -29,7 +29,7 @@ pub(crate) unsafe fn prepare_base(
     backbuffer_usage: &BackbufferUsage,
     storages: &mut Storages,
     exec: &ExecutionGraph,
-    resolved: &GraphResourcesResolved,
+    resolved: &GraphWithNamesResolved,
     passes: &[(PassName, PassInfo)],
 ) -> GraphBaseResources {
     let mut res = GraphBaseResources::default();
@@ -57,7 +57,7 @@ pub(crate) unsafe fn prepare_pass_base(
     device: &DeviceContext,
     backbuffer_usage: &BackbufferUsage,
     storages: &mut Storages,
-    resolved: &GraphResourcesResolved,
+    resolved: &GraphWithNamesResolved,
     pass: PassId,
     info: &PassInfo,
     res: &mut GraphBaseResources,
@@ -130,12 +130,11 @@ pub(crate) unsafe fn prepare(
     device: &DeviceContext,
     storages: &mut Storages,
     exec: &ExecutionGraph,
-    resolved: &GraphResourcesResolved,
+    resolved: &GraphWithNamesResolved,
     passes: &[(PassName, PassInfo)],
     context: ExecutionContext,
 ) -> Result<GraphResources, PrepareError> {
     let mut res = GraphResources {
-        exec_version: 0, // will be filled by the caller
         exec_context: context.clone(),
         external_resources: HashSet::new(),
         images: HashMap::new(),
@@ -180,7 +179,7 @@ pub(crate) unsafe fn prepare_pass(
     base: &GraphBaseResources,
     device: &DeviceContext,
     storages: &mut Storages,
-    resolved: &GraphResourcesResolved,
+    resolved: &GraphWithNamesResolved,
     pass: PassId,
     info: &PassInfo,
     res: &mut GraphResources,
@@ -319,7 +318,7 @@ unsafe fn create_render_pass(
     device: &DeviceContext,
     backbuffer_usage: &BackbufferUsage,
     storages: &mut Storages,
-    resolved_graph: &GraphResourcesResolved,
+    resolved_graph: &GraphWithNamesResolved,
     pass: PassId,
 ) -> Option<RenderPassHandle> {
     // create a render pass handle for use in a graphics pass
@@ -514,7 +513,7 @@ unsafe fn create_render_pass(
 unsafe fn create_pipeline_compute(
     device: &DeviceContext,
     storages: &mut Storages,
-    resolved: &GraphResourcesResolved,
+    resolved: &GraphWithNamesResolved,
     pass: PassId,
     info: &ComputePassInfo,
 ) -> Option<(PipelineHandle, Option<MaterialHandle>)> {
@@ -556,7 +555,7 @@ unsafe fn create_pipeline_compute(
 unsafe fn create_pipeline_graphics(
     device: &DeviceContext,
     storages: &mut Storages,
-    resolved_graph: &GraphResourcesResolved,
+    resolved_graph: &GraphWithNamesResolved,
     render_pass: RenderPassHandle,
     pass: PassId,
     info: &GraphicsPassInfo,
@@ -739,7 +738,7 @@ unsafe fn create_resource(
 
 unsafe fn create_pipeline_base<'a>(
     device: &DeviceContext,
-    resolved: &GraphResourcesResolved,
+    resolved: &GraphWithNamesResolved,
     material_storage: &'a mut MaterialStorage,
     pass: PassId,
     materials: &[(usize, MaterialHandle)],

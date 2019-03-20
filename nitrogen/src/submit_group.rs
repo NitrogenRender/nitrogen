@@ -393,14 +393,7 @@ impl SubmitGroup {
         graph: graph::GraphHandle,
         image: I,
     ) -> Option<image::ImageHandle> {
-        let g = ctx.graph_storage.storage.get(graph)?;
-        let input_num = g.last_input?;
-        let (resolve, _) = g.resolve_cache.get(&input_num)?;
-        let id = resolve.name_lookup.get(&image.into())?;
-        let id = resolve.moved_from(*id)?;
-
-        let res = self.graph_resources.get(&graph)?;
-        res.images.get(&id).cloned()
+        None
     }
 
     /// Queue the deletion of a [`Backbuffer`] object and all its associated resources.

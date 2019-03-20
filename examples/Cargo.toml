@@ -15,31 +15,31 @@ env_logger = "0.5.13"
 tobj = "0.1.6"
 cgmath = "0.16.1"
 
-nitrogen-examples-common = { path = "common" }
+# nitrogen-examples-common = { path = "common" }
 
 [build-dependencies]
 shaderc = "0.3.12"
 
-[[example]]
-name = "two-pass"
-path = "two-pass/main.rs"
+# [[example]]
+# name = "two-pass"
+# path = "two-pass/main.rs"
 
-[[example]]
-name = "2d-squares"
-path = "2d-squares/main.rs"
+# [[example]]
+# name = "2d-squares"
+# path = "2d-squares/main.rs"
 
-[[example]]
-name = "multi-target"
-path = "multi-target/main.rs"
+# [[example]]
+# name = "multi-target"
+# path = "multi-target/main.rs"
 
 [[example]]
 name = "compute"
 path = "compute/main.rs"
 
-[[example]]
-name = "opaque-alpha"
-path = "opaque-alpha/main.rs"
+# [[example]]
+# name = "opaque-alpha"
+# path = "opaque-alpha/main.rs"
 
-[[example]]
-name = "model"
-path = "model/main.rs"
+# [[example]]
+# name = "model"
+# path = "model/main.rs"
