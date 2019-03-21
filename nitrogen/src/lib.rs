@@ -85,11 +85,11 @@ pub use crate::resources::vertex_attrib;
 
 pub mod graph;
 
+use crate::graph::{ComputePassAccessor, Storages};
 use crate::resources::image::ImageHandle;
-use std::sync::Arc;
-use crate::graph::ComputePassAccessor;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 
 /// An opaque handle to a display
 pub type DisplayHandle = Handle<Display>;
@@ -375,11 +375,22 @@ impl Context {
     // graph
 
     /// Create a new graph and retrieve the handle.
-    pub fn graph_create(
+    pub unsafe fn graph_create(
         &mut self,
         builder: graph::GraphBuilder,
-    ) -> Result<graph::GraphHandle, Vec<graph::CompileError>> {
-        self.graph_storage.create(builder)
+    ) -> Result<graph::GraphHandle, graph::GraphError> {
+        let mut storages = graph::Storages {
+            render_pass: &mut self.render_pass_storage,
+            pipeline: &mut self.pipeline_storage,
+            image: &mut self.image_storage,
+            buffer: &mut self.buffer_storage,
+            vertex_attrib: &self.vertex_attrib_storage,
+            sampler: &mut self.sampler_storage,
+            material: &mut self.material_storage,
+        };
+
+        self.graph_storage
+            .create(&self.device_ctx, &mut storages, builder)
     }
 
     // submit group

@@ -7,10 +7,6 @@
 use crate::util::storage::{Handle, Storage};
 use crate::util::CowString;
 
-use std::collections::HashMap;
-
-use smallvec::SmallVec;
-
 use crate::device::DeviceContext;
 use crate::resources::{
     buffer::BufferStorage,
@@ -45,7 +41,8 @@ pub use self::compilation::CompileError;
 pub mod store;
 pub use self::store::*;
 
-use crate::submit_group::ResourceList;
+use crate::submit_group::{QueueSyncRefs, ResourceList};
+use std::collections::{HashMap, HashSet};
 
 pub(crate) struct Storages<'a> {
     pub render_pass: &'a mut RenderPassStorage,
@@ -71,6 +68,12 @@ pub(crate) struct ComputePassAccessor {
     pub(crate) execute: Box<dyn Fn(&Store, RawComputeDispatcher)>,
 }
 
+#[derive(Clone, Debug, From)]
+pub enum GraphError {
+    CompilationErrors(Vec<String>),
+    PrepareError(PrepareError),
+}
+
 /// Graphs are "modules" of rendering pipelines.
 ///
 /// A graph should describe a sequence of related rendering-transformations.
@@ -80,6 +83,9 @@ pub(crate) struct ComputePassAccessor {
 pub struct Graph {
     pub(crate) compiled_graph: CompiledGraph,
     pub(crate) exec_graph: ExecutionGraph,
+    pub(crate) res_usage: ResourceUsages,
+
+    pub(crate) pass_resources: PassResources,
 }
 
 pub(crate) struct GraphStorage {
@@ -93,18 +99,48 @@ impl GraphStorage {
         }
     }
 
-    pub(crate) fn create(
+    pub(crate) unsafe fn create(
         &mut self,
+        device: &DeviceContext,
+        storages: &mut Storages,
         builder: GraphBuilder,
-    ) -> Result<GraphHandle, Vec<CompileError>> {
-
-        let compiled = compile_graph(builder)?;
+    ) -> Result<GraphHandle, GraphError> {
+        let compiled = compile_graph(builder).map_err(|(names, errors)| {
+            let errors = errors.into_iter().map(|err| err.to_diagnostic(&names));
+            GraphError::CompilationErrors(errors.collect())
+        })?;
 
         let exec_graph = ExecutionGraph::new(&compiled);
+
+        let pass_resources = {
+            let mut res = PassResources::default();
+
+            for pass_id in 0..compiled.pass_names.len() {
+                let id = PassId(pass_id);
+
+                let mat = execution::create_pass_material(
+                    device,
+                    &mut storages.material,
+                    &compiled.graph_resources,
+                    id,
+                )?;
+
+                if let Some(mat) = mat {
+                    res.pass_material.insert(id, mat);
+                }
+            }
+
+            res
+        };
+
+        let res_usage = derive_resource_usage(&exec_graph, &compiled);
 
         let graph = Graph {
             compiled_graph: compiled,
             exec_graph,
+            res_usage,
+
+            pass_resources,
         };
 
         Ok(self.storage.insert(graph))
@@ -116,59 +152,73 @@ impl GraphStorage {
         storages: &mut Storages,
         handle: GraphHandle,
     ) {
-        /*
         let graph = self.storage.remove(handle);
 
         if let Some(graph) = graph {
-            for (_, res) in graph.exec_base_resources {
-                res.release(res_list, storages);
-            }
+            graph.pass_resources.release(res_list, storages);
         }
-        */
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) unsafe fn execute(
         &mut self,
         device: &DeviceContext,
-        sem_pool: &SemaphorePool,
-        sem_list: &mut SemaphoreList,
-        cmd_pool_gfx: &CommandPoolGraphics,
-        cmd_pool_cmpt: &CommandPoolCompute,
-        res_list: &mut ResourceList,
+        sync: &mut QueueSyncRefs,
         storages: &mut Storages,
+        (pool_gfx, pool_cmpt): (&CommandPoolGraphics, &CommandPoolCompute),
         store: &Store,
         graph_handle: GraphHandle,
+        res: &mut GraphResources,
         backbuffer: &mut Backbuffer,
-        prev_res: Option<GraphResources>,
         context: &ExecutionContext,
-    ) -> Result<GraphResources, GraphExecError> {
-        /*
+    ) -> Result<(), GraphExecError> {
         let graph = self
             .storage
             .get_mut(graph_handle)
             .ok_or(GraphExecError::InvalidGraph)?;
 
-        let input_hash = graph.last_input.ok_or(GraphExecError::GraphNotCompiled)?;
+        let compiled = &graph.compiled_graph;
 
-        let (resolved, id) = graph
-            .resolve_cache
-            .get(&input_hash)
-            .ok_or(GraphExecError::GraphNotCompiled)?;
+        // execution context size changed, some resources might need to be recreated
 
-        let exec_id = graph
-            .exec_id_cache
-            .get(&(*id, graph.output_resources.clone()))
-            .ok_or(GraphExecError::GraphNotCompiled)?;
+        match res.exec_context.clone() {
+            None => {
+                // create new resources from scratch
+                let mut resources = GraphResources::default();
+                resources.exec_context = Some(context.clone());
+                // TODO actually create resources lol
 
-        let exec = &graph.exec_graph_cache[exec_id];
+                // remove whatever is there.
+                let old_res = std::mem::replace(res, resources);
+                old_res.release(sync.res_list, storages);
+            }
+            Some(ref exec) if exec == context => {
+                // do nothing?
+            }
+            _ => {
+                // resources do exist but all resources that are contextual have to be
+                // recreated.
+            }
+        }
 
-        let outputs = graph
-            .output_resources
-            .as_slice()
-            .iter()
-            .map(|n| resolved.name_lookup[n])
-            .collect::<SmallVec<[_; 16]>>();
+        if res.exec_context.as_ref() != Some(context) {
+            // make new resources.
+        }
 
+        // TODO check if current backbuffer is compatible.
+
+        execution::execute(
+            device,
+            sync,
+            (pool_gfx, pool_cmpt),
+            storages,
+            store,
+            graph,
+            res,
+            context,
+        );
+
+        /*
         let resources = {
             let (base_resources, usages) = {
                 let passes = &graph.passes[..];
@@ -277,7 +327,7 @@ impl GraphStorage {
         Ok(resources)
         */
 
-        Err(GraphExecError::InvalidGraph)
+        Ok(())
     }
 }
 

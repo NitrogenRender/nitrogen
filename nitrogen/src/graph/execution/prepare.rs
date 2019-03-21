@@ -17,83 +17,15 @@ use crate::resources::{image, sampler};
 
 use crate::device::DeviceContext;
 
-use crate::resources::material::MaterialHandle;
+use crate::resources::material::{MaterialError, MaterialHandle, MaterialInstanceHandle};
 use smallvec::SmallVec;
 
 use crate::graph::ResourceName;
 use crate::resources::material::MaterialStorage;
+use crate::resources::pipeline::PipelineError;
+use crate::resources::render_pass::RenderPassError;
+use gfx::device::Device;
 use std::collections::BTreeMap;
-
-pub(crate) unsafe fn prepare_base(
-    device: &DeviceContext,
-    backbuffer_usage: &BackbufferUsage,
-    storages: &mut Storages,
-    exec: &ExecutionGraph,
-    resolved: &GraphWithNamesResolved,
-    passes: &[(PassName, PassInfo)],
-) -> GraphBaseResources {
-    let mut res = GraphBaseResources::default();
-
-    for batch in &exec.pass_execution {
-        for pass in &batch.passes {
-            let info = &passes[pass.0].1;
-
-            prepare_pass_base(
-                device,
-                backbuffer_usage,
-                storages,
-                resolved,
-                *pass,
-                info,
-                &mut res,
-            );
-        }
-    }
-
-    res
-}
-
-pub(crate) unsafe fn prepare_pass_base(
-    device: &DeviceContext,
-    backbuffer_usage: &BackbufferUsage,
-    storages: &mut Storages,
-    resolved: &GraphWithNamesResolved,
-    pass: PassId,
-    info: &PassInfo,
-    res: &mut GraphBaseResources,
-) -> Option<()> {
-    match info {
-        PassInfo::Graphics(info) => {
-            // Create render pass
-            let render_pass =
-                create_render_pass(device, backbuffer_usage, storages, resolved, pass)?;
-
-            // insert into resources
-            res.render_passes.insert(pass, render_pass);
-
-            // create pipeline object
-            let (pipe, mat) =
-                create_pipeline_graphics(device, storages, resolved, render_pass, pass, info)?;
-
-            res.pipelines_graphic.insert(pass, pipe);
-            if let Some(mat) = mat {
-                res.pipelines_mat.insert(pass, mat);
-            }
-
-            Some(())
-        }
-        PassInfo::Compute(info) => {
-            let (pipeline, mat) = create_pipeline_compute(device, storages, resolved, pass, info)?;
-
-            res.pipelines_compute.insert(pass, pipeline);
-            if let Some(mat) = mat {
-                res.pipelines_mat.insert(pass, mat);
-            }
-
-            Some(())
-        }
-    }
-}
 
 /// Errors that can occur when trying to prepare resources for a graph execution.
 #[allow(missing_docs)]
@@ -119,14 +51,23 @@ pub enum PrepareError {
 
     #[display(fmt = "Out of memory: {}", _0)]
     OutOfMemory(gfx::device::OutOfMemory),
+
+    #[display(fmt = "Error creating renderpass: {}", _0)]
+    RenderPassError(RenderPassError),
+
+    #[display(fmt = "Error creating a pipeline: {}", _0)]
+    PipelineError(PipelineError),
+
+    #[display(fmt = "Error creating a material or material instance: {}", _0)]
+    MaterialError(MaterialError),
 }
 
 impl std::error::Error for PrepareError {}
 
+/*
 pub(crate) unsafe fn prepare(
     usages: &ResourceUsages,
     backbuffer: &mut Backbuffer,
-    base: &mut GraphBaseResources,
     device: &DeviceContext,
     storages: &mut Storages,
     exec: &ExecutionGraph,
@@ -140,9 +81,6 @@ pub(crate) unsafe fn prepare(
         images: HashMap::new(),
         samplers: HashMap::new(),
         buffers: HashMap::new(),
-        framebuffers: HashMap::new(),
-        pass_mats: HashMap::new(),
-        outputs: SmallVec::new(), // will be filled by the caller
     };
 
     for batch in &exec.pass_execution {
@@ -173,6 +111,7 @@ pub(crate) unsafe fn prepare(
 
     Ok(res)
 }
+
 
 pub(crate) unsafe fn prepare_pass(
     backbuffer: &mut Backbuffer,
@@ -314,13 +253,15 @@ pub(crate) unsafe fn prepare_pass(
     }
 }
 
+*/
+
 unsafe fn create_render_pass(
     device: &DeviceContext,
     backbuffer_usage: &BackbufferUsage,
     storages: &mut Storages,
     resolved_graph: &GraphWithNamesResolved,
     pass: PassId,
-) -> Option<RenderPassHandle> {
+) -> Result<RenderPassHandle, PrepareError> {
     // create a render pass handle for use in a graphics pass
     //
     // A render pass contains a list of "attachments" which are generally used for writing
@@ -354,29 +295,15 @@ unsafe fn create_render_pass(
             .filter_map(|(res, _ty, binding)| {
                 let (origin, info) = resolved_graph.create_info(*res).unwrap();
 
-                let (format, clear) = match info {
-                    ResourceCreateInfo::Image(ImageInfo::Create(img)) => {
-                        (img.format.into(), origin == *res)
-                    }
-                    ResourceCreateInfo::Image(ImageInfo::BackbufferRead(name)) => {
-                        (*(backbuffer_usage.images.get(name)?), false)
-                    }
+                let format = match info {
+                    ResourceCreateInfo::Image(ImageInfo::Create(img)) => img.format.into(),
+                    ResourceCreateInfo::Image(ImageInfo::BackbufferRead { format, .. }) => *format,
                     _ => unreachable!(),
                 };
 
-                // let clear = clear && origin == *res;
+                let load_op = gfx::pass::AttachmentLoadOp::Load;
 
-                let load_op = if clear {
-                    gfx::pass::AttachmentLoadOp::Clear
-                } else {
-                    gfx::pass::AttachmentLoadOp::Load
-                };
-
-                let initial_layout = if clear {
-                    gfx::image::Layout::Undefined
-                } else {
-                    gfx::image::Layout::General
-                };
+                let initial_layout = gfx::image::Layout::General;
 
                 let (ops, stencil) = {
                     // applies to color AND depth
@@ -417,9 +344,9 @@ unsafe fn create_render_pass(
 
                         let format = match info {
                             ResourceCreateInfo::Image(ImageInfo::Create(img)) => img.format.into(),
-                            ResourceCreateInfo::Image(ImageInfo::BackbufferRead(_name)) => {
-                                unimplemented!()
-                            }
+                            ResourceCreateInfo::Image(ImageInfo::BackbufferRead {
+                                format, ..
+                            }) => *format,
                             _ => unreachable!(),
                         };
 
@@ -507,23 +434,18 @@ unsafe fn create_render_pass(
         dependencies: &[dependencies],
     };
 
-    storages.render_pass.create(device, create_info).ok()
+    let render_pass = storages.render_pass.create(device, create_info)?;
+    Ok(render_pass)
 }
 
 unsafe fn create_pipeline_compute(
     device: &DeviceContext,
     storages: &mut Storages,
-    resolved: &GraphWithNamesResolved,
     pass: PassId,
+    pass_material: Option<MaterialHandle>,
     info: &ComputePassInfo,
-) -> Option<(PipelineHandle, Option<MaterialHandle>)> {
-    let (layouts, pass_mat) = create_pipeline_base(
-        device,
-        resolved,
-        storages.material,
-        pass,
-        &info.materials[..],
-    )?;
+) -> Result<PipelineHandle, PrepareError> {
+    let layouts = create_pipeline_base(storages.material, pass_material, &info.materials[..]);
 
     let layouts = layouts
         .into_iter()
@@ -546,29 +468,21 @@ unsafe fn create_pipeline_compute(
 
     let pipeline_handle = storages
         .pipeline
-        .create_compute_pipeline(device, create_info)
-        .ok();
+        .create_compute_pipeline(device, create_info)?;
 
-    pipeline_handle.map(|handle| (handle, pass_mat))
+    Ok(pipeline_handle)
 }
 
 unsafe fn create_pipeline_graphics(
     device: &DeviceContext,
     storages: &mut Storages,
-    resolved_graph: &GraphWithNamesResolved,
     render_pass: RenderPassHandle,
-    pass: PassId,
+    pass_material: Option<MaterialHandle>,
     info: &GraphicsPassInfo,
-) -> Option<(PipelineHandle, Option<MaterialHandle>)> {
+) -> Result<PipelineHandle, PrepareError> {
     use crate::pipeline;
 
-    let (layouts, pass_mat) = create_pipeline_base(
-        device,
-        resolved_graph,
-        storages.material,
-        pass,
-        &info.materials[..],
-    )?;
+    let layouts = create_pipeline_base(storages.material, pass_material, &info.materials[..]);
 
     let layouts = layouts
         .into_iter()
@@ -598,18 +512,15 @@ unsafe fn create_pipeline_graphics(
         depth_mode: info.depth_mode,
     };
 
-    let pipeline_handle = storages
-        .pipeline
-        .create_graphics_pipeline(
-            device,
-            storages.render_pass,
-            storages.vertex_attrib,
-            render_pass,
-            create_info,
-        )
-        .ok();
+    let pipeline_handle = storages.pipeline.create_graphics_pipeline(
+        device,
+        storages.render_pass,
+        storages.vertex_attrib,
+        render_pass,
+        create_info,
+    )?;
 
-    pipeline_handle.map(|handle| (handle, pass_mat))
+    Ok(pipeline_handle)
 }
 
 unsafe fn create_resource(
@@ -623,7 +534,7 @@ unsafe fn create_resource(
     res: &mut GraphResources,
 ) -> Option<()> {
     match info {
-        ResourceCreateInfo::Image(ImageInfo::BackbufferRead(name)) => {
+        ResourceCreateInfo::Image(ImageInfo::BackbufferRead { name, .. }) => {
             // read image from backbuffer
 
             let img = backbuffer.images.get(name)?;
@@ -737,19 +648,45 @@ unsafe fn create_resource(
 }
 
 unsafe fn create_pipeline_base<'a>(
-    device: &DeviceContext,
-    resolved: &GraphWithNamesResolved,
     material_storage: &'a mut MaterialStorage,
-    pass: PassId,
+    pass_material: Option<MaterialHandle>,
     materials: &[(usize, MaterialHandle)],
-) -> Option<(
-    BTreeMap<usize, &'a types::DescriptorSetLayout>,
-    Option<MaterialHandle>,
-)> {
+) -> BTreeMap<usize, &'a types::DescriptorSetLayout> {
     let mut sets = BTreeMap::new();
 
+    // base material
+    if let Some(pass_material) = pass_material {
+        if let Some(mat) = material_storage.raw(pass_material) {
+            sets.insert(0, &mat.desc_set_layout);
+        }
+    }
+
+    // other materials
+    for (set, material) in materials {
+        let mat = match material_storage.raw(*material) {
+            Some(mat) => mat,
+            None => continue,
+        };
+
+        let layout = &mat.desc_set_layout;
+
+        sets.insert(*set, layout);
+    }
+
+    sets
+}
+
+/// Create the material (-instance) for a pass.
+pub(crate) unsafe fn create_pass_material(
+    device: &DeviceContext,
+    material_storage: &mut MaterialStorage,
+    graph: &GraphWithNamesResolved,
+    pass: PassId,
+) -> Result<Option<MaterialInstanceHandle>, PrepareError> {
+    use gfx::Device;
+
     let (core_desc, core_range) = {
-        let reads = resolved.pass_reads[&pass]
+        let reads = graph.pass_reads[&pass]
             .iter()
             .filter(|(_id, _ty, _, _)| match _ty {
                 ResourceReadType::Virtual => false,
@@ -772,7 +709,7 @@ unsafe fn create_pipeline_base<'a>(
                 });
 
         // writing to resources that are not color or depth images happens via descriptors as well
-        let writes = resolved.pass_writes[&pass]
+        let writes = graph.pass_writes[&pass]
             .iter()
             .filter(|(_res, ty, _binding)| {
                 match ty {
@@ -898,38 +835,15 @@ unsafe fn create_pipeline_base<'a>(
         (descriptors, range)
     };
 
-    // pass material
-    let pass_mat = {
-        use gfx::Device;
+    let pass_set_layout = device.device.create_descriptor_set_layout(core_desc, &[])?;
 
-        let pass_set_layout = device
-            .device
-            .create_descriptor_set_layout(core_desc, &[])
-            .ok()?;
+    let mat = material_storage.create_raw(device, pass_set_layout, core_range, 16);
 
-        let pass_mat = material_storage.create_raw(device, pass_set_layout, core_range, 16);
-
-        if let Some(pass_mat) = pass_mat {
-            let raw_mat = material_storage.raw(pass_mat).unwrap();
-            sets.insert(0, &raw_mat.desc_set_layout);
-        }
-
-        pass_mat
+    let instance = if let Some(mat) = mat {
+        Some(material_storage.create_instance(device, mat)?)
+    } else {
+        None
     };
 
-    // material sets
-    {
-        for (set, material) in materials {
-            let mat = match material_storage.raw(*material) {
-                Some(mat) => mat,
-                None => continue,
-            };
-
-            let layout = &mat.desc_set_layout;
-
-            sets.insert(*set, layout);
-        }
-    }
-
-    Some((sets, pass_mat))
+    Ok(instance)
 }

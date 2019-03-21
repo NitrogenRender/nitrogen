@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::borrow::Cow;
-
 use nitrogen::graph::*;
 use nitrogen::*;
 
@@ -76,9 +74,9 @@ fn main() {
         );
     }
 
-    let graph = create_graph(&mut ctx, material_instance).unwrap();
+    let graph = unsafe { create_graph(&mut ctx, material_instance) }.unwrap();
 
-    let mut store = Store::new();
+    let store = Store::new();
     let mut backbuffer = Backbuffer::new();
 
     unsafe {
@@ -139,12 +137,10 @@ let info = ComputePassInfo {
 };
 */
 
-
-fn create_graph(
+unsafe fn create_graph(
     ctx: &mut Context,
     material_instance: material::MaterialInstanceHandle,
-) -> Result<GraphHandle, Vec<CompileError>> {
-
+) -> Result<GraphHandle, GraphError> {
     let mut builder = GraphBuilder::new("Adder");
 
     {
@@ -161,7 +157,7 @@ fn create_graph(
                         handle: (),
                         specialization: vec![],
                     },
-                    materials: vec![(0, self.mat.0)],
+                    materials: vec![(0, self.mat.material())],
                     push_constant_range: Some(0..1),
                 }
             }
@@ -171,7 +167,6 @@ fn create_graph(
             }
 
             unsafe fn execute(&self, _: &Store, cmd: &mut ComputeDispatcher<'_, Self>) {
-
                 cmd.with_config((), |cmd| {
                     cmd.bind_material(0, self.mat);
                     cmd.push_constant(0, 1_f32);

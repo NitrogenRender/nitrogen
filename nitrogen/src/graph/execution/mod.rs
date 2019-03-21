@@ -27,6 +27,7 @@ use std::collections::{HashMap, HashSet};
 
 use smallvec::SmallVec;
 
+use crate::graph::pass::ComputePipelineInfo;
 use crate::resources::image::ImageFormat;
 use gfx;
 
@@ -49,49 +50,51 @@ pub(crate) struct ResourceUsages {
     buffer: HashMap<ResourceId, gfx::buffer::Usage>,
 }
 
-#[derive(Debug, Default)]
-pub(crate) struct GraphBaseResources {
-    render_passes: HashMap<PassId, RenderPassHandle>,
-
-    pipelines_graphic: HashMap<PassId, PipelineHandle>,
-    pipelines_compute: HashMap<PassId, PipelineHandle>,
-    pub(crate) pipelines_mat: HashMap<PassId, crate::material::MaterialHandle>,
+#[derive(Debug)]
+pub(crate) struct PipelineResources {
+    pub(crate) pipeline_handle: PipelineHandle,
 }
 
-impl GraphBaseResources {
+#[derive(Debug, Default)]
+pub(crate) struct PassResources {
+    // Framebuffers have a fixed size. If the size changes then they have to be recreated.
+    // Framebuffers do not depend on a pipeline, so they are unaffected by swap of pipeline.
+    pub(crate) framebuffers: HashMap<PassId, (types::Framebuffer, gfx::image::Extent)>,
+    pub(crate) render_passes: HashMap<PassId, RenderPassHandle>,
+
+    pub(crate) pass_material: HashMap<PassId, crate::material::MaterialInstanceHandle>,
+    pub(crate) compute_pipelines: HashMap<PassId, HashMap<ComputePipelineInfo, PipelineResources>>,
+}
+
+impl PassResources {
     pub(crate) fn release(self, res_list: &mut ResourceList, storages: &mut Storages) {
+        for (_, (fb, _)) in self.framebuffers {
+            res_list.queue_framebuffer(fb);
+        }
+
         storages
             .render_pass
             .destroy(res_list, self.render_passes.values());
 
-        storages
-            .pipeline
-            .destroy(res_list, self.pipelines_graphic.values());
+        for (_, mat_inst) in self.pass_material {
+            res_list.queue_material(mat_inst.material);
+        }
 
-        storages
-            .pipeline
-            .destroy(res_list, self.pipelines_compute.values());
-
-        for (_, mat) in self.pipelines_mat {
-            res_list.queue_material(mat);
+        for (_, pipes) in self.compute_pipelines {
+            let pipes = pipes.values().map(|res| res.pipeline_handle);
+            storages.pipeline.destroy(res_list, pipes);
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct GraphResources {
-    pub(crate) exec_context: super::ExecutionContext,
+    pub(crate) exec_context: Option<super::ExecutionContext>,
 
     pub(crate) external_resources: HashSet<ResourceId>,
     pub(crate) images: HashMap<ResourceId, ImageHandle>,
     samplers: HashMap<ResourceId, SamplerHandle>,
     pub(crate) buffers: HashMap<ResourceId, BufferHandle>,
-
-    framebuffers: HashMap<PassId, (types::Framebuffer, gfx::image::Extent)>,
-
-    pass_mats: HashMap<PassId, crate::material::MaterialInstanceHandle>,
-
-    pub(crate) outputs: SmallVec<[ResourceId; 16]>,
 }
 
 impl GraphResources {
@@ -110,14 +113,6 @@ impl GraphResources {
         storages.sampler.destroy(res_list, self.samplers.values());
 
         storages.buffer.destroy(res_list, self.buffers.values());
-
-        for (_, (fb, _)) in self.framebuffers {
-            res_list.queue_framebuffer(fb);
-        }
-
-        for mat_instance in self.pass_mats.values() {
-            res_list.queue_material_instance(*mat_instance);
-        }
     }
 }
 

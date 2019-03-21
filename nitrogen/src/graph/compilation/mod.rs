@@ -10,19 +10,18 @@ pub(crate) use self::resolve::*;
 use super::{
     PassId, ResourceCreateInfo, ResourceName, ResourceReadType, ResourceType, ResourceWriteType,
 };
+use crate::graph::builder::resource_descriptor::{ImageWriteType, ResourceDescriptor};
 use crate::graph::builder::{GraphBuilder, PassType};
-use crate::graph::builder::resource_descriptor::{ResourceDescriptor, ImageWriteType};
-use std::collections::{HashSet, HashMap};
-use crate::graph::{PassName, ComputePassAccessor};
+use crate::graph::{ComputePassAccessor, PassName};
+use core::borrow::Borrow;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub struct ResourceId(pub(crate) usize);
 
 /// Error that can occur during graph compilation.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CompileError {
-    /// The graph handle to compile was invalid.
-    InvalidGraph,
     /// A resource has been redefined. Shadowing is not allowed.
     ResourceRedefined {
         /// Name of the resource.
@@ -61,6 +60,8 @@ pub enum CompileError {
     ResourceAlreadyMoved {
         /// Name of the resource.
         res: ResourceName,
+        /// Name of the moved resource.
+        attempted_new_name: ResourceName,
         /// Pass in which the resource is wrongly moved.
         pass: PassId,
         /// Pass in which the resource has been moved before.
@@ -68,6 +69,62 @@ pub enum CompileError {
     },
 }
 
+impl CompileError {
+    pub(crate) fn to_diagnostic(self, pass_names: &Vec<PassName>) -> String {
+        match self {
+            CompileError::ResourceRedefined { res, prev, pass } => {
+                let prev_name = pass_names[prev.0].clone();
+                let pass_name = pass_names[pass.0].clone();
+
+                format!(
+                    "Resource \"{}\" was defined in pass \"{}\" but \
+                     redefined in pass \"{}\". Shadowing is not permitted.",
+                    res, prev_name, pass_name,
+                )
+            }
+            CompileError::ReferencedInvalidResource { res, pass } => {
+                let pass_name = pass_names[pass.0].clone();
+
+                format!(
+                    "Resource \"{}\" was not defined but used in pass \"{}\".",
+                    res, pass_name
+                )
+            }
+            CompileError::InvalidTargetResource { res } => format!(
+                "Resource \"{}\" was set as a target resource but is not defined in the graph.",
+                res
+            ),
+            CompileError::ResourceTypeMismatch {
+                res,
+                pass,
+                used_as,
+                expected,
+            } => {
+                let pass_name = pass_names[pass.0].clone();
+
+                format!(
+                    "Invalid resource \"{}\" usage in pass \"{}\". Expected {:?} but got {:?}.",
+                    res, pass_name, expected, used_as,
+                )
+            }
+            CompileError::ResourceAlreadyMoved {
+                res,
+                attempted_new_name,
+                pass,
+                prev_move,
+            } => {
+                let pass_name = pass_names[pass.0].clone();
+                let prev_move_pass = pass_names[prev_move.0].clone();
+
+                format!("Attempted move of resource \"{}\" to \"{}\" in pass \"{}\", but resource was moved before in pass \"{}\".",
+                res,
+                attempted_new_name,
+                pass_name,
+                prev_move_pass,)
+            }
+        }
+    }
+}
 
 pub(crate) struct CompiledGraph {
     pub(crate) pass_names: Vec<PassName>,
@@ -85,7 +142,7 @@ pub(crate) struct CompiledGraph {
 
 pub(crate) fn compile_graph(
     mut builder: GraphBuilder,
-) -> Result<CompiledGraph, Vec<CompileError>> {
+) -> Result<CompiledGraph, (Vec<PassName>, Vec<CompileError>)> {
     let mut errors = vec![];
 
     let mut input = GraphInput::default();
@@ -112,12 +169,13 @@ pub(crate) fn compile_graph(
     let resolved = resolve_input(input, &mut errors);
 
     // replace target names with IDs
-    let targets = builder.targets
+    let targets = builder
+        .targets
         .iter()
         .filter_map(|res_name| match resolved.name_lookup.get(res_name) {
             None => {
                 errors.push(CompileError::InvalidTargetResource {
-                     res: res_name.clone(),
+                    res: res_name.clone(),
                 });
                 None
             }
@@ -138,21 +196,18 @@ pub(crate) fn compile_graph(
             }
 
             for (rid, mode, _) in &resolved.pass_writes[&id] {
-
                 if !resolved.is_backbuffer_resource(*rid) {
                     continue;
                 }
 
                 match mode {
-                    ResourceWriteType::Image(img_write) => {
-                        match img_write {
-                            ImageWriteType::Color | ImageWriteType::DepthStencil => {
-                                backbuffer.insert(id);
-                            },
-                            ImageWriteType::Storage => {},
+                    ResourceWriteType::Image(img_write) => match img_write {
+                        ImageWriteType::Color | ImageWriteType::DepthStencil => {
+                            backbuffer.insert(id);
                         }
+                        ImageWriteType::Storage => {}
                     },
-                    ResourceWriteType::Buffer(_) => {},
+                    ResourceWriteType::Buffer(_) => {}
                 }
             }
         }
@@ -173,24 +228,21 @@ pub(crate) fn compile_graph(
         set
     };
 
-    // replace all target names with IDs
-    let compiled_graph = CompiledGraph {
-        pass_names,
-
-        contextual_passes,
-        contextual_resources,
-
-        passes_that_render_to_the_backbuffer: passes_that_render_to_the_backbufer,
-
-        compute_passes,
-
-        graph_resources: resolved,
-        targets,
-    };
-
     if errors.is_empty() {
-        Ok(compiled_graph)
+        Ok(CompiledGraph {
+            pass_names,
+
+            contextual_passes,
+            contextual_resources,
+
+            passes_that_render_to_the_backbuffer: passes_that_render_to_the_backbufer,
+
+            compute_passes,
+
+            graph_resources: resolved,
+            targets,
+        })
     } else {
-        Err(errors)
+        Err((pass_names, errors))
     }
 }

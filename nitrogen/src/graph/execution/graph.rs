@@ -5,8 +5,8 @@
 use super::*;
 use crate::graph::{GraphWithNamesResolved, ResourceName};
 
-use std::collections::HashSet;
 use crate::graph::compilation::CompiledGraph;
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ExecutionBatch {
@@ -170,7 +170,12 @@ impl ExecutionGraph {
                             .filter_map(|pass| pass_destroys.get(pass))
                             .flatten()
                             // If a resource was created by moving the original
-                            .filter_map(|res| compiled.graph_resources.moved_from(*res).or_else(|| Some(*res)))
+                            .filter_map(|res| {
+                                compiled
+                                    .graph_resources
+                                    .moved_from(*res)
+                                    .or_else(|| Some(*res))
+                            })
                             // Also don't destroy target resources. Ever.
                             .filter(|res| !keep_list.contains(res))
                             .collect();

@@ -245,8 +245,8 @@ impl<'a> RenderPassEncoder<'a> {
     ) -> Option<()> {
         let layout = self.pipeline_layout;
 
-        let mat = self.storages.material.raw(material.0)?;
-        let instance = mat.instance_raw(material.1)?;
+        let mat = self.storages.material.raw(material.material)?;
+        let instance = mat.instance_raw(material.instance)?;
 
         let set = &instance.set;
 
@@ -321,8 +321,8 @@ impl<'a> ComputeCommandBuffer<'a> {
     ) -> Option<()> {
         let layout = self.pipeline_layout;
 
-        let mat = self.storages.material.raw(material.0)?;
-        let instance = mat.instance_raw(material.1)?;
+        let mat = self.storages.material.raw(material.material)?;
+        let instance = mat.instance_raw(material.instance)?;
 
         let set = &instance.set;
 

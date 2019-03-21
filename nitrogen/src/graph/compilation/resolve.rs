@@ -7,8 +7,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::*;
 
 use super::GraphInput;
+use crate::graph::builder::resource_descriptor::ImageInfo;
 use crate::graph::PassType;
-use crate::graph::builder::resource_descriptor::{ImageCreateInfo, ImageInfo};
 
 // the Option<u8> represents a possible sampler binding
 pub(crate) type ReadsByResource = (ResourceId, ResourceReadType, u8, Option<u8>);
@@ -65,22 +65,17 @@ impl GraphWithNamesResolved {
 
         let (id, info) = if let Some((id, info)) = self.create_info(id) {
             (id, info)
-        }  else {
+        } else {
             return false;
         };
 
         match info {
-            ResourceCreateInfo::Image(img_info) => {
-
-                match &img_info {
-                    ImageInfo::BackbufferRead(_) => false,
-                    ImageInfo::Create(create) => {
-                        match create.size_mode {
-                            image::ImageSizeMode::ContextRelative { .. } => true,
-                            image::ImageSizeMode::Absolute { .. } => false,
-                        }
-                    }
-                }
+            ResourceCreateInfo::Image(img_info) => match &img_info {
+                ImageInfo::BackbufferRead { .. } => false,
+                ImageInfo::Create(create) => match create.size_mode {
+                    image::ImageSizeMode::ContextRelative { .. } => true,
+                    image::ImageSizeMode::Absolute { .. } => false,
+                },
             },
             ResourceCreateInfo::Buffer(_buf) => false,
             ResourceCreateInfo::Virtual => false,
@@ -92,20 +87,16 @@ impl GraphWithNamesResolved {
     }
 
     pub(crate) fn is_backbuffer_resource(&self, id: ResourceId) -> bool {
-        use crate::image;
-
-        let (id, info) = if let Some((id, info)) = self.create_info(id) {
-            (id, info)
-        }  else {
+        let info = if let Some((_, info)) = self.create_info(id) {
+            info
+        } else {
             return false;
         };
 
         match info {
-            ResourceCreateInfo::Image(img_info) => {
-                match &img_info {
-                    ImageInfo::BackbufferRead(_) => true,
-                    ImageInfo::Create(_) => false,
-                }
+            ResourceCreateInfo::Image(img_info) => match &img_info {
+                ImageInfo::BackbufferRead { .. } => true,
+                ImageInfo::Create(_) => false,
             },
             ResourceCreateInfo::Buffer(_buf) => false,
             ResourceCreateInfo::Virtual => false,
@@ -215,6 +206,7 @@ pub(crate) fn resolve_input(
                 if let Some(prev_pass) = resource_defines.get(prev_res) {
                     errors.push(CompileError::ResourceAlreadyMoved {
                         res: old_name.clone(),
+                        attempted_new_name: new_name.clone(),
                         pass,
                         prev_move: *prev_pass,
                     });

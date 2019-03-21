@@ -1,11 +1,11 @@
 pub mod resource_descriptor;
 
 pub use self::resource_descriptor::*;
-use crate::util::CowString;
 use crate::graph::pass::ComputePass;
 use crate::graph::{ComputePassAccessor, PassName, ResourceName};
-use std::rc::Rc;
+use crate::util::CowString;
 use std::cell::RefCell;
+use std::rc::Rc;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub(crate) enum PassType {
@@ -22,7 +22,6 @@ pub struct GraphBuilder {
 }
 
 impl GraphBuilder {
-
     pub fn new(name: impl Into<GraphName>) -> Self {
         GraphBuilder {
             name: name.into(),
@@ -37,7 +36,6 @@ impl GraphBuilder {
         pass: impl ComputePass + 'static,
     ) {
         let accessor = {
-
             let pass_ref_describe = Rc::new(RefCell::new(pass));
             let pass_ref_execute = pass_ref_describe.clone();
 
@@ -46,7 +44,6 @@ impl GraphBuilder {
                     pass_ref_describe.borrow_mut().describe(res);
                 }),
                 execute: Box::new(move |store, dispatcher| {
-
                     let pass = pass_ref_execute.borrow();
 
                     let mut dispatcher = dispatcher.into_typed_dispatcher(&*pass);
@@ -57,6 +54,8 @@ impl GraphBuilder {
                 }),
             }
         };
+
+        self.compute_passes.push((name.into(), accessor));
     }
 
     pub fn add_target(&mut self, resource_name: impl Into<ResourceName>) {

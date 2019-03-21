@@ -32,7 +32,6 @@ pub(crate) enum ResourceCreateInfo {
 /// Type used to record which resources are used in what ways.
 #[derive(Hash, Default)]
 pub struct ResourceDescriptor {
-
     /// Mapping from names to resource create information
     pub(crate) resource_creates: Vec<(ResourceName, ResourceCreateInfo)>,
     /// Mapping from new name to src name
@@ -63,14 +62,22 @@ impl ResourceDescriptor {
     }
 
     /// Read an image resource from the backbuffer and give it a graph-local name.
-    pub fn image_backbuffer_get<BN, LN>(&mut self, backbuffer_name: BN, local_name: LN)
-    where
+    pub fn image_backbuffer_get<BN, LN, F>(
+        &mut self,
+        backbuffer_name: BN,
+        local_name: LN,
+        format: F,
+    ) where
         BN: Into<ResourceName>,
         LN: Into<ResourceName>,
+        F: Into<gfx::format::Format>,
     {
         self.resource_creates.push((
             local_name.into(),
-            ResourceCreateInfo::Image(ImageInfo::BackbufferRead(backbuffer_name.into())),
+            ResourceCreateInfo::Image(ImageInfo::BackbufferRead {
+                name: backbuffer_name.into(),
+                format: format.into(),
+            }),
         ));
     }
 
@@ -226,7 +233,10 @@ pub enum ImageClearValue {
 #[derive(Debug, Clone, Hash)]
 pub(crate) enum ImageInfo {
     Create(ImageCreateInfo),
-    BackbufferRead(ResourceName),
+    BackbufferRead {
+        name: ResourceName,
+        format: gfx::format::Format,
+    },
 }
 
 /// Information needed to create an image resource

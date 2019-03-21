@@ -8,27 +8,27 @@ use crate::graph::GraphWithNamesResolved;
 use gfx::buffer::Usage as BUsage;
 use gfx::image::Usage as IUsage;
 
+use crate::graph::compilation::CompiledGraph;
 use crate::graph::{
     BufferReadType, BufferWriteType, ImageInfo, ImageReadType, ImageWriteType, ResourceCreateInfo,
     ResourceReadType, ResourceWriteType,
 };
 
 pub(crate) fn derive_resource_usage(
-    backbuffer_usage: &BackbufferUsage,
     exec: &ExecutionGraph,
-    resolved: &GraphWithNamesResolved,
-    outputs: &[ResourceId],
+    compiled: &CompiledGraph,
 ) -> ResourceUsages {
     let mut usages = ResourceUsages::default();
 
     for batch in &exec.pass_execution {
-        derive_batch(backbuffer_usage, batch, resolved, &mut usages);
+        derive_batch(batch, compiled, &mut usages);
     }
 
     // outputs have to be readable somehow
-    outputs
+    compiled
+        .targets
         .iter()
-        .filter_map(|res| resolved.moved_from(*res))
+        .filter_map(|res| compiled.graph_resources.moved_from(*res))
         .for_each(|res| {
             if let Some((usage, _)) = usages.image.get_mut(&res) {
                 *usage |= IUsage::SAMPLED;
@@ -43,15 +43,10 @@ pub(crate) fn derive_resource_usage(
     usages
 }
 
-fn derive_batch(
-    backbuffer_usage: &BackbufferUsage,
-    batch: &ExecutionBatch,
-    resolved: &GraphWithNamesResolved,
-    usages: &mut ResourceUsages,
-) {
+fn derive_batch(batch: &ExecutionBatch, compiled: &CompiledGraph, usages: &mut ResourceUsages) {
     // Start with info from creation
     for create in &batch.resource_create {
-        let info = &resolved.infos[create];
+        let info = &compiled.graph_resources.infos[create];
 
         match info {
             ResourceCreateInfo::Buffer(_buf) => {
@@ -65,13 +60,12 @@ fn derive_batch(
 
                 usages.image.insert(*create, (usage, format));
             }
-            ResourceCreateInfo::Image(ImageInfo::BackbufferRead(n)) => {
+            ResourceCreateInfo::Image(ImageInfo::BackbufferRead { format, .. }) => {
                 // we don't really care about this, as all backbuffer resources have
                 // explicit usages
-                let format = backbuffer_usage.images[n];
                 usages
                     .image
-                    .insert(*create, (gfx::image::Usage::empty(), format));
+                    .insert(*create, (gfx::image::Usage::empty(), *format));
             }
             ResourceCreateInfo::Virtual => {
                 // nothing to do here as we are not concerned with how external resources are
@@ -82,20 +76,16 @@ fn derive_batch(
 
     // Looking at all reads and writes in a pass
     for pass in &batch.passes {
-        derive_pass(resolved, *pass, usages);
+        derive_pass(compiled, *pass, usages);
     }
 }
 
-fn derive_pass(
-    resolved: &GraphWithNamesResolved,
-    pass: PassId,
-    usages: &mut ResourceUsages,
-) -> Option<()> {
+fn derive_pass(compiled: &CompiledGraph, pass: PassId, usages: &mut ResourceUsages) -> Option<()> {
     // inspect read types and adjust usage
 
-    for (res, read_ty, _, _) in &resolved.pass_reads[&pass] {
+    for (res, read_ty, _, _) in &compiled.graph_resources.pass_reads[&pass] {
         // TODO log this error and continue searching
-        let origin = resolved.moved_from(*res)?;
+        let origin = compiled.graph_resources.moved_from(*res)?;
 
         match read_ty {
             ResourceReadType::Buffer(buf) => {
@@ -143,8 +133,8 @@ fn derive_pass(
 
     // inspect write types and adjust usage
 
-    for (res, write_ty, _) in &resolved.pass_writes[&pass] {
-        let origin = resolved.moved_from(*res)?;
+    for (res, write_ty, _) in &compiled.graph_resources.pass_writes[&pass] {
+        let origin = compiled.graph_resources.moved_from(*res)?;
 
         match write_ty {
             ResourceWriteType::Buffer(buf) => {

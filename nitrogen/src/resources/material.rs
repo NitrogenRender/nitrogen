@@ -30,7 +30,17 @@ const MAX_SETS_PER_POOL: u8 = 16;
 /// [`MaterialInstance`]: ./struct.MaterialInstance.html
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
-pub struct MaterialInstanceHandle(pub MaterialHandle, pub Handle<MaterialInstance>);
+pub struct MaterialInstanceHandle {
+    pub(crate) material: MaterialHandle,
+    pub(crate) instance: Handle<MaterialInstance>,
+}
+
+impl MaterialInstanceHandle {
+    /// Return the material this instance represents.
+    pub fn material(self) -> MaterialHandle {
+        self.material
+    }
+}
 
 // Implementation detail:
 // A material contains its parameters for validation and later pool creation.
@@ -296,7 +306,7 @@ impl MaterialStorage {
 
         let instance = mat.create_instance(device)?;
 
-        Ok(MaterialInstanceHandle(material, instance))
+        Ok(MaterialInstanceHandle { material, instance })
     }
 
     pub(crate) unsafe fn write_instance<I>(
@@ -314,9 +324,9 @@ impl MaterialStorage {
     {
         use gfx::Device;
 
-        let mat = self.storage.get(instance.0)?;
+        let mat = self.storage.get(instance.material)?;
 
-        let instance = mat.instances.get(instance.1)?;
+        let instance = mat.instances.get(instance.instance)?;
 
         // TODO verify that types match?
         let writes = data.into_iter().filter_map(|write| {
@@ -350,13 +360,13 @@ impl MaterialStorage {
     }
 
     pub(crate) unsafe fn destroy_instances(&mut self, instances: &[MaterialInstanceHandle]) {
-        for MaterialInstanceHandle(mat_handle, inst) in instances {
-            let mat = match self.storage.get_mut(*mat_handle) {
+        for MaterialInstanceHandle { material, instance } in instances {
+            let mat = match self.storage.get_mut(*material) {
                 Some(mat) => mat,
                 None => continue,
             };
 
-            mat.free_instance(*inst);
+            mat.free_instance(*instance);
         }
     }
 

@@ -5,16 +5,15 @@
 use std::collections::BTreeMap;
 
 use super::*;
+use crate::graph::builder::PassType;
 use crate::graph::ResourceDescriptor;
 use crate::graph::{ResourceCreateInfo, ResourceReadType, ResourceWriteType};
-use crate::graph::builder::PassType;
 
 // the Option<u8> represents a possible sampler binding
 pub(crate) type ResourceRead = (ResourceName, ResourceReadType, u8, Option<u8>);
 
 #[derive(Debug, Hash, Default)]
 pub(crate) struct GraphInput {
-
     pub(crate) pass_types: BTreeMap<PassId, PassType>,
 
     pub(crate) resource_creates: BTreeMap<PassId, Vec<(ResourceName, ResourceCreateInfo)>>,
@@ -28,7 +27,12 @@ pub(crate) struct GraphInput {
 }
 
 impl GraphInput {
-    pub(crate) fn add_res_descriptor(&mut self, id: PassId, res: ResourceDescriptor, pass_type: PassType) {
+    pub(crate) fn add_res_descriptor(
+        &mut self,
+        id: PassId,
+        res: ResourceDescriptor,
+        pass_type: PassType,
+    ) {
         self.pass_types.insert(id, pass_type);
 
         self.resource_creates.insert(id, res.resource_creates);
@@ -37,7 +41,6 @@ impl GraphInput {
         self.resource_reads.insert(id, res.resource_reads);
         self.resource_writes.insert(id, res.resource_writes);
 
-        self.resource_backbuffer
-            .insert(id, res.resource_backbuffer);
+        self.resource_backbuffer.insert(id, res.resource_backbuffer);
     }
 }

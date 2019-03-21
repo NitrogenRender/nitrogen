@@ -332,29 +332,30 @@ impl SubmitGroup {
             material: &mut ctx.material_storage,
         };
 
-        let res = self.graph_resources.remove(&graph);
+        let res = self.graph_resources.entry(graph).or_default();
 
-        match ctx.graph_storage.execute(
+        let mut sync = QueueSyncRefs {
+            sem_pool: &self.sem_pool,
+            sem_list: &mut self.sem_list,
+            res_list: &mut self.res_destroys,
+        };
+
+        if let Err(err) = ctx.graph_storage.execute(
             &ctx.device_ctx,
-            &self.sem_pool,
-            &mut self.sem_list,
-            &self.pool_graphics,
-            &self.pool_compute,
-            &mut self.res_destroys,
+            &mut sync,
             &mut storages,
+            (&self.pool_graphics, &self.pool_compute),
             store,
             graph,
-            backbuffer,
             res,
+            backbuffer,
             exec_context,
         ) {
-            Ok(res) => {
-                self.graph_resources.insert(graph, res);
+            if let Some(res) = self.graph_resources.remove(&graph) {
+                res.release(&mut self.res_destroys, &mut storages);
             }
-            Err(err) => {
-                self.graph_resources.remove(&graph);
-                Err(err)?;
-            }
+
+            return Err(err)?;
         }
 
         Ok(())
@@ -380,6 +381,10 @@ impl SubmitGroup {
 
         for handle in graph.into_iter() {
             let handle = *handle.borrow();
+
+            if let Some(res) = self.graph_resources.remove(&handle) {
+                res.release(&mut self.res_destroys, &mut storages);
+            }
 
             ctx.graph_storage
                 .destroy(&mut self.res_destroys, &mut storages, handle);
@@ -550,6 +555,12 @@ impl SubmitGroup {
 
         self.sem_pool.reset();
     }
+}
+
+pub(crate) struct QueueSyncRefs<'a> {
+    pub(crate) sem_pool: &'a SemaphorePool,
+    pub(crate) sem_list: &'a mut SemaphoreList,
+    pub(crate) res_list: &'a mut ResourceList,
 }
 
 pub(crate) struct ResourceList {

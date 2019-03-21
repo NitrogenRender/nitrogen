@@ -4,24 +4,21 @@
 
 //! Functionalities for describing and implementing passes.
 
-
 pub mod command;
 pub use self::command::*;
 
 pub mod dispatcher;
 pub use self::dispatcher::*;
 
-use crate::graph::{builder, ComputePassAccessor};
+use crate::graph::builder;
 
 use crate::material::MaterialHandle;
 use crate::vertex_attrib::VertexAttribHandle;
 
 use crate::util::CowString;
 
-use std::borrow::Cow;
 use smallvec::SmallVec;
-use std::marker::PhantomData;
-use crate::graph::command::ComputeCommandBuffer;
+use std::borrow::Cow;
 
 /// Numerical identifier for a pass.
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, Debug)]
@@ -201,6 +198,27 @@ pub struct Specialization {
     pub value: SmallVec<[u8; 256]>,
 }
 
+pub fn specialization_constant<T: Copy>(id: u32, data: T) -> Specialization {
+    let data_size = std::mem::size_of::<T>();
+
+    let mut spec_constant = Specialization {
+        id,
+        value: SmallVec::with_capacity(data_size),
+    };
+
+    unsafe {
+        spec_constant.value.set_len(data_size);
+    }
+
+    let data_ptr = spec_constant.value.as_mut_slice().as_ptr() as *mut T;
+
+    unsafe {
+        std::ptr::write_unaligned(data_ptr, data);
+    }
+
+    spec_constant
+}
+
 pub type ShaderHandle = ();
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -218,7 +236,6 @@ pub struct ComputePipelineInfo {
 
 /// Trait used to implement compute pass functionality.
 pub trait ComputePass: Sized {
-
     /// Configuration type of the pass.
     ///
     /// The configuration is used to dispatch work on potentially different pipelines.
