@@ -74,6 +74,7 @@ impl PassResources {
 
         storages
             .render_pass
+            .borrow_mut()
             .destroy(res_list, self.render_passes.values());
 
         for (_, mat_inst) in self.pass_material {
@@ -82,7 +83,7 @@ impl PassResources {
 
         for (_, pipes) in self.compute_pipelines {
             let pipes = pipes.values().map(|res| res.pipeline_handle);
-            storages.pipeline.destroy(res_list, pipes);
+            storages.pipeline.borrow_mut().destroy(res_list, pipes);
         }
     }
 }
@@ -99,7 +100,7 @@ pub(crate) struct GraphResources {
 
 impl GraphResources {
     pub(crate) fn release(self, res_list: &mut ResourceList, storages: &mut Storages) {
-        storages.image.destroy(
+        storages.image.borrow_mut().destroy(
             res_list,
             self.images.iter().filter_map(|(res, handle)| {
                 if self.external_resources.contains(res) {
@@ -110,9 +111,15 @@ impl GraphResources {
             }),
         );
 
-        storages.sampler.destroy(res_list, self.samplers.values());
+        storages
+            .sampler
+            .borrow_mut()
+            .destroy(res_list, self.samplers.values());
 
-        storages.buffer.destroy(res_list, self.buffers.values());
+        storages
+            .buffer
+            .borrow_mut()
+            .destroy(res_list, self.buffers.values());
     }
 }
 

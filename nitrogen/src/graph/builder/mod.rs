@@ -45,11 +45,11 @@ impl GraphBuilder {
                 }),
                 execute: Box::new(move |store, dispatcher| {
                     let pass = pass_ref_execute.borrow();
+                    {
+                        let mut dispatcher =
+                            dispatcher.into_typed_dispatcher(pass_ref_execute.clone());
 
-                    let mut dispatcher = dispatcher.into_typed_dispatcher(&*pass);
-
-                    unsafe {
-                        pass.execute(store, &mut dispatcher);
+                        unsafe { pass.execute(store, &mut dispatcher) }
                     }
                 }),
             }

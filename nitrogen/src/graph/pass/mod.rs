@@ -10,13 +10,14 @@ pub use self::command::*;
 pub mod dispatcher;
 pub use self::dispatcher::*;
 
-use crate::graph::builder;
+use crate::graph::{builder, GraphExecError};
 
 use crate::material::MaterialHandle;
 use crate::vertex_attrib::VertexAttribHandle;
 
 use crate::util::CowString;
 
+use crate::resources::shader::ComputeShaderHandle;
 use smallvec::SmallVec;
 use std::borrow::Cow;
 
@@ -104,6 +105,7 @@ impl From<Comparison> for gfx::pso::Comparison {
     }
 }
 
+/*
 /// Description of a graphics pass pipeline.
 #[derive(Default)]
 pub struct GraphicsPassInfo {
@@ -127,54 +129,7 @@ pub struct GraphicsPassInfo {
     /// **NOTE**: in 4-bytes, not bytes!!! e.g. 0..4 states bytes 0..16
     pub push_constants: Vec<std::ops::Range<u32>>,
 }
-
-/// Description of a compute pass pipeline
-#[derive(Default)]
-pub struct ComputePassInfo {
-    /// Materials used in the pass with their associated set-bindings.
-    pub materials: Vec<(usize, MaterialHandle)>,
-    /// Description of the compute shader program.
-    pub shader: ShaderInfo,
-    /// Range of push constants
-    pub push_constants: Option<std::ops::Range<u32>>,
-}
-
-pub(crate) enum PassInfo {
-    Graphics(GraphicsPassInfo),
-    Compute(ComputePassInfo),
-}
-
-/// Set of shaders used in graphics passes.
-///
-/// impl-note: TODO add tessellation shaders?
-#[derive(Debug, Default)]
-pub struct Shaders {
-    /// Description of the vertex program. This is mandatory.
-    pub vertex: ShaderInfo,
-    /// Description of the optional fragment program.
-    pub fragment: Option<ShaderInfo>,
-    /// Description of the optional geometry program.
-    pub geometry: Option<ShaderInfo>,
-}
-
-/// Description of a shader program
-#[derive(Debug, Clone)]
-pub struct ShaderInfo {
-    /// SPIR-V binary code of the program.
-    pub content: Cow<'static, [u8]>,
-
-    /// The entry point of the program.
-    pub entry: CowString,
-}
-
-impl Default for ShaderInfo {
-    fn default() -> Self {
-        ShaderInfo {
-            content: Cow::Borrowed(&[]),
-            entry: "".into(),
-        }
-    }
-}
+*/
 
 /// Trait used to implement graphics pass functionality.
 pub trait GraphicsPassImpl {
@@ -219,11 +174,9 @@ pub fn specialization_constant<T: Copy>(id: u32, data: T) -> Specialization {
     spec_constant
 }
 
-pub type ShaderHandle = ();
-
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
-pub struct Shader {
-    pub handle: ShaderHandle,
+pub struct Shader<HandleType> {
+    pub handle: HandleType,
     pub specialization: Vec<Specialization>,
 }
 
@@ -231,7 +184,7 @@ pub struct Shader {
 pub struct ComputePipelineInfo {
     pub materials: Vec<(usize, MaterialHandle)>,
     pub push_constant_range: Option<std::ops::Range<u32>>,
-    pub shader: Shader,
+    pub shader: Shader<ComputeShaderHandle>,
 }
 
 /// Trait used to implement compute pass functionality.
@@ -253,5 +206,9 @@ pub trait ComputePass: Sized {
     /// Dispatch commands can be recorded into the `cmd`-command buffer.
     ///
     /// Data can be read from the `store` as inputs to the execution.
-    unsafe fn execute(&self, store: &super::Store, cmd: &mut ComputeDispatcher<Self>);
+    unsafe fn execute(
+        &self,
+        store: &super::Store,
+        cmd: &mut ComputeDispatcher<Self>,
+    ) -> Result<(), GraphExecError>;
 }

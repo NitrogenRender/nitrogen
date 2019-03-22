@@ -134,7 +134,7 @@ pub(crate) struct CompiledGraph {
     pub(crate) contextual_passes: HashSet<PassId>,
     pub(crate) contextual_resources: HashSet<ResourceId>,
 
-    pub(crate) passes_that_render_to_the_backbuffer: HashSet<PassId>,
+    pub(crate) passes_that_render_to_the_backbuffer: HashMap<PassId, Vec<ResourceName>>,
 
     pub(crate) graph_resources: GraphWithNamesResolved,
     pub(crate) targets: HashSet<ResourceId>,
@@ -186,29 +186,19 @@ pub(crate) fn compile_graph(
     // keep track of passes that need their base resources rebuild when the context changes.
     let (contextual_passes, passes_that_render_to_the_backbufer) = {
         let mut contextual = HashSet::new();
-        let mut backbuffer = HashSet::new();
+        let mut backbuffer = HashMap::<PassId, Vec<ResourceName>>::new();
 
         for i in 0..pass_names.len() {
             let id = PassId(i);
 
-            if resolved.is_pass_context_dependent(id) {
+            let dep = resolved.pass_dependency(id);
+
+            if dep.context {
                 contextual.insert(id);
             }
 
-            for (rid, mode, _) in &resolved.pass_writes[&id] {
-                if !resolved.is_backbuffer_resource(*rid) {
-                    continue;
-                }
-
-                match mode {
-                    ResourceWriteType::Image(img_write) => match img_write {
-                        ImageWriteType::Color | ImageWriteType::DepthStencil => {
-                            backbuffer.insert(id);
-                        }
-                        ImageWriteType::Storage => {}
-                    },
-                    ResourceWriteType::Buffer(_) => {}
-                }
+            if let Some(deps) = dep.backbuffer {
+                backbuffer.entry(id).or_default().extend(deps);
             }
         }
 

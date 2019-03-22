@@ -41,17 +41,20 @@ pub use self::compilation::CompileError;
 pub mod store;
 pub use self::store::*;
 
+use crate::resources::shader::ShaderStorage;
 use crate::submit_group::{QueueSyncRefs, ResourceList};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 pub(crate) struct Storages<'a> {
-    pub render_pass: &'a mut RenderPassStorage,
-    pub pipeline: &'a mut PipelineStorage,
-    pub image: &'a mut ImageStorage,
-    pub buffer: &'a mut BufferStorage,
-    pub vertex_attrib: &'a VertexAttribStorage,
-    pub sampler: &'a mut SamplerStorage,
-    pub material: &'a mut MaterialStorage,
+    pub shader: &'a RefCell<ShaderStorage>,
+    pub render_pass: &'a RefCell<RenderPassStorage>,
+    pub pipeline: &'a RefCell<PipelineStorage>,
+    pub image: &'a RefCell<ImageStorage>,
+    pub buffer: &'a RefCell<BufferStorage>,
+    pub vertex_attrib: &'a RefCell<VertexAttribStorage>,
+    pub sampler: &'a RefCell<SamplerStorage>,
+    pub material: &'a RefCell<MaterialStorage>,
 }
 
 /// Opaque handle to a graph.
@@ -65,7 +68,7 @@ pub type ResourceName = CowString;
 
 pub(crate) struct ComputePassAccessor {
     pub(crate) describe: Box<dyn Fn(&mut ResourceDescriptor)>,
-    pub(crate) execute: Box<dyn Fn(&Store, RawComputeDispatcher)>,
+    pub(crate) execute: Box<dyn Fn(&Store, RawComputeDispatcher) -> Result<(), GraphExecError>>,
 }
 
 #[derive(Clone, Debug, From)]
@@ -120,7 +123,7 @@ impl GraphStorage {
 
                 let mat = execution::create_pass_material(
                     device,
-                    &mut storages.material,
+                    &mut *storages.material.borrow_mut(),
                     &compiled.graph_resources,
                     id,
                 )?;
@@ -160,11 +163,11 @@ impl GraphStorage {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) unsafe fn execute(
-        &mut self,
-        device: &DeviceContext,
+    pub(crate) unsafe fn execute<'a>(
+        &'a mut self,
+        device: &'a DeviceContext,
         sync: &mut QueueSyncRefs,
-        storages: &mut Storages,
+        storages: &'a mut Storages<'a>,
         (pool_gfx, pool_cmpt): (&CommandPoolGraphics, &CommandPoolCompute),
         store: &Store,
         graph_handle: GraphHandle,
@@ -180,6 +183,7 @@ impl GraphStorage {
         let compiled = &graph.compiled_graph;
 
         // execution context size changed, some resources might need to be recreated
+        // TODO!!!
 
         match res.exec_context.clone() {
             None => {
@@ -216,7 +220,7 @@ impl GraphStorage {
             graph,
             res,
             context,
-        );
+        )
 
         /*
         let resources = {
@@ -326,8 +330,6 @@ impl GraphStorage {
 
         Ok(resources)
         */
-
-        Ok(())
     }
 }
 

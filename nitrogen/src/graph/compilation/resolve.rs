@@ -13,6 +13,12 @@ use crate::graph::PassType;
 // the Option<u8> represents a possible sampler binding
 pub(crate) type ReadsByResource = (ResourceId, ResourceReadType, u8, Option<u8>);
 
+pub(crate) struct PassDependency {
+    pub(crate) context: bool,
+    // list of backbuffer names that will be written to.
+    pub(crate) backbuffer: Option<Vec<ResourceName>>,
+}
+
 #[derive(Debug)]
 pub(crate) struct GraphWithNamesResolved {
     pub(crate) name_lookup: BTreeMap<ResourceName, ResourceId>,
@@ -82,24 +88,67 @@ impl GraphWithNamesResolved {
         }
     }
 
-    pub(crate) fn is_pass_context_dependent(&self, id: PassId) -> bool {
-        false
+    pub(crate) fn pass_dependency(&self, id: PassId) -> PassDependency {
+        let mut dependency = PassDependency {
+            context: false,
+            backbuffer: None,
+        };
+
+        match self.pass_types[&id] {
+            PassType::Compute => {
+                // can never depend on the context
+                dependency
+            }
+            PassType::Graphics => {
+                let writes = &self.pass_writes[&id];
+
+                for (id, write_type, _) in writes {
+                    let res_id = if let Some(id) = self.moved_from(*id) {
+                        id
+                    } else {
+                        return dependency;
+                    };
+
+                    match write_type {
+                        ResourceWriteType::Image(img) => match img {
+                            ImageWriteType::Color | ImageWriteType::DepthStencil => {
+                                let bb = self.is_backbuffer_resource(res_id);
+                                let context = self.is_resource_context_dependent(res_id);
+
+                                dependency.context |= context;
+
+                                if let Some(name) = bb {
+                                    dependency.backbuffer = dependency.backbuffer.map(|mut val| {
+                                        val.push(name);
+                                        val
+                                    });
+                                }
+                            }
+                            ImageWriteType::Storage => {}
+                        },
+                        ResourceWriteType::Buffer(_) => {}
+                    }
+                }
+
+                dependency
+            }
+        }
     }
 
-    pub(crate) fn is_backbuffer_resource(&self, id: ResourceId) -> bool {
+    pub(crate) fn is_backbuffer_resource(&self, id: ResourceId) -> Option<ResourceName> {
         let info = if let Some((_, info)) = self.create_info(id) {
             info
         } else {
-            return false;
+            return None;
         };
 
         match info {
             ResourceCreateInfo::Image(img_info) => match &img_info {
-                ImageInfo::BackbufferRead { .. } => true,
-                ImageInfo::Create(_) => false,
+                ImageInfo::BackbufferRead { name, .. } => Some(name.clone()),
+                ImageInfo::Create(_) => None,
             },
-            ResourceCreateInfo::Buffer(_buf) => false,
-            ResourceCreateInfo::Virtual => false,
+            ResourceCreateInfo::Buffer(_buf) => None,
+            ResourceCreateInfo::Virtual => None,
         }
     }
 }

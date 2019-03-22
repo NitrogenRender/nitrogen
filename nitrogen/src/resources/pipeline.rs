@@ -17,18 +17,20 @@ use crate::submit_group::ResourceList;
 use gfx::pso;
 use gfx::Device;
 
+use crate::graph::pass::Specialization;
+use smallvec::SmallVec;
 use std::collections::BTreeMap;
 use std::error::Error;
 
 #[derive(Clone, Debug, From, Display)]
 pub enum PipelineError {
-    #[display(fmt = "Creation of pipeline was unsuccessful")]
+    #[display(fmt = "Creation of pipeline was unsuccessful: {}", _0)]
     CreationError(gfx::pso::CreationError),
 
-    #[display(fmt = "Shader module could not be created")]
+    #[display(fmt = "Shader module could not be created: {}", _0)]
     ShaderError(gfx::device::ShaderError),
 
-    #[display(fmt = "Ran out of memory")]
+    #[display(fmt = "Ran out of memory: {}", _0)]
     OutOfMemory(gfx::device::OutOfMemory),
 }
 
@@ -58,6 +60,7 @@ pub(crate) struct ComputePipeline {
 pub(crate) struct ShaderInfo<'a> {
     pub(crate) content: &'a [u8],
     pub(crate) entry: &'a str,
+    pub(crate) specialization: &'a [Specialization],
 }
 
 #[derive(Clone)]
@@ -296,13 +299,33 @@ impl PipelineStorage {
                 .map(|range| (pso::ShaderStageFlags::COMPUTE, range.clone())),
         )?;
 
+        let (spec_const, spec_data) = {
+            let mut constants = SmallVec::<[_; 16]>::new();
+            let mut data = SmallVec::<[u8; 128]>::new();
+
+            for spec in create_info.shader.specialization {
+                let start = data.len();
+                let end = start + spec.value.len();
+
+                let constant = pso::SpecializationConstant {
+                    id: spec.id,
+                    range: (start as u16)..(end as u16),
+                };
+
+                constants.push(constant);
+                data.extend_from_slice(&spec.value);
+            }
+
+            (constants, data)
+        };
+
         let pipeline = {
             let shader_entry = pso::EntryPoint {
                 entry: create_info.shader.entry,
                 module: &shader_module,
                 specialization: pso::Specialization {
-                    constants: &[],
-                    data: &[],
+                    constants: spec_const.as_slice(),
+                    data: spec_data.as_slice(),
                 },
             };
 

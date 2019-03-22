@@ -3,6 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use nitrogen::graph::*;
+use nitrogen::resources::shader;
+use nitrogen::resources::shader::ShaderInfo;
 use nitrogen::*;
 
 const NUM_ELEMS: u64 = 32;
@@ -91,7 +93,6 @@ fn main() {
                 },
             )
             .unwrap();
-
         submit.wait(&mut ctx);
     }
 
@@ -141,21 +142,31 @@ unsafe fn create_graph(
     ctx: &mut Context,
     material_instance: material::MaterialInstanceHandle,
 ) -> Result<GraphHandle, GraphError> {
+    let shader = {
+        let info = ShaderInfo {
+            entry_point: "ComputeMain".into(),
+            spirv_content: include_bytes!(concat!(env!("OUT_DIR"), "/compute/add.hlsl.comp.spirv"),),
+        };
+
+        ctx.compute_shader_create(info)
+    };
+
     let mut builder = GraphBuilder::new("Adder");
 
     {
         struct Adder {
             mat: material::MaterialInstanceHandle,
+            shader: shader::ComputeShaderHandle,
         }
 
         impl ComputePass for Adder {
-            type Config = ();
+            type Config = f32;
 
-            fn configure(&self, _config: Self::Config) -> ComputePipelineInfo {
+            fn configure(&self, config: Self::Config) -> ComputePipelineInfo {
                 ComputePipelineInfo {
                     shader: Shader {
-                        handle: (),
-                        specialization: vec![],
+                        handle: self.shader,
+                        specialization: vec![specialization_constant(0, config)],
                     },
                     materials: vec![(0, self.mat.material())],
                     push_constant_range: Some(0..1),
@@ -166,18 +177,28 @@ unsafe fn create_graph(
                 builder.virtual_create("Test");
             }
 
-            unsafe fn execute(&self, _: &Store, cmd: &mut ComputeDispatcher<'_, Self>) {
-                cmd.with_config((), |cmd| {
+            unsafe fn execute(
+                &self,
+                _: &Store,
+                dispatcher: &mut ComputeDispatcher<Self>,
+            ) -> Result<(), graph::GraphExecError> {
+                dispatcher.with_config(1.0, |cmd| {
                     cmd.bind_material(0, self.mat);
-                    cmd.push_constant(0, 1_f32);
-
                     cmd.dispatch([NUM_ELEMS as _, 1, 1]);
-                });
+                })?;
+
+                dispatcher.with_config(9.0, |cmd| {
+                    cmd.bind_material(0, self.mat);
+                    cmd.dispatch([NUM_ELEMS as _, 1, 1]);
+                })?;
+
+                Ok(())
             }
         }
 
         let adder = Adder {
             mat: material_instance,
+            shader,
         };
 
         builder.add_compute_pass("Add", adder);

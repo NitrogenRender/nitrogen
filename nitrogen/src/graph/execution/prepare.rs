@@ -8,9 +8,9 @@ use crate::types;
 use gfx;
 
 use crate::graph::{
-    BufferReadType, BufferStorageType, BufferWriteType, ComputePassInfo, ExecutionContext,
-    GraphWithNamesResolved, GraphicsPassInfo, ImageInfo, ImageReadType, ImageWriteType, PassInfo,
-    ResourceCreateInfo, ResourceReadType, ResourceWriteType,
+    BufferReadType, BufferStorageType, BufferWriteType, ExecutionContext, GraphWithNamesResolved,
+    ImageInfo, ImageReadType, ImageWriteType, ResourceCreateInfo, ResourceReadType,
+    ResourceWriteType,
 };
 
 use crate::resources::{image, sampler};
@@ -25,6 +25,7 @@ use crate::resources::material::MaterialStorage;
 use crate::resources::pipeline::PipelineError;
 use crate::resources::render_pass::RenderPassError;
 use gfx::device::Device;
+use gfx::image::Layout::Preinitialized;
 use std::collections::BTreeMap;
 
 /// Errors that can occur when trying to prepare resources for a graph execution.
@@ -33,6 +34,9 @@ use std::collections::BTreeMap;
 pub enum PrepareError {
     #[display(fmt = "Renderpass invalid. Is the graph compiled?")]
     InvalidRenderPass,
+
+    #[display(fmt = "Pipeline could not be created because a mandatory shader handle is invalid")]
+    InvalidShaderHandle,
 
     #[display(fmt = "Resource {:?} is referenced which is invalid", _0)]
     InvalidResource(ResourceId),
@@ -258,7 +262,7 @@ pub(crate) unsafe fn prepare_pass(
 unsafe fn create_render_pass(
     device: &DeviceContext,
     backbuffer_usage: &BackbufferUsage,
-    storages: &mut Storages,
+    storages: &Storages,
     resolved_graph: &GraphWithNamesResolved,
     pass: PassId,
 ) -> Result<RenderPassHandle, PrepareError> {
@@ -434,18 +438,25 @@ unsafe fn create_render_pass(
         dependencies: &[dependencies],
     };
 
-    let render_pass = storages.render_pass.create(device, create_info)?;
+    let render_pass = storages
+        .render_pass
+        .borrow_mut()
+        .create(device, create_info)?;
     Ok(render_pass)
 }
 
-unsafe fn create_pipeline_compute(
+pub(crate) unsafe fn create_pipeline_compute(
     device: &DeviceContext,
-    storages: &mut Storages,
+    storages: &Storages,
     pass: PassId,
     pass_material: Option<MaterialHandle>,
-    info: &ComputePassInfo,
+    info: &ComputePipelineInfo,
 ) -> Result<PipelineHandle, PrepareError> {
-    let layouts = create_pipeline_base(storages.material, pass_material, &info.materials[..]);
+    let material_storage = storages.material.borrow();
+    let mut shader_storage = storages.shader.borrow_mut();
+    let mut pipeline_storage = storages.pipeline.borrow_mut();
+
+    let layouts = create_pipeline_base(&*material_storage, pass_material, &info.materials[..]);
 
     let layouts = layouts
         .into_iter()
@@ -453,26 +464,30 @@ unsafe fn create_pipeline_compute(
         .collect::<Vec<_>>();
 
     let mut push_constants = SmallVec::<[_; 1]>::new();
-    if let Some(range) = &info.push_constants {
+    if let Some(range) = &info.push_constant_range {
         push_constants.push(range.clone());
     }
 
+    let shader = shader_storage
+        .raw_compute(info.shader.handle)
+        .ok_or(PrepareError::InvalidShaderHandle)?;
+
     let create_info = crate::pipeline::ComputePipelineCreateInfo {
         shader: crate::pipeline::ShaderInfo {
-            entry: &info.shader.entry,
-            content: &info.shader.content,
+            content: shader.spirv_content.as_slice(),
+            entry: &shader.entry_point,
+            specialization: &info.shader.specialization,
         },
         descriptor_set_layout: &layouts[..],
         push_constants: push_constants.as_slice(),
     };
 
-    let pipeline_handle = storages
-        .pipeline
-        .create_compute_pipeline(device, create_info)?;
+    let pipeline_handle = pipeline_storage.create_compute_pipeline(device, create_info)?;
 
     Ok(pipeline_handle)
 }
 
+/*
 unsafe fn create_pipeline_graphics(
     device: &DeviceContext,
     storages: &mut Storages,
@@ -522,6 +537,7 @@ unsafe fn create_pipeline_graphics(
 
     Ok(pipeline_handle)
 }
+*/
 
 unsafe fn create_resource(
     usages: &ResourceUsages,
@@ -533,6 +549,10 @@ unsafe fn create_resource(
     info: &ResourceCreateInfo,
     res: &mut GraphResources,
 ) -> Option<()> {
+    let mut image_storage = storages.image.borrow_mut();
+    let mut sampler_storage = storages.sampler.borrow_mut();
+    let mut buffer_storage = storages.buffer.borrow_mut();
+
     match info {
         ResourceCreateInfo::Image(ImageInfo::BackbufferRead { name, .. }) => {
             // read image from backbuffer
@@ -581,14 +601,14 @@ unsafe fn create_resource(
                 is_transient: false,
             };
 
-            let img_handle = storages.image.create(device, create_info).ok()?;
+            let img_handle = image_storage.create(device, create_info).ok()?;
 
             res.images.insert(id, img_handle);
 
             // If the image is used for sampling then it means some other pass will read from it
             // as a color image. In that case we create a sampler for this image as well
             if usages.0.contains(gfx::image::Usage::SAMPLED) {
-                let sampler = storages.sampler.create(
+                let sampler = sampler_storage.create(
                     device,
                     sampler::SamplerCreateInfo {
                         min_filter: sampler::Filter::Linear,
@@ -617,8 +637,7 @@ unsafe fn create_resource(
                         usage,
                     };
 
-                    storages
-                        .buffer
+                    buffer_storage
                         .device_local_create(device, create_info)
                         .ok()?
                 }
@@ -629,8 +648,7 @@ unsafe fn create_resource(
                         usage,
                     };
 
-                    storages
-                        .buffer
+                    buffer_storage
                         .cpu_visible_create(device, create_info)
                         .ok()?
                 }
@@ -648,7 +666,7 @@ unsafe fn create_resource(
 }
 
 unsafe fn create_pipeline_base<'a>(
-    material_storage: &'a mut MaterialStorage,
+    material_storage: &'a MaterialStorage,
     pass_material: Option<MaterialHandle>,
     materials: &[(usize, MaterialHandle)],
 ) -> BTreeMap<usize, &'a types::DescriptorSetLayout> {
