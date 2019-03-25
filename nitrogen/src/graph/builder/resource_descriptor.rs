@@ -12,7 +12,7 @@ use self::ResourceReadType as R;
 use self::ResourceWriteType as W;
 
 /// Resource types that can be used in graphs and passes.
-#[derive(Hash, Debug, Clone, Copy)]
+#[derive(Hash, Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ResourceType {
     /// An image resource
     Image,
@@ -267,38 +267,41 @@ pub enum BufferStorageType {
     DeviceLocal,
 }
 
+/// Ways a resource can be used with read-access.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub(crate) enum ResourceReadType {
+pub enum ResourceReadType {
     Image(ImageReadType),
     Buffer(BufferReadType),
     Virtual,
 }
 
+/// Ways an image can be used with read-access.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub(crate) enum ImageReadType {
+pub enum ImageReadType {
     Color,
     Storage,
     DepthStencil,
 }
 
+/// Ways a buffer can be used with read-access.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub(crate) enum BufferReadType {
+pub enum BufferReadType {
     Storage,
     StorageTexel,
     Uniform,
     UniformTexel,
 }
 
-///
+/// Ways a resource can be used with write-access.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub(crate) enum ResourceWriteType {
+pub enum ResourceWriteType {
     Image(ImageWriteType),
     Buffer(BufferWriteType),
 }
 
 /// Ways an image can be used when writing to it.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub(crate) enum ImageWriteType {
+pub enum ImageWriteType {
     /// A color attachment of a Framebuffer
     Color,
 
@@ -311,7 +314,7 @@ pub(crate) enum ImageWriteType {
 
 /// Ways a buffer can be used when writing to it
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub(crate) enum BufferWriteType {
+pub enum BufferWriteType {
     /// A buffer used for reading or writing.
     Storage,
 
@@ -338,8 +341,8 @@ impl From<ResourceReadType> for ResourceType {
     }
 }
 
-impl From<ResourceCreateInfo> for ResourceType {
-    fn from(inf: ResourceCreateInfo) -> Self {
+impl From<&ResourceCreateInfo> for ResourceType {
+    fn from(inf: &ResourceCreateInfo) -> Self {
         match inf {
             ResourceCreateInfo::Image(..) => ResourceType::Image,
             ResourceCreateInfo::Buffer(..) => ResourceType::Buffer,

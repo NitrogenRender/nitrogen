@@ -124,20 +124,6 @@ fn main() {
     }
 }
 
-/*
-let info = ComputePassInfo {
-    shader: ShaderInfo {
-        entry: "ComputeMain".into(),
-        content: Cow::Borrowed(include_bytes!(concat!(
-            env!("OUT_DIR"),
-            "/compute/add.hlsl.comp.spirv"
-        ),)),
-    },
-    materials: vec![(0, material_instance.0)],
-    push_constants: Some(0..1),
-};
-*/
-
 unsafe fn create_graph(
     ctx: &mut Context,
     material_instance: material::MaterialInstanceHandle,

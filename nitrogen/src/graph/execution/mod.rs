@@ -27,6 +27,7 @@ use std::collections::{HashMap, HashSet};
 
 use smallvec::SmallVec;
 
+use crate::graph::pass::dispatcher::ResourceRefError;
 use crate::graph::pass::ComputePipelineInfo;
 use crate::resources::image::ImageFormat;
 use gfx;
@@ -40,6 +41,9 @@ pub enum GraphExecError {
 
     #[display(fmt = "Graph resources could not be created: {}", _0)]
     ResourcePrepareError(PrepareError),
+
+    #[display(fmt = "Attempted to use a graph resource in an invalid way: {:?}", _0)]
+    ResourceRefError(ResourceRefError),
 }
 
 impl std::error::Error for GraphExecError {}
@@ -57,9 +61,6 @@ pub(crate) struct PipelineResources {
 
 #[derive(Debug, Default)]
 pub(crate) struct PassResources {
-    // Framebuffers have a fixed size. If the size changes then they have to be recreated.
-    // Framebuffers do not depend on a pipeline, so they are unaffected by swap of pipeline.
-    pub(crate) framebuffers: HashMap<PassId, (types::Framebuffer, gfx::image::Extent)>,
     pub(crate) render_passes: HashMap<PassId, RenderPassHandle>,
 
     pub(crate) pass_material: HashMap<PassId, crate::material::MaterialInstanceHandle>,
@@ -68,10 +69,6 @@ pub(crate) struct PassResources {
 
 impl PassResources {
     pub(crate) fn release(self, res_list: &mut ResourceList, storages: &mut Storages) {
-        for (_, (fb, _)) in self.framebuffers {
-            res_list.queue_framebuffer(fb);
-        }
-
         storages
             .render_pass
             .borrow_mut()
@@ -92,6 +89,8 @@ impl PassResources {
 pub(crate) struct GraphResources {
     pub(crate) exec_context: Option<super::ExecutionContext>,
 
+    pub(crate) framebuffers: HashMap<PassId, (types::Framebuffer, gfx::image::Extent)>,
+
     pub(crate) external_resources: HashSet<ResourceId>,
     pub(crate) images: HashMap<ResourceId, ImageHandle>,
     samplers: HashMap<ResourceId, SamplerHandle>,
@@ -111,6 +110,10 @@ impl GraphResources {
             }),
         );
 
+        for (_, (fb, _)) in self.framebuffers {
+            res_list.queue_framebuffer(fb);
+        }
+
         storages
             .sampler
             .borrow_mut()
@@ -126,8 +129,6 @@ impl GraphResources {
 /// Backbuffers contain resources which can persist graph executions.
 #[derive(Debug, Default)]
 pub struct Backbuffer {
-    pub(crate) usage: BackbufferUsage,
-
     pub(crate) images: HashMap<super::ResourceName, ImageHandle>,
 
     // TODO there are no writes to this, only one read. removing??
@@ -146,25 +147,8 @@ impl Backbuffer {
     }
 
     /// Insert an image into the Backbuffer with a given name.
-    ///
-    /// Since an image-handle on its own does not carry format information with it,
-    /// the format has to be passed explicitly.
-    ///
-    /// impl-note: Maybe this should be a method on `Context` instead, so the format can be read
-    /// automatically?
-    pub fn image_put<T: Into<super::ResourceName>>(
-        &mut self,
-        name: T,
-        image: ImageHandle,
-        format: ImageFormat,
-    ) {
+    pub fn image_put<T: Into<super::ResourceName>>(&mut self, name: T, image: ImageHandle) {
         let name = name.into();
         self.images.insert(name.clone(), image);
-        self.usage.images.insert(name, format.into());
     }
-}
-
-#[derive(Debug, Default)]
-pub(crate) struct BackbufferUsage {
-    pub(crate) images: HashMap<super::ResourceName, gfx::format::Format>,
 }

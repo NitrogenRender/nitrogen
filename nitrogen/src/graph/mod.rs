@@ -118,18 +118,27 @@ impl GraphStorage {
         let pass_resources = {
             let mut res = PassResources::default();
 
-            for pass_id in 0..compiled.pass_names.len() {
-                let id = PassId(pass_id);
+            for batch in &exec_graph.pass_execution {
+                for pass in &batch.passes {
+                    let mat = execution::create_pass_material(
+                        device,
+                        &mut *storages.material.borrow_mut(),
+                        &compiled.graph_resources,
+                        *pass,
+                    )?;
 
-                let mat = execution::create_pass_material(
-                    device,
-                    &mut *storages.material.borrow_mut(),
-                    &compiled.graph_resources,
-                    id,
-                )?;
+                    if let Some(mat) = mat {
+                        res.pass_material.insert(*pass, mat);
+                    }
 
-                if let Some(mat) = mat {
-                    res.pass_material.insert(id, mat);
+                    // create base resources
+
+                    if compiled.compute_passes.contains_key(pass) {
+                        // nothing to do for compute passes. For now, at least.
+                    } else {
+                        // graphics
+                        prepare_graphics_pass_base(device, storages, &mut res, *pass, &compiled)?;
+                    }
                 }
             }
 

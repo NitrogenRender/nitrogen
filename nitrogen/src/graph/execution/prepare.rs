@@ -20,6 +20,7 @@ use crate::device::DeviceContext;
 use crate::resources::material::{MaterialError, MaterialHandle, MaterialInstanceHandle};
 use smallvec::SmallVec;
 
+use crate::graph::compilation::CompiledGraph;
 use crate::graph::ResourceName;
 use crate::resources::material::MaterialStorage;
 use crate::resources::pipeline::PipelineError;
@@ -67,6 +68,20 @@ pub enum PrepareError {
 }
 
 impl std::error::Error for PrepareError {}
+
+pub(crate) unsafe fn prepare_graphics_pass_base(
+    device: &DeviceContext,
+    storages: &Storages,
+    pass_res: &mut PassResources,
+    pass: PassId,
+    compiled: &CompiledGraph,
+) -> Result<(), PrepareError> {
+    let render_pass = create_render_pass(device, storages, &compiled.graph_resources, pass)?;
+
+    pass_res.render_passes.insert(pass, render_pass);
+
+    Ok(())
+}
 
 /*
 pub(crate) unsafe fn prepare(
@@ -136,115 +151,6 @@ pub(crate) unsafe fn prepare_pass(
                 .raw(render_pass)
                 .ok_or(PrepareError::InvalidRenderPass)?;
 
-            // get all image views and dimensions for framebuffer creation
-
-            let (views, dims): (SmallVec<[_; 16]>, SmallVec<[_; 16]>) = {
-                // we only care about images that are used as a color or depth-stencil attachment
-                let mut sorted_attachments = resolved.pass_writes[&pass]
-                    .iter()
-                    .filter(|(_, ty, _)| match ty {
-                        ResourceWriteType::Image(ImageWriteType::Color) => true,
-                        ResourceWriteType::Image(ImageWriteType::DepthStencil) => true,
-                        _ => false,
-                    })
-                    .collect::<SmallVec<[_; 16]>>();
-
-                // Sort them by binding
-                sorted_attachments
-                    .as_mut_slice()
-                    .sort_by_key(|(_, _, binding)| binding);
-
-                // resolve all the references, preserve error
-                let mut res_view_dims = sorted_attachments
-                    .into_iter()
-                    .map(|(res_id, _, _)| -> Result<_, PrepareError> {
-                        let res_id = resolved
-                            .moved_from(*res_id)
-                            .ok_or_else(|| PrepareError::InvalidResource(*res_id))?;
-                        let (_, create_info) = resolved
-                            .create_info(res_id)
-                            .ok_or_else(|| PrepareError::InvalidResource(res_id))?;
-
-                        let handle = match create_info {
-                            ResourceCreateInfo::Image(ImageInfo::BackbufferRead(n)) => {
-                                backbuffer.images.get(n).ok_or_else(|| {
-                                    PrepareError::InvalidBackbufferResource(n.clone())
-                                })?
-                            }
-                            ResourceCreateInfo::Image(ImageInfo::Create(_)) => res
-                                .images
-                                .get(&res_id)
-                                .ok_or_else(|| PrepareError::InvalidImageResource(res_id))?,
-                            // buffer attachments???
-                            _ => unreachable!(),
-                        };
-
-                        let image = storages
-                            .image
-                            .raw(*handle)
-                            .ok_or_else(|| PrepareError::InvalidImageHandle(*handle))?;
-
-                        Ok((&image.view, &image.dimension))
-                    })
-                    // depth textures might be "read" from when using for testing without writing
-                    .chain(
-                        resolved.pass_reads[&pass]
-                            .iter()
-                            .filter(|(_, ty, _, _)| match ty {
-                                ResourceReadType::Image(ImageReadType::DepthStencil) => true,
-                                _ => false,
-                            })
-                            .map(|(res_id, _, _, _)| -> Result<_, PrepareError> {
-                                let res_id = resolved
-                                    .moved_from(*res_id)
-                                    .ok_or_else(|| PrepareError::InvalidResource(*res_id))?;
-
-                                let handle = res.images[&res_id];
-
-                                let image = storages
-                                    .image
-                                    .raw(handle)
-                                    .ok_or_else(|| PrepareError::InvalidImageHandle(handle))?;
-
-                                Ok((&image.view, &image.dimension))
-                            }),
-                    );
-
-                // fold all the results into array, aborting on the first encountered error
-                // then bubble up the error
-                let view_dims: SmallVec<[_; 16]> = res_view_dims.try_fold(
-                    SmallVec::new(),
-                    |mut acc, val| -> Result<_, PrepareError> {
-                        acc.push(val?);
-                        Ok(acc)
-                    },
-                )?;
-
-                // split into views and dimensions
-                view_dims.into_iter().unzip()
-            };
-
-            // find "THE" extent of the framebuffer
-            // TODO check that all dimensions are the same using `all()`?
-            let extent = {
-                dims.as_slice()
-                    .iter()
-                    .map(|img_dim| img_dim.as_triple(1))
-                    .map(|(x, y, z)| gfx::image::Extent {
-                        width: x,
-                        height: y,
-                        depth: z,
-                    })
-                    .next()
-                    .ok_or(PrepareError::CantInferFramebufferExtent)?
-            };
-
-            use gfx::Device;
-
-            // wheeeey
-            let framebuffer = device
-                .device
-                .create_framebuffer(render_pass_raw, views, extent)?;
 
             res.framebuffers.insert(pass, (framebuffer, extent));
 
@@ -261,7 +167,6 @@ pub(crate) unsafe fn prepare_pass(
 
 unsafe fn create_render_pass(
     device: &DeviceContext,
-    backbuffer_usage: &BackbufferUsage,
     storages: &Storages,
     resolved_graph: &GraphWithNamesResolved,
     pass: PassId,
@@ -443,6 +348,129 @@ unsafe fn create_render_pass(
         .borrow_mut()
         .create(device, create_info)?;
     Ok(render_pass)
+}
+
+unsafe fn create_framebuffer(
+    device: &DeviceContext,
+    storages: &Storages,
+    resolved: &GraphWithNamesResolved,
+    backbuffer: &Backbuffer,
+    res: &GraphResources,
+    render_pass: RenderPassHandle,
+    pass: PassId,
+) -> Result<(), PrepareError> {
+    let image_storage = storages.image.borrow();
+    let render_pass_storage = storages.render_pass.borrow();
+
+    let render_pass_raw = render_pass_storage
+        .raw(render_pass)
+        .ok_or(PrepareError::InvalidRenderPass)?;
+
+    // get all image views and dimensions for framebuffer creation
+    let (views, dims): (SmallVec<[_; 16]>, SmallVec<[_; 16]>) = {
+        // we only care about images that are used as a color or depth-stencil attachment
+        let mut sorted_attachments = resolved.pass_writes[&pass]
+            .iter()
+            .filter(|(_, ty, _)| match ty {
+                ResourceWriteType::Image(ImageWriteType::Color) => true,
+                ResourceWriteType::Image(ImageWriteType::DepthStencil) => true,
+                _ => false,
+            })
+            .collect::<SmallVec<[_; 16]>>();
+
+        // Sort them by binding
+        sorted_attachments
+            .as_mut_slice()
+            .sort_by_key(|(_, _, binding)| binding);
+
+        // resolve all the references, preserve error
+        let mut res_view_dims = sorted_attachments
+            .into_iter()
+            .map(|(res_id, _, _)| -> Result<_, PrepareError> {
+                let res_id = resolved
+                    .moved_from(*res_id)
+                    .ok_or_else(|| PrepareError::InvalidResource(*res_id))?;
+                let (_, create_info) = resolved
+                    .create_info(res_id)
+                    .ok_or_else(|| PrepareError::InvalidResource(res_id))?;
+
+                let handle = match create_info {
+                    ResourceCreateInfo::Image(ImageInfo::BackbufferRead { name, .. }) => backbuffer
+                        .images
+                        .get(name)
+                        .ok_or_else(|| PrepareError::InvalidBackbufferResource(name.clone()))?,
+                    ResourceCreateInfo::Image(ImageInfo::Create(_)) => res
+                        .images
+                        .get(&res_id)
+                        .ok_or_else(|| PrepareError::InvalidImageResource(res_id))?,
+                    // buffer attachments???
+                    _ => unreachable!(),
+                };
+
+                let image = image_storage
+                    .raw(*handle)
+                    .ok_or_else(|| PrepareError::InvalidImageHandle(*handle))?;
+
+                Ok((&image.view, &image.dimension))
+            })
+            // depth textures might be "read" from when using for testing without writing
+            .chain(
+                resolved.pass_reads[&pass]
+                    .iter()
+                    .filter(|(_, ty, _, _)| match ty {
+                        ResourceReadType::Image(ImageReadType::DepthStencil) => true,
+                        _ => false,
+                    })
+                    .map(|(res_id, _, _, _)| -> Result<_, PrepareError> {
+                        let res_id = resolved
+                            .moved_from(*res_id)
+                            .ok_or_else(|| PrepareError::InvalidResource(*res_id))?;
+
+                        let handle = res.images[&res_id];
+
+                        let image = image_storage
+                            .raw(handle)
+                            .ok_or_else(|| PrepareError::InvalidImageHandle(handle))?;
+
+                        Ok((&image.view, &image.dimension))
+                    }),
+            );
+
+        // fold all the results into array, aborting on the first encountered error
+        // then bubble up the error
+        let view_dims: SmallVec<[_; 16]> =
+            res_view_dims.try_fold(SmallVec::new(), |mut acc, val| -> Result<_, PrepareError> {
+                acc.push(val?);
+                Ok(acc)
+            })?;
+
+        // split into views and dimensions
+        view_dims.into_iter().unzip()
+    };
+
+    // find "THE" extent of the framebuffer
+    // TODO check that all dimensions are the same using `all()`?
+    let extent = {
+        dims.as_slice()
+            .iter()
+            .map(|img_dim| img_dim.as_triple(1))
+            .map(|(x, y, z)| gfx::image::Extent {
+                width: x,
+                height: y,
+                depth: z,
+            })
+            .next()
+            .ok_or(PrepareError::CantInferFramebufferExtent)?
+    };
+
+    use gfx::Device;
+
+    // wheeeey
+    let framebuffer = device
+        .device
+        .create_framebuffer(render_pass_raw, views, extent)?;
+
+    Ok(())
 }
 
 pub(crate) unsafe fn create_pipeline_compute(

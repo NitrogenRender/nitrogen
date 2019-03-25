@@ -68,7 +68,9 @@ pub(crate) unsafe fn execute<'a>(
                             device,
                             storages,
                             pass_id: *pass,
-                            res: &mut graph.pass_resources,
+                            pass_res: &mut graph.pass_resources,
+                            graph_res: res,
+                            compiled: &graph.compiled_graph,
                         };
 
                         (accessor.execute)(store, raw_dispatcher)?;
