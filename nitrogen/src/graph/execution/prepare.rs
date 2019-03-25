@@ -8,9 +8,9 @@ use crate::types;
 use gfx;
 
 use crate::graph::{
-    BufferReadType, BufferStorageType, BufferWriteType, ExecutionContext, GraphWithNamesResolved,
-    ImageInfo, ImageReadType, ImageWriteType, ResourceCreateInfo, ResourceReadType,
-    ResourceWriteType,
+    BufferReadType, BufferStorageType, BufferWriteType, ExecutionContext, Graph,
+    GraphWithNamesResolved, ImageInfo, ImageReadType, ImageWriteType, ResourceCreateInfo,
+    ResourceReadType, ResourceWriteType,
 };
 
 use crate::resources::{image, sampler};
@@ -22,6 +22,8 @@ use smallvec::SmallVec;
 
 use crate::graph::compilation::CompiledGraph;
 use crate::graph::ResourceName;
+use crate::resources::buffer::BufferError;
+use crate::resources::image::ImageError;
 use crate::resources::material::MaterialStorage;
 use crate::resources::pipeline::PipelineError;
 use crate::resources::render_pass::RenderPassError;
@@ -65,6 +67,12 @@ pub enum PrepareError {
 
     #[display(fmt = "Error creating a material or material instance: {}", _0)]
     MaterialError(MaterialError),
+
+    #[display(fmt = "Error creating an image: {}", _0)]
+    ImageError(ImageError),
+
+    #[display(fmt = "Error creating a buffer: {}", _0)]
+    BufferError(BufferError),
 }
 
 impl std::error::Error for PrepareError {}
@@ -131,6 +139,9 @@ pub(crate) unsafe fn prepare(
     Ok(res)
 }
 
+*/
+
+/*
 
 pub(crate) unsafe fn prepare_pass(
     backbuffer: &mut Backbuffer,
@@ -164,6 +175,57 @@ pub(crate) unsafe fn prepare_pass(
 }
 
 */
+
+pub(crate) unsafe fn prepare_resources(
+    device: &DeviceContext,
+    storages: &Storages,
+    graph: &Graph,
+    res: &mut GraphResources,
+    backbuffer: &mut Backbuffer,
+    create_non_contextual: bool,
+    create_contextual: bool,
+    create_pass_mat: bool,
+    context: &ExecutionContext,
+) -> Result<(), PrepareError> {
+    let resolved = &graph.compiled_graph.graph_resources;
+    let exec = &graph.exec_graph;
+    let compiled = &graph.compiled_graph;
+    let usages = &graph.res_usage;
+
+    let pass_res = &graph.pass_resources;
+
+    for batch in &exec.pass_execution {
+        for res_id in &batch.resource_create {
+            let info = &resolved.infos[res_id];
+
+            let is_contextual = compiled.contextual_resources.contains(res_id);
+
+            let create =
+                (is_contextual && create_contextual) || (!is_contextual && create_non_contextual);
+
+            if create {
+                create_resource(
+                    usages, device, context, backbuffer, storages, *res_id, info, res,
+                )?;
+            }
+        }
+
+        if create_pass_mat {
+            for pass in &batch.passes {
+                if let Some(mat) = pass_res.pass_material.get(pass) {
+                    let instance = storages
+                        .material
+                        .borrow_mut()
+                        .create_instance(device, *mat)?;
+
+                    res.pass_mat_instances.insert(*pass, instance);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
 
 unsafe fn create_render_pass(
     device: &DeviceContext,
@@ -572,11 +634,11 @@ unsafe fn create_resource(
     device: &DeviceContext,
     context: &ExecutionContext,
     backbuffer: &mut Backbuffer,
-    storages: &mut Storages,
+    storages: &Storages,
     id: ResourceId,
     info: &ResourceCreateInfo,
     res: &mut GraphResources,
-) -> Option<()> {
+) -> Result<(), PrepareError> {
     let mut image_storage = storages.image.borrow_mut();
     let mut sampler_storage = storages.sampler.borrow_mut();
     let mut buffer_storage = storages.buffer.borrow_mut();
@@ -585,7 +647,10 @@ unsafe fn create_resource(
         ResourceCreateInfo::Image(ImageInfo::BackbufferRead { name, .. }) => {
             // read image from backbuffer
 
-            let img = backbuffer.images.get(name)?;
+            let img = backbuffer
+                .images
+                .get(name)
+                .ok_or_else(|| PrepareError::InvalidBackbufferResource(name.clone()))?;
             res.images.insert(id, *img);
             res.external_resources.insert(id);
 
@@ -593,7 +658,7 @@ unsafe fn create_resource(
                 res.samplers.insert(id, *sampler);
             }
 
-            Some(())
+            Ok(())
         }
 
         ResourceCreateInfo::Image(ImageInfo::Create(img)) => {
@@ -629,7 +694,7 @@ unsafe fn create_resource(
                 is_transient: false,
             };
 
-            let img_handle = image_storage.create(device, create_info).ok()?;
+            let img_handle = image_storage.create(device, create_info)?;
 
             res.images.insert(id, img_handle);
 
@@ -652,7 +717,7 @@ unsafe fn create_resource(
                 res.samplers.insert(id, sampler);
             }
 
-            Some(())
+            Ok(())
         }
         ResourceCreateInfo::Buffer(buf) => {
             let usage = usages.buffer[&id];
@@ -665,9 +730,7 @@ unsafe fn create_resource(
                         usage,
                     };
 
-                    buffer_storage
-                        .device_local_create(device, create_info)
-                        .ok()?
+                    buffer_storage.device_local_create(device, create_info)?
                 }
                 BufferStorageType::HostVisible => {
                     let create_info = crate::buffer::CpuVisibleCreateInfo {
@@ -676,19 +739,17 @@ unsafe fn create_resource(
                         usage,
                     };
 
-                    buffer_storage
-                        .cpu_visible_create(device, create_info)
-                        .ok()?
+                    buffer_storage.cpu_visible_create(device, create_info)?
                 }
             };
 
             res.buffers.insert(id, buffer);
 
-            Some(())
+            Ok(())
         }
         ResourceCreateInfo::Virtual => {
             // External resources don't really "exist", they are just markers, so nothing to do here
-            Some(())
+            Ok(())
         }
     }
 }
@@ -722,13 +783,13 @@ unsafe fn create_pipeline_base<'a>(
     sets
 }
 
-/// Create the material (-instance) for a pass.
+/// Create the material for a pass.
 pub(crate) unsafe fn create_pass_material(
     device: &DeviceContext,
     material_storage: &mut MaterialStorage,
     graph: &GraphWithNamesResolved,
     pass: PassId,
-) -> Result<Option<MaterialInstanceHandle>, PrepareError> {
+) -> Result<Option<MaterialHandle>, PrepareError> {
     use gfx::Device;
 
     let (core_desc, core_range) = {
@@ -885,11 +946,5 @@ pub(crate) unsafe fn create_pass_material(
 
     let mat = material_storage.create_raw(device, pass_set_layout, core_range, 16);
 
-    let instance = if let Some(mat) = mat {
-        Some(material_storage.create_instance(device, mat)?)
-    } else {
-        None
-    };
-
-    Ok(instance)
+    Ok(mat)
 }

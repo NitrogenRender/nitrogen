@@ -323,7 +323,7 @@ impl SubmitGroup {
         ctx: &mut Context,
         backbuffer: &mut graph::Backbuffer,
         graph: graph::GraphHandle,
-        store: &graph::Store,
+        store: &mut graph::Store,
         exec_context: &graph::ExecutionContext,
     ) -> Result<(), graph::GraphExecError> {
         let mut storages = graph::Storages {

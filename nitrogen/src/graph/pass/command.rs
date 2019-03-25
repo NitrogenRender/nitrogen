@@ -36,126 +36,6 @@ pub(crate) struct ReadStorages<'a> {
 
 /// CommandBuffer object used to issue commands to a graphics queue.
 pub struct GraphicsCommandBuffer<'a> {
-    pub(crate) buf: &'a mut crate::resources::command_pool::CmdBufType<gfx::Graphics>,
-    pub(crate) storages: &'a ReadStorages<'a>,
-
-    pub(crate) framebuffer: Option<&'a types::Framebuffer>,
-    pub(crate) viewport_rect: gfx::pso::Rect,
-
-    pub(crate) render_pass: &'a types::RenderPass,
-    pub(crate) pipeline_layout: &'a types::PipelineLayout,
-}
-
-impl<'a> GraphicsCommandBuffer<'a> {
-    /// Start a render pass. Draw calls can only be issued from a [`RenderPassEncoder`].
-    ///
-    /// If any attachments have to be cleared, values from `clear_values` are used **in order of
-    /// declaration**.
-    ///
-    /// [`RenderPassEncoder`]: ./struct.RenderPassEncoder.html
-    pub unsafe fn begin_render_pass<C>(&mut self, clear_values: C) -> Option<RenderPassEncoder<'_>>
-    where
-        C: IntoIterator,
-        C::Item: std::borrow::Borrow<ImageClearValue>,
-    {
-        let encoder = self.buf.begin_render_pass_inline(
-            self.render_pass,
-            self.framebuffer?,
-            self.viewport_rect,
-            clear_values.into_iter().map(|clear_value| {
-                use std::borrow::Borrow;
-                match clear_value.borrow() {
-                    ImageClearValue::Color(color) => {
-                        gfx::command::ClearValue::Color(gfx::command::ClearColor::Float(*color))
-                    }
-                    ImageClearValue::DepthStencil(depth, stencil) => {
-                        gfx::command::ClearValue::DepthStencil(gfx::command::ClearDepthStencil(
-                            *depth, *stencil,
-                        ))
-                    }
-                }
-            }),
-        );
-
-        Some(RenderPassEncoder {
-            encoder,
-            viewport_rect: self.viewport_rect,
-            storages: self.storages,
-            pipeline_layout: self.pipeline_layout,
-        })
-    }
-
-    /// Dispatch a clearing command for image `image` using the clear value `clear`.
-    pub unsafe fn clear_image(&mut self, image: ImageHandle, clear: ImageClearValue) -> Option<()> {
-        let img = self.storages.image.raw(image)?;
-
-        let entry_barrier = gfx::memory::Barrier::Image {
-            states: (gfx::image::Access::empty(), gfx::image::Layout::Undefined)
-                ..(
-                    gfx::image::Access::TRANSFER_WRITE,
-                    gfx::image::Layout::TransferDstOptimal,
-                ),
-            target: img.image.raw(),
-            families: None,
-            range: gfx::image::SubresourceRange {
-                aspects: img.aspect,
-                levels: 0..1,
-                layers: 0..1,
-            },
-        };
-
-        self.buf.pipeline_barrier(
-            gfx::pso::PipelineStage::TOP_OF_PIPE..gfx::pso::PipelineStage::TRANSFER,
-            gfx::memory::Dependencies::empty(),
-            &[entry_barrier],
-        );
-
-        self.buf.clear_image(
-            img.image.raw(),
-            gfx::image::Layout::TransferDstOptimal,
-            match clear {
-                ImageClearValue::Color(color) => gfx::command::ClearColor::Float(color),
-                _ => gfx::command::ClearColor::Float([0.0; 4]),
-            },
-            match clear {
-                ImageClearValue::DepthStencil(depth, stencil) => {
-                    gfx::command::ClearDepthStencil(depth, stencil)
-                }
-                _ => gfx::command::ClearDepthStencil(1.0, 0),
-            },
-            &[gfx::image::SubresourceRange {
-                aspects: img.aspect,
-                levels: 0..1,
-                layers: 0..1,
-            }],
-        );
-
-        let exit_barrier = gfx::memory::Barrier::Image {
-            states: (
-                gfx::image::Access::TRANSFER_WRITE,
-                gfx::image::Layout::TransferDstOptimal,
-            )..(gfx::image::Access::empty(), gfx::image::Layout::General),
-            target: img.image.raw(),
-            families: None,
-            range: gfx::image::SubresourceRange {
-                aspects: img.aspect,
-                levels: 0..1,
-                layers: 0..1,
-            },
-        };
-
-        self.buf.pipeline_barrier(
-            gfx::pso::PipelineStage::TRANSFER..gfx::pso::PipelineStage::BOTTOM_OF_PIPE,
-            gfx::memory::Dependencies::empty(),
-            &[exit_barrier],
-        );
-
-        Some(())
-    }
-}
-
-/// An Encoder used to dispatch commands inside a render pass
-pub struct RenderPassEncoder<'a> {
     pub(crate) encoder: gfx::command::RenderPassInlineEncoder<'a, back::Backend>,
     pub(crate) storages: &'a ReadStorages<'a>,
 
@@ -163,7 +43,7 @@ pub struct RenderPassEncoder<'a> {
     pub(crate) viewport_rect: gfx::pso::Rect,
 }
 
-impl<'a> RenderPassEncoder<'a> {
+impl<'a> GraphicsCommandBuffer<'a> {
     /// Dispatch a draw call for "array" rendering.
     ///
     /// This draw mode treats every vertex in the vertex buffer as an input-vertex.

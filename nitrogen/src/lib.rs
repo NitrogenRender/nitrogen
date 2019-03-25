@@ -425,6 +425,46 @@ impl Context {
             .destroy_compute_shader(handle);
     }
 
+    pub fn vertex_shader_create(&mut self, info: shader::ShaderInfo) -> shader::VertexShaderHandle {
+        self.shader_storage.borrow_mut().create_vertex_shader(info)
+    }
+
+    pub fn vertex_shader_destroy(&mut self, handle: shader::VertexShaderHandle) {
+        self.shader_storage
+            .borrow_mut()
+            .destroy_vertex_shader(handle);
+    }
+
+    pub fn fragment_shader_create(
+        &mut self,
+        info: shader::ShaderInfo,
+    ) -> shader::FragmentShaderHandle {
+        self.shader_storage
+            .borrow_mut()
+            .create_fragment_shader(info)
+    }
+
+    pub fn fragment_shader_destroy(&mut self, handle: shader::FragmentShaderHandle) {
+        self.shader_storage
+            .borrow_mut()
+            .destroy_fragment_shader(handle);
+    }
+
+    pub fn geometry_shader_create(
+        &mut self,
+        info: shader::ShaderInfo,
+    ) -> shader::GeometryShaderHandle {
+        self.shader_storage
+            .borrow_mut()
+            .create_geometry_shader(info)
+    }
+
+    pub fn geometry_shader_destroy(&mut self, handle: shader::GeometryShaderHandle) {
+        self.shader_storage
+            .borrow_mut()
+            .destroy_geometry_shader(handle);
+    }
+
     // submit group
 
     /// Create a new [`SubmitGroup`] to record and execute commands

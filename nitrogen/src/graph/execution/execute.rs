@@ -17,7 +17,7 @@ use smallvec::SmallVec;
 
 use crate::device::DeviceContext;
 use crate::graph::builder::PassType;
-use crate::graph::pass::dispatcher::RawComputeDispatcher;
+use crate::graph::pass::dispatcher::{RawComputeDispatcher, RawGraphicsDispatcher};
 use crate::resources::command_pool::{CommandPoolCompute, CommandPoolGraphics};
 use crate::resources::material::{MaterialInstanceHandle, MaterialStorage};
 use crate::resources::semaphore_pool::{SemaphoreList, SemaphorePool};
@@ -28,7 +28,7 @@ pub(crate) unsafe fn execute<'a>(
     sync: &mut QueueSyncRefs,
     (pool_gfx, pool_cmpt): (&CommandPoolGraphics, &CommandPoolCompute),
     storages: &'a Storages<'a>,
-    store: &crate::graph::Store,
+    store: &mut crate::graph::Store,
     graph: &'a mut crate::graph::Graph,
     res: &GraphResources,
     _context: &ExecutionContext,
@@ -42,11 +42,11 @@ pub(crate) unsafe fn execute<'a>(
         }
 
         for pass in &batch.passes {
-            if let Some(mat) = graph.pass_resources.pass_material.get(pass) {
+            if let Some(inst) = res.pass_mat_instances.get(pass) {
                 write_pass_descriptor_set(
                     device,
                     storages,
-                    *mat,
+                    *inst,
                     &graph.compiled_graph.graph_resources,
                     res,
                     *pass,
@@ -58,6 +58,8 @@ pub(crate) unsafe fn execute<'a>(
             match ty {
                 PassType::Compute => {
                     let accessor = &graph.compiled_graph.compute_passes[pass];
+
+                    (accessor.prepare)(store);
 
                     let mut cmd_buf = pool_cmpt.alloc();
                     cmd_buf.begin();
@@ -91,7 +93,43 @@ pub(crate) unsafe fn execute<'a>(
                         device.compute_queue().submit(submission, None);
                     }
                 }
-                PassType::Graphics => unimplemented!("Graphics pass execution"),
+                PassType::Graphics => {
+                    let accessor = &graph.compiled_graph.graphic_passes[pass];
+
+                    (accessor.prepare)(store);
+
+                    let mut cmd_buf = pool_gfx.alloc();
+                    cmd_buf.begin();
+
+                    {
+                        let raw_dispatcher = RawGraphicsDispatcher {
+                            cmd: &mut cmd_buf,
+                            device,
+                            storages,
+                            pass_id: *pass,
+                            pass_res: &mut graph.pass_resources,
+                            graph_res: res,
+                            compiled: &graph.compiled_graph,
+                        };
+
+                        (accessor.execute)(store, raw_dispatcher)?;
+                    }
+
+                    cmd_buf.finish();
+
+                    {
+                        let submission = gfx::Submission {
+                            command_buffers: Some(&*cmd_buf),
+                            wait_semaphores: sync
+                                .sem_pool
+                                .list_prev_sems(sync.sem_list)
+                                .map(|sem| (sem, gfx::pso::PipelineStage::BOTTOM_OF_PIPE)),
+                            signal_semaphores: sync.sem_pool.list_next_sems(sync.sem_list),
+                        };
+
+                        device.graphics_queue().submit(submission, None);
+                    }
+                }
             }
 
             /*
@@ -175,55 +213,6 @@ pub(crate) unsafe fn execute<'a>(
             }
             */
 
-            /*
-            // process compute pass
-            if let Some(handle) = base_res.pipelines_compute.get(pass) {
-                let pipeline = storages.pipeline.raw_compute(*handle).unwrap();
-
-                let submit = {
-                    let mut raw_cmd = cmd_pool_cmpt.alloc();
-                    raw_cmd.begin();
-
-                    raw_cmd.bind_compute_pipeline(&pipeline.pipeline);
-
-                    if let Some(set) = set_raw {
-                        raw_cmd.bind_compute_descriptor_sets(
-                            &pipeline.layout,
-                            0,
-                            Some(set),
-                            &[],
-                        );
-                    }
-
-                    let pass_impl = &graph.passes_cmpt_impl[&pass.0];
-
-                    {
-                        let mut cmd_buffer = crate::graph::command::ComputeCommandBuffer {
-                            buf: &mut *raw_cmd,
-                            storages: &read_storages,
-                            pipeline_layout: &pipeline.layout,
-                        };
-
-                        pass_impl.execute(store, &mut cmd_buffer);
-                    }
-
-                    raw_cmd.finish();
-                    raw_cmd
-                };
-
-                {
-                    let submission = gfx::Submission {
-                        command_buffers: Some(&*submit),
-                        wait_semaphores: sem_pool
-                            .list_prev_sems(sem_list)
-                            .map(|sem| (sem, gfx::pso::PipelineStage::BOTTOM_OF_PIPE)),
-                        signal_semaphores: sem_pool.list_next_sems(sem_list),
-                    };
-
-                    device.compute_queue().submit(submission, None);
-                }
-            }
-            */
             sync.sem_list.advance();
         }
     }

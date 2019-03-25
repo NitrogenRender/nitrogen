@@ -17,7 +17,9 @@ use crate::vertex_attrib::VertexAttribHandle;
 
 use crate::util::CowString;
 
-use crate::resources::shader::ComputeShaderHandle;
+use crate::resources::shader::{
+    ComputeShaderHandle, FragmentShaderHandle, GeometryShaderHandle, VertexShaderHandle,
+};
 use smallvec::SmallVec;
 use std::borrow::Cow;
 
@@ -105,10 +107,15 @@ impl From<Comparison> for gfx::pso::Comparison {
     }
 }
 
-/*
+/// Set of shaders used in graphics passes.
+pub struct GraphicShaders {
+    pub vertex: Shader<VertexShaderHandle>,
+    pub fragment: Option<Shader<FragmentShaderHandle>>,
+    pub geometry: Option<Shader<GeometryShaderHandle>>,
+}
+
 /// Description of a graphics pass pipeline.
-#[derive(Default)]
-pub struct GraphicsPassInfo {
+pub struct GraphicsPipelineInfo {
     /// Vertex-attribute layout used in the pipeline (if any).
     pub vertex_attrib: Option<VertexAttribHandle>,
     /// Depth mode used for a possible depth attachment.
@@ -117,7 +124,7 @@ pub struct GraphicsPassInfo {
     /// TODO
     pub stencil_mode: Option<()>,
     /// Set of shader programs.
-    pub shaders: Shaders,
+    pub shaders: GraphicShaders,
     /// Primitive mode used for rasterization.
     pub primitive: Primitive,
     /// Blend modes used for the color attachments.
@@ -127,24 +134,37 @@ pub struct GraphicsPassInfo {
     /// Range of push constants used.
     ///
     /// **NOTE**: in 4-bytes, not bytes!!! e.g. 0..4 states bytes 0..16
-    pub push_constants: Vec<std::ops::Range<u32>>,
+    pub push_constants: Option<std::ops::Range<u32>>,
 }
-*/
 
 /// Trait used to implement graphics pass functionality.
-pub trait GraphicsPassImpl {
-    /// The `setup` function is called during graph compilation and records all resource
-    /// creations and dependencies in the graph-`builder`.
+pub trait GraphicsPass: Sized {
+    /// Configuration type of the pass.
     ///
-    /// The `store` can be used to modify the data recorded into `builder`.
-    fn setup(&mut self, store: &mut super::Store, builder: &mut builder::GraphBuilder);
+    /// The configuration is used to dispatch work on potentially different pipelines.
+    type Config: Sized;
+
+    /// The `prepare` function is called before every execution and can be used to change
+    /// pass-internal state.
+    fn prepare(&mut self, _store: &mut super::Store) {}
+
+    /// Create a graphics-pipeline info from a given configuration.
+    fn configure(&self, config: Self::Config) -> GraphicsPipelineInfo;
+
+    /// The `describe` function is called during graph compilation and records all resource
+    /// creations and dependencies in the graph-`builder`.
+    fn describe(&mut self, res: &mut builder::ResourceDescriptor);
 
     /// The `execute` function is called once for every graph execution.
     ///
-    /// Rendering and graphics-queue commands can be recorded into the `cmd`-command buffer.
+    /// Dispatch commands can be recorded into the `cmd`-command buffer.
     ///
     /// Data can be read from the `store` as inputs to the execution.
-    unsafe fn execute(&self, store: &super::Store, cmd: &mut command::GraphicsCommandBuffer);
+    unsafe fn execute(
+        &self,
+        store: &super::Store,
+        dispatcher: &mut GraphicsDispatcher<Self>,
+    ) -> Result<(), GraphExecError>;
 }
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
@@ -194,7 +214,11 @@ pub trait ComputePass: Sized {
     /// The configuration is used to dispatch work on potentially different pipelines.
     type Config: Sized;
 
-    /// Create a compute-pipeline info
+    /// The `prepare` function is called before every execution and can be used to change
+    /// pass-internal state.
+    fn prepare(&mut self, _store: &mut super::Store) {}
+
+    /// Create a compute-pipeline info from a given configuration.
     fn configure(&self, config: Self::Config) -> ComputePipelineInfo;
 
     /// The `describe` function is called during graph compilation and records all resource
@@ -209,6 +233,6 @@ pub trait ComputePass: Sized {
     unsafe fn execute(
         &self,
         store: &super::Store,
-        cmd: &mut ComputeDispatcher<Self>,
+        dispatcher: &mut ComputeDispatcher<Self>,
     ) -> Result<(), GraphExecError>;
 }

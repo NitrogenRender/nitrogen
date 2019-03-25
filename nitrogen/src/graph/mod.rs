@@ -67,8 +67,15 @@ pub type PassName = CowString;
 pub type ResourceName = CowString;
 
 pub(crate) struct ComputePassAccessor {
+    pub(crate) prepare: Box<dyn Fn(&mut Store)>,
     pub(crate) describe: Box<dyn Fn(&mut ResourceDescriptor)>,
     pub(crate) execute: Box<dyn Fn(&Store, RawComputeDispatcher) -> Result<(), GraphExecError>>,
+}
+
+pub(crate) struct GraphicPassAccessor {
+    pub(crate) prepare: Box<dyn Fn(&mut Store)>,
+    pub(crate) describe: Box<dyn Fn(&mut ResourceDescriptor)>,
+    pub(crate) execute: Box<dyn Fn(&Store, RawGraphicsDispatcher) -> Result<(), GraphExecError>>,
 }
 
 #[derive(Clone, Debug, From)]
@@ -178,7 +185,7 @@ impl GraphStorage {
         sync: &mut QueueSyncRefs,
         storages: &'a mut Storages<'a>,
         (pool_gfx, pool_cmpt): (&CommandPoolGraphics, &CommandPoolCompute),
-        store: &Store,
+        store: &mut Store,
         graph_handle: GraphHandle,
         res: &mut GraphResources,
         backbuffer: &mut Backbuffer,
@@ -199,7 +206,22 @@ impl GraphStorage {
                 // create new resources from scratch
                 let mut resources = GraphResources::default();
                 resources.exec_context = Some(context.clone());
-                // TODO actually create resources lol
+
+                println!("create new resources");
+
+                prepare_resources(
+                    device,
+                    storages,
+                    graph,
+                    &mut resources,
+                    backbuffer,
+                    true,
+                    true,
+                    true,
+                    context,
+                )?;
+
+                let resources = dbg!(resources);
 
                 // remove whatever is there.
                 let old_res = std::mem::replace(res, resources);
@@ -207,15 +229,14 @@ impl GraphStorage {
             }
             Some(ref exec) if exec == context => {
                 // do nothing?
+                println!("don't create resources");
             }
             _ => {
                 // resources do exist but all resources that are contextual have to be
                 // recreated.
-            }
-        }
 
-        if res.exec_context.as_ref() != Some(context) {
-            // make new resources.
+                println!("re-adjust resources");
+            }
         }
 
         // TODO check if current backbuffer is compatible.

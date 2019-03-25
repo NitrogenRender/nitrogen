@@ -28,11 +28,6 @@ pub trait UserData: Sized {
 
         let mut backbuffer = graph::Backbuffer::new();
 
-        if let Err(err) = ctx.graph_compile(graph, store) {
-            println!("{:?}", err);
-            return None;
-        }
-
         submit
             .graph_execute(ctx, &mut backbuffer, graph, store, context)
             .ok()?;

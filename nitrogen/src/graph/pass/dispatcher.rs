@@ -60,200 +60,462 @@ pub struct ImageReadRef(pub(crate) ImageHandle);
 pub struct BufferWriteRef(pub(crate) BufferHandle);
 pub struct BufferReadRef(pub(crate) BufferHandle);
 
-pub(crate) struct RawComputeDispatcher<'a> {
-    pub(crate) cmd: &'a mut crate::resources::command_pool::CmdBufType<gfx::Compute>,
-    pub(crate) device: &'a DeviceContext,
-    pub(crate) storages: &'a Storages<'a>,
-    pub(crate) pass_id: PassId,
-    pub(crate) pass_res: &'a mut PassResources,
-    pub(crate) graph_res: &'a GraphResources,
-    pub(crate) compiled: &'a CompiledGraph,
-}
+pub use self::compute::*;
+mod compute {
+    use super::*;
 
-impl<'a> RawComputeDispatcher<'a> {
-    pub(crate) fn into_typed_dispatcher<T: ComputePass>(
-        self,
-        pass_impl: Rc<RefCell<T>>,
-    ) -> ComputeDispatcher<'a, T> {
-        ComputeDispatcher {
-            cmd: self.cmd,
-            device: self.device,
-            storages: self.storages,
-            pass_id: self.pass_id,
-            pass_res: self.pass_res,
-            graph_res: self.graph_res,
-            compiled: self.compiled,
-            pass_impl,
-        }
-    }
-}
-
-pub struct ComputeDispatcher<'a, T: ComputePass> {
-    pub(crate) cmd: &'a mut crate::resources::command_pool::CmdBufType<gfx::Compute>,
-    pub(crate) device: &'a DeviceContext,
-    pub(crate) storages: &'a Storages<'a>,
-    pub(crate) pass_id: PassId,
-    pub(crate) pass_res: &'a mut PassResources,
-    pub(crate) graph_res: &'a GraphResources,
-    pub(crate) compiled: &'a CompiledGraph,
-    pub(crate) pass_impl: Rc<RefCell<T>>,
-}
-
-impl<'a, T: ComputePass> ComputeDispatcher<'a, T> {
-    // Find the allowed access type of a resource.
-    fn resource_ref(
-        &self,
-        name: ResourceName,
-        attempted: ResourceAccessType,
-    ) -> Result<ResourceId, ResourceRefError> {
-        let res_id = *self.compiled.graph_resources.name_lookup.get(&name).ok_or(
-            ResourceRefError::InvalidResourceReferenced {
-                pass: self.pass_id,
-                name: name.clone(),
-            },
-        )?;
-
-        let allowed = self
-            .compiled
-            .graph_resources
-            .resource_access_type(self.pass_id, res_id)
-            .ok_or(ResourceRefError::ResourceNotUsableInPass {
-                pass: self.pass_id,
-                name: name.clone(),
-            })?;
-
-        if !allowed.compatible(attempted) {
-            return Err(ResourceRefError::AccessViolation {
-                pass: self.pass_id,
-                resource: name,
-                expected: allowed,
-                attempted,
-            });
-        }
-
-        Ok(res_id)
+    pub(crate) struct RawComputeDispatcher<'a> {
+        pub(crate) cmd: &'a mut crate::resources::command_pool::CmdBufType<gfx::Compute>,
+        pub(crate) device: &'a DeviceContext,
+        pub(crate) storages: &'a Storages<'a>,
+        pub(crate) pass_id: PassId,
+        pub(crate) pass_res: &'a mut PassResources,
+        pub(crate) graph_res: &'a GraphResources,
+        pub(crate) compiled: &'a CompiledGraph,
     }
 
-    pub fn image_write_ref(
-        &self,
-        name: impl Into<ResourceName>,
-    ) -> Result<ImageWriteRef, ResourceRefError> {
-        let attempted = ResourceAccessType::Write(ResourceType::Image);
-
-        let id = self.resource_ref(name.into(), attempted)?;
-
-        let handle = self
-            .graph_res
-            .images
-            .get(&id)
-            .expect("GraphResources should be compatible");
-
-        Ok(ImageWriteRef(*handle))
-    }
-
-    pub fn image_read_ref(
-        &self,
-        name: impl Into<ResourceName>,
-    ) -> Result<ImageReadRef, ResourceRefError> {
-        let attempted = ResourceAccessType::Read(ResourceType::Image);
-
-        let id = self.resource_ref(name.into(), attempted)?;
-
-        let handle = self
-            .graph_res
-            .images
-            .get(&id)
-            .expect("GraphResources should be compatible");
-
-        Ok(ImageReadRef(*handle))
-    }
-
-    pub fn buffer_write_ref(
-        &self,
-        name: impl Into<ResourceName>,
-    ) -> Result<BufferWriteRef, ResourceRefError> {
-        let attempted = ResourceAccessType::Write(ResourceType::Buffer);
-
-        let id = self.resource_ref(name.into(), attempted)?;
-
-        let handle = self
-            .graph_res
-            .buffers
-            .get(&id)
-            .expect("GraphResources should be compatible");
-
-        Ok(BufferWriteRef(*handle))
-    }
-
-    pub fn buffer_read_ref(
-        &self,
-        name: impl Into<ResourceName>,
-    ) -> Result<BufferReadRef, ResourceRefError> {
-        let attempted = ResourceAccessType::Read(ResourceType::Buffer);
-
-        let id = self.resource_ref(name.into(), attempted)?;
-
-        let handle = self
-            .graph_res
-            .buffers
-            .get(&id)
-            .expect("GraphResources should be compatible");
-
-        Ok(BufferReadRef(*handle))
-    }
-
-    pub unsafe fn with_config<F, R>(&mut self, config: T::Config, f: F) -> Result<R, PrepareError>
-    where
-        F: FnOnce(&mut ComputeCommandBuffer) -> R,
-    {
-        // TODO fetch this from a cache rather than calling this every time.
-        let desc = self.pass_impl.borrow().configure(config);
-
-        // fetch pipeline from cache or create a new one.
-        let compute_pipelines = &mut self.pass_res.compute_pipelines;
-        let pass_materials = &mut self.pass_res.pass_material;
-
-        let pipelines = compute_pipelines.entry(self.pass_id).or_default();
-
-        if !pipelines.contains_key(&desc) {
-            // create new pipeline!
-            let pass_mat = pass_materials.get(&self.pass_id).map(|mat| mat.material());
-
-            let pipe =
-                create_pipeline_compute(self.device, self.storages, self.pass_id, pass_mat, &desc)?;
-
-            pipelines.insert(
-                desc.clone(),
-                PipelineResources {
-                    pipeline_handle: pipe,
-                },
-            );
-        }
-
-        let pipeline_storage = self.storages.pipeline.borrow();
-
-        let read_storages = ReadStorages {
-            buffer: self.storages.buffer.borrow(),
-            material: self.storages.material.borrow(),
-            image: self.storages.image.borrow(),
-        };
-
-        let pipe = pipelines.get(&desc).unwrap();
-
-        let pipe_raw = pipeline_storage.raw_compute(pipe.pipeline_handle).unwrap();
-
-        self.cmd.bind_compute_pipeline(&pipe_raw.pipeline);
-
-        let mut cmd = {
-            ComputeCommandBuffer {
-                buf: self.cmd,
-                storages: &read_storages,
-                pipeline_layout: &pipe_raw.layout,
+    impl<'a> RawComputeDispatcher<'a> {
+        pub(crate) fn into_typed_dispatcher<T: ComputePass>(
+            self,
+            pass_impl: Rc<RefCell<T>>,
+        ) -> ComputeDispatcher<'a, T> {
+            ComputeDispatcher {
+                cmd: self.cmd,
+                device: self.device,
+                storages: self.storages,
+                pass_id: self.pass_id,
+                pass_res: self.pass_res,
+                graph_res: self.graph_res,
+                compiled: self.compiled,
+                pass_impl,
             }
-        };
+        }
+    }
 
-        let res = f(&mut cmd);
+    pub struct ComputeDispatcher<'a, T: ComputePass> {
+        pub(crate) cmd: &'a mut crate::resources::command_pool::CmdBufType<gfx::Compute>,
+        pub(crate) device: &'a DeviceContext,
+        pub(crate) storages: &'a Storages<'a>,
+        pub(crate) pass_id: PassId,
+        pub(crate) pass_res: &'a mut PassResources,
+        pub(crate) graph_res: &'a GraphResources,
+        pub(crate) compiled: &'a CompiledGraph,
+        pub(crate) pass_impl: Rc<RefCell<T>>,
+    }
 
-        Ok(res)
+    impl<'a, T: ComputePass> ComputeDispatcher<'a, T> {
+        // Find the allowed access type of a resource.
+        fn resource_ref(
+            &self,
+            name: ResourceName,
+            attempted: ResourceAccessType,
+        ) -> Result<ResourceId, ResourceRefError> {
+            let res_id = *self.compiled.graph_resources.name_lookup.get(&name).ok_or(
+                ResourceRefError::InvalidResourceReferenced {
+                    pass: self.pass_id,
+                    name: name.clone(),
+                },
+            )?;
+
+            let allowed = self
+                .compiled
+                .graph_resources
+                .resource_access_type(self.pass_id, res_id)
+                .ok_or(ResourceRefError::ResourceNotUsableInPass {
+                    pass: self.pass_id,
+                    name: name.clone(),
+                })?;
+
+            if !allowed.compatible(attempted) {
+                return Err(ResourceRefError::AccessViolation {
+                    pass: self.pass_id,
+                    resource: name,
+                    expected: allowed,
+                    attempted,
+                });
+            }
+
+            Ok(res_id)
+        }
+
+        // resource access
+
+        pub fn image_write_ref(
+            &self,
+            name: impl Into<ResourceName>,
+        ) -> Result<ImageWriteRef, ResourceRefError> {
+            let attempted = ResourceAccessType::Write(ResourceType::Image);
+
+            let id = self.resource_ref(name.into(), attempted)?;
+
+            let handle = self
+                .graph_res
+                .images
+                .get(&id)
+                .expect("GraphResources should be compatible");
+
+            Ok(ImageWriteRef(*handle))
+        }
+
+        pub fn image_read_ref(
+            &self,
+            name: impl Into<ResourceName>,
+        ) -> Result<ImageReadRef, ResourceRefError> {
+            let attempted = ResourceAccessType::Read(ResourceType::Image);
+
+            let id = self.resource_ref(name.into(), attempted)?;
+
+            let handle = self
+                .graph_res
+                .images
+                .get(&id)
+                .expect("GraphResources should be compatible");
+
+            Ok(ImageReadRef(*handle))
+        }
+
+        pub fn buffer_write_ref(
+            &self,
+            name: impl Into<ResourceName>,
+        ) -> Result<BufferWriteRef, ResourceRefError> {
+            let attempted = ResourceAccessType::Write(ResourceType::Buffer);
+
+            let id = self.resource_ref(name.into(), attempted)?;
+
+            let handle = self
+                .graph_res
+                .buffers
+                .get(&id)
+                .expect("GraphResources should be compatible");
+
+            Ok(BufferWriteRef(*handle))
+        }
+
+        pub fn buffer_read_ref(
+            &self,
+            name: impl Into<ResourceName>,
+        ) -> Result<BufferReadRef, ResourceRefError> {
+            let attempted = ResourceAccessType::Read(ResourceType::Buffer);
+
+            let id = self.resource_ref(name.into(), attempted)?;
+
+            let handle = self
+                .graph_res
+                .buffers
+                .get(&id)
+                .expect("GraphResources should be compatible");
+
+            Ok(BufferReadRef(*handle))
+        }
+
+        // pipeline config
+
+        pub unsafe fn with_config<F, R>(
+            &mut self,
+            config: T::Config,
+            f: F,
+        ) -> Result<R, PrepareError>
+        where
+            F: FnOnce(&mut ComputeCommandBuffer) -> R,
+        {
+            // TODO fetch this from a cache rather than calling this every time.
+            let desc = self.pass_impl.borrow().configure(config);
+
+            // fetch pipeline from cache or create a new one.
+            let compute_pipelines = &mut self.pass_res.compute_pipelines;
+            let pass_materials = &mut self.pass_res.pass_material;
+
+            let pipelines = compute_pipelines.entry(self.pass_id).or_default();
+
+            if !pipelines.contains_key(&desc) {
+                // create new pipeline!
+                let pass_mat = pass_materials.get(&self.pass_id).cloned();
+
+                let pipe = create_pipeline_compute(
+                    self.device,
+                    self.storages,
+                    self.pass_id,
+                    pass_mat,
+                    &desc,
+                )?;
+
+                pipelines.insert(
+                    desc.clone(),
+                    PipelineResources {
+                        pipeline_handle: pipe,
+                    },
+                );
+            }
+
+            let pipeline_storage = self.storages.pipeline.borrow();
+
+            let read_storages = ReadStorages {
+                buffer: self.storages.buffer.borrow(),
+                material: self.storages.material.borrow(),
+                image: self.storages.image.borrow(),
+            };
+
+            let pipe = pipelines.get(&desc).unwrap();
+
+            let pipe_raw = pipeline_storage.raw_compute(pipe.pipeline_handle).unwrap();
+
+            self.cmd.bind_compute_pipeline(&pipe_raw.pipeline);
+
+            let mut cmd = {
+                ComputeCommandBuffer {
+                    buf: self.cmd,
+                    storages: &read_storages,
+                    pipeline_layout: &pipe_raw.layout,
+                }
+            };
+
+            let res = f(&mut cmd);
+
+            Ok(res)
+        }
+    }
+}
+
+pub use self::graphics::*;
+mod graphics {
+    use super::*;
+    use crate::graph::builder::resource_descriptor::ImageClearValue;
+    use crate::graph::pass::command::GraphicsCommandBuffer;
+    use crate::graph::pass::GraphicsPass;
+
+    pub(crate) struct RawGraphicsDispatcher<'a> {
+        pub(crate) cmd: &'a mut crate::resources::command_pool::CmdBufType<gfx::Graphics>,
+        pub(crate) device: &'a DeviceContext,
+        pub(crate) storages: &'a Storages<'a>,
+        pub(crate) pass_id: PassId,
+        pub(crate) pass_res: &'a mut PassResources,
+        pub(crate) graph_res: &'a GraphResources,
+        pub(crate) compiled: &'a CompiledGraph,
+    }
+
+    impl<'a> RawGraphicsDispatcher<'a> {
+        pub(crate) fn into_typed_dispatcher<T: GraphicsPass>(
+            self,
+            pass_impl: Rc<RefCell<T>>,
+        ) -> GraphicsDispatcher<'a, T> {
+            GraphicsDispatcher {
+                cmd: self.cmd,
+                device: self.device,
+                storages: self.storages,
+                pass_id: self.pass_id,
+                pass_res: self.pass_res,
+                graph_res: self.graph_res,
+                compiled: self.compiled,
+                pass_impl,
+            }
+        }
+    }
+
+    pub struct GraphicsDispatcher<'a, T: GraphicsPass> {
+        pub(crate) cmd: &'a mut crate::resources::command_pool::CmdBufType<gfx::Graphics>,
+        pub(crate) device: &'a DeviceContext,
+        pub(crate) storages: &'a Storages<'a>,
+        pub(crate) pass_id: PassId,
+        pub(crate) pass_res: &'a mut PassResources,
+        pub(crate) graph_res: &'a GraphResources,
+        pub(crate) compiled: &'a CompiledGraph,
+
+        pub(crate) pass_impl: Rc<RefCell<T>>,
+    }
+
+    impl<'a, T: GraphicsPass> GraphicsDispatcher<'a, T> {
+        // Find the allowed access type of a resource.
+        fn resource_ref(
+            &self,
+            name: ResourceName,
+            attempted: ResourceAccessType,
+        ) -> Result<ResourceId, ResourceRefError> {
+            let res_id = *self.compiled.graph_resources.name_lookup.get(&name).ok_or(
+                ResourceRefError::InvalidResourceReferenced {
+                    pass: self.pass_id,
+                    name: name.clone(),
+                },
+            )?;
+
+            let allowed = self
+                .compiled
+                .graph_resources
+                .resource_access_type(self.pass_id, res_id)
+                .ok_or(ResourceRefError::ResourceNotUsableInPass {
+                    pass: self.pass_id,
+                    name: name.clone(),
+                })?;
+
+            if !allowed.compatible(attempted) {
+                return Err(ResourceRefError::AccessViolation {
+                    pass: self.pass_id,
+                    resource: name,
+                    expected: allowed,
+                    attempted,
+                });
+            }
+
+            Ok(res_id)
+        }
+
+        // resource access
+
+        pub fn image_write_ref(
+            &self,
+            name: impl Into<ResourceName>,
+        ) -> Result<ImageWriteRef, ResourceRefError> {
+            let attempted = ResourceAccessType::Write(ResourceType::Image);
+
+            let id = self.resource_ref(name.into(), attempted)?;
+
+            let handle = self
+                .graph_res
+                .images
+                .get(&id)
+                .expect("GraphResources should be compatible");
+
+            Ok(ImageWriteRef(*handle))
+        }
+
+        pub fn image_read_ref(
+            &self,
+            name: impl Into<ResourceName>,
+        ) -> Result<ImageReadRef, ResourceRefError> {
+            let attempted = ResourceAccessType::Read(ResourceType::Image);
+
+            let id = self.resource_ref(name.into(), attempted)?;
+
+            let handle = self
+                .graph_res
+                .images
+                .get(&id)
+                .expect("GraphResources should be compatible");
+
+            Ok(ImageReadRef(*handle))
+        }
+
+        pub fn buffer_write_ref(
+            &self,
+            name: impl Into<ResourceName>,
+        ) -> Result<BufferWriteRef, ResourceRefError> {
+            let attempted = ResourceAccessType::Write(ResourceType::Buffer);
+
+            let id = self.resource_ref(name.into(), attempted)?;
+
+            let handle = self
+                .graph_res
+                .buffers
+                .get(&id)
+                .expect("GraphResources should be compatible");
+
+            Ok(BufferWriteRef(*handle))
+        }
+
+        pub fn buffer_read_ref(
+            &self,
+            name: impl Into<ResourceName>,
+        ) -> Result<BufferReadRef, ResourceRefError> {
+            let attempted = ResourceAccessType::Read(ResourceType::Buffer);
+
+            let id = self.resource_ref(name.into(), attempted)?;
+
+            let handle = self
+                .graph_res
+                .buffers
+                .get(&id)
+                .expect("GraphResources should be compatible");
+
+            Ok(BufferReadRef(*handle))
+        }
+
+        // image clearing.
+
+        /// Dispatch a clearing command for image `image` using the clear value `clear`.
+        pub unsafe fn clear_image(
+            &mut self,
+            image: ImageWriteRef,
+            clear: ImageClearValue,
+        ) -> Option<()> {
+            let image_storage = self.storages.image.borrow();
+
+            let img = image_storage.raw(image.0)?;
+
+            let entry_barrier = gfx::memory::Barrier::Image {
+                states: (gfx::image::Access::empty(), gfx::image::Layout::Undefined)
+                    ..(
+                        gfx::image::Access::TRANSFER_WRITE,
+                        gfx::image::Layout::TransferDstOptimal,
+                    ),
+                target: img.image.raw(),
+                families: None,
+                range: gfx::image::SubresourceRange {
+                    aspects: img.aspect,
+                    levels: 0..1,
+                    layers: 0..1,
+                },
+            };
+
+            self.cmd.pipeline_barrier(
+                gfx::pso::PipelineStage::TOP_OF_PIPE..gfx::pso::PipelineStage::TRANSFER,
+                gfx::memory::Dependencies::empty(),
+                &[entry_barrier],
+            );
+
+            self.cmd.clear_image(
+                img.image.raw(),
+                gfx::image::Layout::TransferDstOptimal,
+                match clear {
+                    ImageClearValue::Color(color) => gfx::command::ClearColor::Float(color),
+                    _ => gfx::command::ClearColor::Float([0.0; 4]),
+                },
+                match clear {
+                    ImageClearValue::DepthStencil(depth, stencil) => {
+                        gfx::command::ClearDepthStencil(depth, stencil)
+                    }
+                    _ => gfx::command::ClearDepthStencil(1.0, 0),
+                },
+                &[gfx::image::SubresourceRange {
+                    aspects: img.aspect,
+                    levels: 0..1,
+                    layers: 0..1,
+                }],
+            );
+
+            let exit_barrier = gfx::memory::Barrier::Image {
+                states: (
+                    gfx::image::Access::TRANSFER_WRITE,
+                    gfx::image::Layout::TransferDstOptimal,
+                )
+                    ..(gfx::image::Access::empty(), gfx::image::Layout::General),
+                target: img.image.raw(),
+                families: None,
+                range: gfx::image::SubresourceRange {
+                    aspects: img.aspect,
+                    levels: 0..1,
+                    layers: 0..1,
+                },
+            };
+
+            self.cmd.pipeline_barrier(
+                gfx::pso::PipelineStage::TRANSFER..gfx::pso::PipelineStage::BOTTOM_OF_PIPE,
+                gfx::memory::Dependencies::empty(),
+                &[exit_barrier],
+            );
+
+            Some(())
+        }
+
+        // pipelines
+
+        pub unsafe fn with_config<F, R>(
+            &mut self,
+            config: T::Config,
+            f: F,
+        ) -> Result<R, PrepareError>
+        where
+            F: FnOnce(&mut GraphicsCommandBuffer) -> R,
+        {
+            unimplemented!()
+        }
     }
 }

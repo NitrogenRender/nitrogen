@@ -12,7 +12,7 @@ use super::{
 };
 use crate::graph::builder::resource_descriptor::{ImageWriteType, ResourceDescriptor};
 use crate::graph::builder::{GraphBuilder, PassType};
-use crate::graph::{ComputePassAccessor, PassName};
+use crate::graph::{ComputePassAccessor, GraphicPassAccessor, PassName};
 use core::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 
@@ -130,6 +130,7 @@ pub(crate) struct CompiledGraph {
     pub(crate) pass_names: Vec<PassName>,
 
     pub(crate) compute_passes: HashMap<PassId, ComputePassAccessor>,
+    pub(crate) graphic_passes: HashMap<PassId, GraphicPassAccessor>,
 
     pub(crate) contextual_passes: HashSet<PassId>,
     pub(crate) contextual_resources: HashSet<ResourceId>,
@@ -149,9 +150,24 @@ pub(crate) fn compile_graph(
 
     let mut pass_names = vec![];
     let mut compute_passes = HashMap::new();
+    let mut graphic_passes = HashMap::new();
+
+    for (name, pass) in builder.graphic_passes {
+        let mut res_desc = ResourceDescriptor::new();
+
+        (pass.describe)(&mut res_desc);
+
+        let pass_num = pass_names.len();
+        let id = PassId(pass_num);
+
+        pass_names.push(name);
+        graphic_passes.insert(id, pass);
+
+        input.add_res_descriptor(id, res_desc, PassType::Graphics);
+    }
 
     // collect all pass data in one structure.
-    for (name, mut pass) in builder.compute_passes {
+    for (name, pass) in builder.compute_passes {
         let mut res_desc = ResourceDescriptor::new();
 
         (pass.describe)(&mut res_desc);
@@ -228,6 +244,7 @@ pub(crate) fn compile_graph(
             passes_that_render_to_the_backbuffer: passes_that_render_to_the_backbufer,
 
             compute_passes,
+            graphic_passes,
 
             graph_resources: resolved,
             targets,

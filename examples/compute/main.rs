@@ -78,7 +78,7 @@ fn main() {
 
     let graph = unsafe { create_graph(&mut ctx, material_instance) }.unwrap();
 
-    let store = Store::new();
+    let mut store = Store::new();
     let mut backbuffer = Backbuffer::new();
 
     unsafe {
@@ -87,7 +87,7 @@ fn main() {
                 &mut ctx,
                 &mut backbuffer,
                 graph,
-                &store,
+                &mut store,
                 &ExecutionContext {
                     reference_size: (1, 1),
                 },

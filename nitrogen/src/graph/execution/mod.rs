@@ -30,6 +30,7 @@ use smallvec::SmallVec;
 use crate::graph::pass::dispatcher::ResourceRefError;
 use crate::graph::pass::ComputePipelineInfo;
 use crate::resources::image::ImageFormat;
+use crate::resources::material::MaterialInstanceHandle;
 use gfx;
 
 /// Errors that can occur when executing a graph.
@@ -63,7 +64,7 @@ pub(crate) struct PipelineResources {
 pub(crate) struct PassResources {
     pub(crate) render_passes: HashMap<PassId, RenderPassHandle>,
 
-    pub(crate) pass_material: HashMap<PassId, crate::material::MaterialInstanceHandle>,
+    pub(crate) pass_material: HashMap<PassId, crate::material::MaterialHandle>,
     pub(crate) compute_pipelines: HashMap<PassId, HashMap<ComputePipelineInfo, PipelineResources>>,
 }
 
@@ -74,8 +75,8 @@ impl PassResources {
             .borrow_mut()
             .destroy(res_list, self.render_passes.values());
 
-        for (_, mat_inst) in self.pass_material {
-            res_list.queue_material(mat_inst.material);
+        for (_, mat) in self.pass_material {
+            res_list.queue_material(mat);
         }
 
         for (_, pipes) in self.compute_pipelines {
@@ -88,6 +89,8 @@ impl PassResources {
 #[derive(Debug, Default)]
 pub(crate) struct GraphResources {
     pub(crate) exec_context: Option<super::ExecutionContext>,
+
+    pub(crate) pass_mat_instances: HashMap<PassId, MaterialInstanceHandle>,
 
     pub(crate) framebuffers: HashMap<PassId, (types::Framebuffer, gfx::image::Extent)>,
 
@@ -112,6 +115,10 @@ impl GraphResources {
 
         for (_, (fb, _)) in self.framebuffers {
             res_list.queue_framebuffer(fb);
+        }
+
+        for (_, inst) in self.pass_mat_instances {
+            res_list.queue_material_instance(inst);
         }
 
         storages
