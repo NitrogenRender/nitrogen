@@ -118,7 +118,7 @@ impl GraphStorage {
         let name = builder.name.clone();
 
         let compiled = compile_graph(builder).map_err(|(names, errors)| {
-            let errors = errors.into_iter().map(|err| err.to_diagnostic(&names));
+            let errors = errors.into_iter().map(|err| err.diagnostic(&names));
             GraphError::CompilationErrors(errors.collect())
         })?;
 
@@ -213,9 +213,11 @@ impl GraphStorage {
                     graph,
                     &mut resources,
                     backbuffer,
-                    true,
-                    true,
-                    true,
+                    ResourcePrepareOptions {
+                        create_non_contextual: true,
+                        create_contextual: true,
+                        create_pass_mat: true,
+                    },
                     context,
                 )?;
 
@@ -224,12 +226,13 @@ impl GraphStorage {
                     device,
                     storages,
                     sync.res_list,
-                    &graph.pass_resources,
                     &mut resources,
                     backbuffer,
                     graph,
-                    true,
-                    true,
+                    GraphicsPassPrepareOptions {
+                        create_non_contextual: true,
+                        create_contextual: true,
+                    },
                 )?;
 
                 // remove whatever is there.
@@ -249,9 +252,11 @@ impl GraphStorage {
                     graph,
                     res,
                     backbuffer,
-                    false,
-                    true,
-                    false,
+                    ResourcePrepareOptions {
+                        create_non_contextual: false,
+                        create_contextual: true,
+                        create_pass_mat: false,
+                    },
                     context,
                 )?;
 
@@ -259,12 +264,13 @@ impl GraphStorage {
                     device,
                     storages,
                     sync.res_list,
-                    &graph.pass_resources,
                     res,
                     backbuffer,
                     graph,
-                    false,
-                    true,
+                    GraphicsPassPrepareOptions {
+                        create_non_contextual: false,
+                        create_contextual: true,
+                    },
                 )?;
 
                 res.exec_context = Some(context.clone());
@@ -281,7 +287,6 @@ impl GraphStorage {
             store,
             graph,
             res,
-            context,
         )
     }
 

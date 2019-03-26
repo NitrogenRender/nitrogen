@@ -431,12 +431,16 @@ impl SubmitGroup {
         image: image::ImageHandle,
         data: image::ImageUploadInfo,
     ) -> Result<(), image::ImageError> {
+        let mut sync = QueueSyncRefs {
+            res_list: &mut self.res_destroys,
+            sem_list: &mut self.sem_list,
+            sem_pool: &self.sem_pool,
+        };
+
         ctx.image_storage.borrow_mut().upload_data(
             &ctx.device_ctx,
-            &self.sem_pool,
-            &mut self.sem_list,
+            &mut sync,
             &self.pool_transfer,
-            &mut self.res_destroys,
             image,
             data,
         )
@@ -488,12 +492,16 @@ impl SubmitGroup {
         buffer: buffer::BufferHandle,
         info: buffer::BufferUploadInfo<T>,
     ) -> Result<(), buffer::BufferError> {
+        let mut sync = QueueSyncRefs {
+            res_list: &mut self.res_destroys,
+            sem_list: &mut self.sem_list,
+            sem_pool: &self.sem_pool,
+        };
+
         ctx.buffer_storage.borrow().device_local_upload(
             &ctx.device_ctx,
-            &self.sem_pool,
-            &mut self.sem_list,
+            &mut sync,
             &self.pool_transfer,
-            &mut self.res_destroys,
             buffer,
             info,
         )

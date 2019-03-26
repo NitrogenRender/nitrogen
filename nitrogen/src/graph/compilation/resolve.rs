@@ -77,19 +77,19 @@ impl GraphWithNamesResolved {
         let writes = self.pass_writes.get(&pass)?;
         let reads = self.pass_reads.get(&pass)?;
 
-        let is_written = writes.iter().find(|(id, _, _)| *id == res).is_some();
+        let is_written = writes.iter().any(|(id, _, _)| *id == res);
 
         if is_written {
             return Some(ResourceAccessType::Write(res_type));
         }
 
-        let is_read = reads.iter().find(|(id, _, _, _)| *id == res).is_some();
+        let is_read = reads.iter().any(|(id, _, _, _)| *id == res);
 
         if is_read {
             return Some(ResourceAccessType::Read(res_type));
         }
 
-        return None;
+        None
     }
 
     pub(crate) fn is_resource_context_dependent(&self, id: ResourceId) -> bool {

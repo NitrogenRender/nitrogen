@@ -93,6 +93,15 @@ pub(crate) unsafe fn prepare_graphics_pass_base(
     Ok(())
 }
 
+pub(crate) struct ResourcePrepareOptions {
+    pub(crate) create_non_contextual: bool,
+    pub(crate) create_contextual: bool,
+    pub(crate) create_pass_mat: bool,
+}
+
+// this attribute is here because clippy keeps complaining, but there is no good way
+// to reduce the number of arguments here..
+#[allow(clippy::too_many_arguments)]
 pub(crate) unsafe fn prepare_resources(
     device: &DeviceContext,
     storages: &Storages,
@@ -100,9 +109,7 @@ pub(crate) unsafe fn prepare_resources(
     graph: &Graph,
     res: &mut GraphResources,
     backbuffer: &mut Backbuffer,
-    create_non_contextual: bool,
-    create_contextual: bool,
-    create_pass_mat: bool,
+    options: ResourcePrepareOptions,
     context: &ExecutionContext,
 ) -> Result<(), PrepareError> {
     let resolved = &graph.compiled_graph.graph_resources;
@@ -118,8 +125,8 @@ pub(crate) unsafe fn prepare_resources(
 
             let is_contextual = compiled.contextual_resources.contains(res_id);
 
-            let create =
-                (is_contextual && create_contextual) || (!is_contextual && create_non_contextual);
+            let create = (is_contextual && options.create_contextual)
+                || (!is_contextual && options.create_non_contextual);
 
             if create {
                 create_resource(
@@ -128,7 +135,7 @@ pub(crate) unsafe fn prepare_resources(
             }
         }
 
-        if create_pass_mat {
+        if options.create_pass_mat {
             for pass in &batch.passes {
                 if let Some(mat) = pass_res.pass_material.get(pass) {
                     let instance = storages
@@ -145,16 +152,19 @@ pub(crate) unsafe fn prepare_resources(
     Ok(())
 }
 
+pub(crate) struct GraphicsPassPrepareOptions {
+    pub(crate) create_non_contextual: bool,
+    pub(crate) create_contextual: bool,
+}
+
 pub(crate) unsafe fn prepare_graphics_passes(
     device: &DeviceContext,
     storages: &Storages,
     res_list: &mut ResourceList,
-    pass_res: &PassResources,
     res: &mut GraphResources,
     backbuffer: &Backbuffer,
     graph: &Graph,
-    create_non_contextual: bool,
-    create_contextual: bool,
+    options: GraphicsPassPrepareOptions,
 ) -> Result<(), PrepareError> {
     let compiled = &graph.compiled_graph;
     let resolved = &compiled.graph_resources;
@@ -173,13 +183,11 @@ pub(crate) unsafe fn prepare_graphics_passes(
                 .passes_that_render_to_the_backbuffer
                 .contains_key(pass);
 
-            let create =
-                (is_contextual && create_contextual) || (!is_contextual && create_non_contextual);
+            let create = (is_contextual && options.create_contextual)
+                || (!is_contextual && options.create_non_contextual);
 
             if create {
-                prepare_graphics_pass(
-                    device, storages, res_list, pass_res, res, backbuffer, graph, *pass,
-                )?;
+                prepare_graphics_pass(device, storages, res_list, res, backbuffer, graph, *pass)?;
             }
         }
     }
@@ -191,12 +199,13 @@ pub(crate) unsafe fn prepare_graphics_pass(
     device: &DeviceContext,
     storages: &Storages,
     res_list: &mut ResourceList,
-    pass_res: &PassResources,
     res: &mut GraphResources,
     backbuffer: &Backbuffer,
     graph: &Graph,
     pass: PassId,
 ) -> Result<(), PrepareError> {
+    let pass_res = &graph.pass_resources;
+
     let render_pass = *pass_res
         .render_passes
         .get(&pass)
@@ -258,7 +267,7 @@ unsafe fn create_render_pass(
                 _ => false,
             })
             .filter_map(|(res, _ty, binding)| {
-                let (_origin, info) = resolved_graph.create_info(*res).unwrap();
+                let (_origin, info) = resolved_graph.create_info(*res)?;
 
                 let format = match info {
                     ResourceCreateInfo::Image(ImageInfo::Create(img)) => img.format.into(),
@@ -662,6 +671,9 @@ pub(crate) unsafe fn create_pipeline_graphics(
     Ok(pipeline_handle)
 }
 
+// this attribute is here because clippy keeps complaining, but there is no good way
+// to reduce the number of arguments here..
+#[allow(clippy::too_many_arguments)]
 unsafe fn create_resource(
     device: &DeviceContext,
     storages: &Storages,
@@ -736,11 +748,10 @@ unsafe fn create_resource(
             let img_handle = image_storage.create(device, create_info)?;
 
             let old_image = res.images.insert(id, img_handle);
-            let mut old_sampler = None;
 
             // If the image is used for sampling then it means some other pass will read from it
             // as a color image. In that case we create a sampler for this image as well
-            if usages.0.contains(gfx::image::Usage::SAMPLED) {
+            let old_sampler = if usages.0.contains(gfx::image::Usage::SAMPLED) {
                 let sampler = sampler_storage.create(
                     device,
                     sampler::SamplerCreateInfo {
@@ -754,8 +765,10 @@ unsafe fn create_resource(
                         ),
                     },
                 );
-                old_sampler = res.samplers.insert(id, sampler);
-            }
+                res.samplers.insert(id, sampler)
+            } else {
+                None
+            };
 
             if let Some(old_img) = old_image {
                 image_storage.destroy(res_list, &[old_img]);

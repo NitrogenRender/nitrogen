@@ -5,7 +5,6 @@
 use super::*;
 
 use crate::graph::resolve::GraphWithNamesResolved;
-use crate::graph::ExecutionContext;
 
 use crate::graph::{
     BufferWriteType, ImageReadType, ImageWriteType, ResourceReadType, ResourceWriteType,
@@ -30,7 +29,6 @@ pub(crate) unsafe fn execute<'a>(
     store: &mut crate::graph::Store,
     graph: &'a mut crate::graph::Graph,
     res: &GraphResources,
-    _context: &ExecutionContext,
 ) -> Result<(), GraphExecError> {
     // let exec_graph = &graph.exec_graph;
 
@@ -130,87 +128,6 @@ pub(crate) unsafe fn execute<'a>(
                     }
                 }
             }
-
-            /*
-            // process graphics pass
-            if let Some(handle) = base_res.pipelines_graphic.get(pass) {
-                let pipeline = storages.pipeline.raw_graphics(*handle).unwrap();
-
-                let render_pass = {
-                    let handle = base_res.render_passes[pass];
-                    storages.render_pass.raw(handle).unwrap()
-                };
-
-                // TODO transition resource layouts
-
-                let framebuffer = res.framebuffers.get(pass);
-                let framebuffer_extent = framebuffer
-                    .map(|f| (f.1.width, f.1.height))
-                    .unwrap_or((1, 1));
-
-                let framebuffer = framebuffer.map(|f| &f.0);
-
-                let viewport = gfx::pso::Viewport {
-                    // TODO depth boundaries
-                    depth: 0.0..1.0,
-                    rect: gfx::pso::Rect {
-                        x: 0,
-                        y: 0,
-                        w: framebuffer_extent.0 as i16,
-                        h: framebuffer_extent.1 as i16,
-                    },
-                };
-
-                let submit = {
-                    let mut raw_cmd = cmd_pool_gfx.alloc();
-                    raw_cmd.begin();
-
-                    raw_cmd.bind_graphics_pipeline(&pipeline.pipeline);
-
-                    raw_cmd.set_viewports(0, &[viewport.clone()]);
-                    raw_cmd.set_scissors(0, &[viewport.rect]);
-
-                    if let Some(set) = set_raw {
-                        raw_cmd.bind_graphics_descriptor_sets(
-                            &pipeline.layout,
-                            0,
-                            Some(set),
-                            &[],
-                        );
-                    }
-
-                    let pass_impl = &graph.passes_gfx_impl[&pass.0];
-
-                    {
-                        let mut command = crate::graph::command::GraphicsCommandBuffer {
-                            buf: &mut *raw_cmd,
-                            storages: &read_storages,
-                            framebuffer,
-                            viewport_rect: viewport.rect,
-                            pipeline_layout: &pipeline.layout,
-                            render_pass,
-                        };
-
-                        pass_impl.execute(store, &mut command);
-                    }
-
-                    raw_cmd.finish();
-                    raw_cmd
-                };
-
-                {
-                    let submission = gfx::Submission {
-                        command_buffers: Some(&*submit),
-                        wait_semaphores: sem_pool
-                            .list_prev_sems(sem_list)
-                            .map(|sem| (sem, gfx::pso::PipelineStage::BOTTOM_OF_PIPE)),
-                        signal_semaphores: sem_pool.list_next_sems(sem_list),
-                    };
-
-                    device.graphics_queue().submit(submission, None);
-                }
-            }
-            */
 
             sync.sem_list.advance();
         }

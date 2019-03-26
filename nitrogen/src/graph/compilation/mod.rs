@@ -69,7 +69,7 @@ pub enum CompileError {
 }
 
 impl CompileError {
-    pub(crate) fn to_diagnostic(self, pass_names: &Vec<PassName>) -> String {
+    pub(crate) fn diagnostic(self, pass_names: &[PassName]) -> String {
         match self {
             CompileError::ResourceRedefined { res, prev, pass } => {
                 let prev_name = pass_names[prev.0].clone();
@@ -224,7 +224,7 @@ pub(crate) fn compile_graph(
     let contextual_resources = {
         let mut set = HashSet::new();
 
-        for (id, _info) in &resolved.infos {
+        for id in resolved.infos.keys() {
             if resolved.is_resource_context_dependent(*id) {
                 set.insert(*id);
             }

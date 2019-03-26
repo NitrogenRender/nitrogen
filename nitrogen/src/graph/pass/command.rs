@@ -74,7 +74,7 @@ impl<'a> GraphicsCommandBuffer<'a> {
         T: IntoIterator<Item = I>,
         T::Item: std::borrow::Borrow<(BufferHandle, usize)>,
     {
-        let stores = self.storages.clone();
+        let stores = self.storages;
 
         let bufs = buffers.into_iter().filter_map(|i| {
             let (buffer, index) = i.borrow();
@@ -94,7 +94,7 @@ impl<'a> GraphicsCommandBuffer<'a> {
         offset: u64,
         index_type: IndexType,
     ) {
-        let stores = self.storages.clone();
+        let stores = self.storages;
 
         let buffer_raw = stores.buffer.raw(buffer).map(|buf| buf.buffer.raw());
 
