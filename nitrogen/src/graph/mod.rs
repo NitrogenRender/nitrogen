@@ -228,8 +228,6 @@ impl GraphStorage {
                     true,
                 )?;
 
-                let resources = dbg!(resources);
-
                 // remove whatever is there.
                 let old_res = std::mem::replace(res, resources);
                 old_res.release(sync.res_list, storages);

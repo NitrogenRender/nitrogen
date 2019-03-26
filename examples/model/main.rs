@@ -8,6 +8,11 @@ use nitrogen_examples_common::main_loop;
 use nitrogen_examples_common::resource::*;
 
 use cgmath::*;
+use nitrogen::graph::builder::resource_descriptor::ImageClearValue;
+use nitrogen::graph::builder::GraphBuilder;
+use nitrogen::graph::{GraphicsPipelineInfo, ResourceDescriptor};
+use nitrogen::resources::shader::{FragmentShaderHandle, ShaderInfo, VertexShaderHandle};
+use nitrogen::resources::vertex_attrib::VertexAttribHandle;
 
 static MODEL_DATA: &[u8] = include_bytes!("assets/bunny.obj");
 
@@ -27,6 +32,8 @@ fn main() {
     }
 }
 
+struct Delta(f64);
+
 struct Data {
     buf_position: buffer::BufferHandle,
     buf_normal: buffer::BufferHandle,
@@ -42,6 +49,8 @@ impl main_loop::UserData for Data {
         store.entry::<Rad<f32>>().and_modify(|rad| {
             rad.0 += delta as f32 * 1.0;
         });
+
+        store.insert(Delta(delta));
     }
 
     fn graph(&self) -> Option<graph::GraphHandle> {
@@ -113,14 +122,16 @@ fn init_resources(
         ctx.vertex_attribs_create(create_info)
     };
 
-    let graph = create_graph(
-        ctx,
-        vertex_def,
-        b_position,
-        b_normal,
-        b_index,
-        mesh.indices.len(),
-    );
+    let graph = unsafe {
+        create_graph(
+            ctx,
+            vertex_def,
+            b_position,
+            b_normal,
+            b_index,
+            mesh.indices.len(),
+        )
+    };
 
     Some(Data {
         buf_position: b_position,
@@ -133,7 +144,7 @@ fn init_resources(
     })
 }
 
-fn create_graph(
+unsafe fn create_graph(
     ctx: &mut Context,
     vert: vertex_attrib::VertexAttribHandle,
     position: buffer::BufferHandle,
@@ -143,41 +154,32 @@ fn create_graph(
 ) -> graph::GraphHandle {
     use std::borrow::Cow;
 
-    let graph = ctx.graph_create();
+    let mut builder = GraphBuilder::new("Pass3d");
 
     // base pass
     {
-        let info = graph::GraphicsPassInfo {
-            vertex_attrib: Some(vert),
-            depth_mode: Some(graph::DepthMode {
-                write: true,
-                func: graph::Comparison::Less,
-            }),
-            stencil_mode: None,
-            shaders: graph::Shaders {
-                vertex: graph::ShaderInfo {
-                    entry: "VertexMain".into(),
-                    content: Cow::Borrowed(include_bytes!(concat!(
-                        env!("OUT_DIR"),
-                        "/model/model.hlsl.vert.spirv",
-                    ))),
-                },
-                fragment: Some(graph::ShaderInfo {
-                    entry: "FragmentMain".into(),
-                    content: Cow::Borrowed(include_bytes!(concat!(
-                        env!("OUT_DIR"),
-                        "/model/model.hlsl.frag.spirv",
-                    ))),
-                }),
-                geometry: None,
-            },
-            primitive: graph::Primitive::TriangleList,
-            blend_modes: vec![graph::BlendMode::Alpha],
-            materials: vec![],
-            push_constants: vec![
-                // (0..1) scale
-                (0..32),
-            ],
+        let vertex_shader = {
+            let info = ShaderInfo {
+                entry_point: "VertexMain".into(),
+                spirv_content: include_bytes!(concat!(
+                    env!("OUT_DIR"),
+                    "/model/model.hlsl.vert.spirv"
+                )),
+            };
+
+            ctx.vertex_shader_create(info)
+        };
+
+        let fragment_shader = {
+            let info = ShaderInfo {
+                entry_point: "FragmentMain".into(),
+                spirv_content: include_bytes!(concat!(
+                    env!("OUT_DIR"),
+                    "/model/model.hlsl.frag.spirv"
+                )),
+            };
+
+            ctx.fragment_shader_create(info)
         };
 
         struct Pass {
@@ -185,11 +187,73 @@ fn create_graph(
             normal: buffer::BufferHandle,
             index: buffer::BufferHandle,
             vertices: usize,
+            vertex_attr: VertexAttribHandle,
+            vertex_shader: VertexShaderHandle,
+            fragment_shader: FragmentShaderHandle,
+
+            run_time: f64,
+            draw_lines: bool,
         };
 
-        impl graph::GraphicsPassImpl for Pass {
-            fn setup(&mut self, _: &mut graph::Store, builder: &mut graph::GraphBuilder) {
-                builder.image_create(
+        #[derive(Copy, Clone)]
+        struct PassConfig {
+            primitive: graph::Primitive,
+            blend_mode: graph::BlendMode,
+            use_depth: bool,
+        }
+
+        impl graph::GraphicsPass for Pass {
+            type Config = PassConfig;
+
+            fn prepare(&mut self, store: &mut graph::Store) {
+                let Delta(f) = store.get().unwrap();
+
+                self.run_time += *f;
+
+                let seconds = self.run_time as u64;
+                let seconds = seconds % 8;
+
+                if seconds < 4 {
+                    self.draw_lines = false;
+                } else {
+                    self.draw_lines = true;
+                }
+            }
+
+            fn configure(&self, config: Self::Config) -> graph::GraphicsPipelineInfo {
+                let depth = if config.use_depth {
+                    Some(graph::DepthMode {
+                        write: true,
+                        func: graph::Comparison::Less,
+                    })
+                } else {
+                    None
+                };
+
+                graph::GraphicsPipelineInfo {
+                    vertex_attrib: Some(self.vertex_attr),
+                    depth_mode: depth,
+                    stencil_mode: None,
+                    shaders: graph::GraphicShaders {
+                        vertex: graph::Shader {
+                            handle: self.vertex_shader,
+                            specialization: vec![],
+                        },
+                        fragment: Some(graph::Shader {
+                            handle: self.fragment_shader,
+                            specialization: vec![],
+                        }),
+                        geometry: None,
+                    },
+                    primitive: config.primitive,
+                    blend_modes: vec![config.blend_mode],
+                    materials: vec![],
+                    push_constants: Some(0..32),
+                }
+            }
+
+            fn describe(&mut self, res: &mut graph::ResourceDescriptor) {
+                res.image_create(
                     "Base",
                     graph::ImageCreateInfo {
                         size_mode: image::ImageSizeMode::ContextRelative {
@@ -200,7 +264,7 @@ fn create_graph(
                     },
                 );
 
-                builder.image_create(
+                res.image_create(
                     "Depth",
                     graph::ImageCreateInfo {
                         size_mode: image::ImageSizeMode::ContextRelative {
@@ -211,17 +275,15 @@ fn create_graph(
                     },
                 );
 
-                builder.image_write_color("Base", 0);
-                builder.image_write_depth_stencil("Depth");
-
-                builder.enable();
+                res.image_write_color("Base", 0);
+                res.image_write_depth_stencil("Depth");
             }
 
             unsafe fn execute(
                 &self,
                 store: &graph::Store,
-                cmd: &mut graph::GraphicsCommandBuffer<'_>,
-            ) {
+                dispatcher: &mut graph::GraphicsDispatcher<Self>,
+            ) -> Result<(), graph::GraphExecError> {
                 let m = {
                     let Rad(rad) = store.get().unwrap();
 
@@ -242,32 +304,69 @@ fn create_graph(
 
                 let mvp = p * m;
 
-                let mut cmd = cmd
-                    .begin_render_pass(&[
-                        graph::ImageClearValue::Color([0.1, 0.1, 0.1, 1.0]),
-                        graph::ImageClearValue::DepthStencil(1.0, 0),
-                    ])
-                    .unwrap();
+                let color = dispatcher.image_write_ref("Base")?;
+                let depth = dispatcher.image_write_ref("Depth")?;
 
-                unsafe fn push_matrix(
-                    cmd: &mut graph::RenderPassEncoder<'_>,
-                    offset: u32,
-                    mat: Matrix4<f32>,
-                ) {
-                    cmd.push_constant(offset + 0, mat.x);
-                    cmd.push_constant(offset + 4, mat.y);
-                    cmd.push_constant(offset + 8, mat.z);
-                    cmd.push_constant(offset + 12, mat.w);
+                dispatcher.clear_image(color, ImageClearValue::Color([0.1, 0.1, 0.1, 1.0]));
+                dispatcher.clear_image(depth, ImageClearValue::DepthStencil(1.0, 0));
+
+                let mut config = PassConfig {
+                    blend_mode: graph::BlendMode::Alpha,
+                    primitive: graph::Primitive::TriangleList,
+                    use_depth: true,
+                };
+
+                dispatcher.with_config(config, |cmd| {
+                    unsafe fn push_matrix(
+                        cmd: &mut graph::GraphicsCommandBuffer<'_>,
+                        offset: u32,
+                        mat: Matrix4<f32>,
+                    ) {
+                        cmd.push_constant(offset + 0, mat.x);
+                        cmd.push_constant(offset + 4, mat.y);
+                        cmd.push_constant(offset + 8, mat.z);
+                        cmd.push_constant(offset + 12, mat.w);
+                    }
+
+                    push_matrix(cmd, 0, mvp);
+                    push_matrix(cmd, 16, m);
+
+                    cmd.bind_vertex_buffers(&[(self.position, 0), (self.normal, 0)]);
+
+                    cmd.bind_index_buffer(self.index, 0, graph::IndexType::U32);
+
+                    cmd.draw_indexed(0..self.vertices as u32, 0, 0..1);
+                })?;
+
+                if self.draw_lines {
+                    config.primitive = graph::Primitive::LineList;
+                    config.blend_mode = graph::BlendMode::Add;
+                    config.use_depth = false;
+
+                    dispatcher.with_config(config, |cmd| {
+                        unsafe fn push_matrix(
+                            cmd: &mut graph::GraphicsCommandBuffer<'_>,
+                            offset: u32,
+                            mat: Matrix4<f32>,
+                        ) {
+                            cmd.push_constant(offset + 0, mat.x);
+                            cmd.push_constant(offset + 4, mat.y);
+                            cmd.push_constant(offset + 8, mat.z);
+                            cmd.push_constant(offset + 12, mat.w);
+                        }
+
+                        push_matrix(cmd, 0, mvp);
+                        push_matrix(cmd, 16, m);
+
+                        cmd.bind_vertex_buffers(&[(self.position, 0), (self.normal, 0)]);
+
+                        cmd.bind_index_buffer(self.index, 0, graph::IndexType::U32);
+
+                        cmd.draw_indexed(0..self.vertices as u32, 0, 0..1);
+                    })?;
                 }
 
-                push_matrix(&mut cmd, 0, mvp);
-                push_matrix(&mut cmd, 16, m);
-
-                cmd.bind_vertex_buffers(&[(self.position, 0), (self.normal, 0)]);
-
-                cmd.bind_index_buffer(self.index, 0, graph::IndexType::U32);
-
-                cmd.draw_indexed(0..self.vertices as u32, 0, 0..1);
+                Ok(())
             }
         }
 
@@ -276,12 +375,20 @@ fn create_graph(
             normal,
             index,
             vertices: num_vertices,
+
+            vertex_attr: vert,
+
+            vertex_shader,
+            fragment_shader,
+
+            draw_lines: false,
+            run_time: 0.0,
         };
 
-        ctx.graph_add_graphics_pass(graph, "BasePass", info, pass);
+        builder.add_graphics_pass("BasePass", pass);
     }
 
-    ctx.graph_add_output(graph, "Base");
+    builder.add_target("Base");
 
-    graph
+    ctx.graph_create(builder).unwrap()
 }

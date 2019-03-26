@@ -162,9 +162,13 @@ fn derive_pass(compiled: &CompiledGraph, pass: PassId, usages: &mut ResourceUsag
                 match img {
                     ImageWriteType::Color => {
                         usage |= IUsage::COLOR_ATTACHMENT;
+                        usage |= IUsage::TRANSFER_SRC;
+                        usage |= IUsage::TRANSFER_DST;
                     }
                     ImageWriteType::DepthStencil => {
                         usage |= IUsage::DEPTH_STENCIL_ATTACHMENT;
+                        usage |= IUsage::TRANSFER_SRC;
+                        usage |= IUsage::TRANSFER_DST;
                     }
                     ImageWriteType::Storage => {
                         usage |= IUsage::STORAGE;

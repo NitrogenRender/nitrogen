@@ -40,6 +40,6 @@ path = "compute/main.rs"
 # name = "opaque-alpha"
 # path = "opaque-alpha/main.rs"
 
-# [[example]]
-# name = "model"
-# path = "model/main.rs"
+[[example]]
+name = "model"
+path = "model/main.rs"

@@ -54,10 +54,14 @@ pub enum ResourceRefError {
     },
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct ImageWriteRef(pub(crate) ImageHandle);
+#[derive(Clone, Copy, Debug)]
 pub struct ImageReadRef(pub(crate) ImageHandle);
 
+#[derive(Clone, Copy, Debug)]
 pub struct BufferWriteRef(pub(crate) BufferHandle);
+#[derive(Clone, Copy, Debug)]
 pub struct BufferReadRef(pub(crate) BufferHandle);
 
 pub use self::compute::*;
