@@ -28,7 +28,7 @@ use std::collections::{HashMap, HashSet};
 use smallvec::SmallVec;
 
 use crate::graph::pass::dispatcher::ResourceRefError;
-use crate::graph::pass::ComputePipelineInfo;
+use crate::graph::pass::{ComputePipelineInfo, GraphicsPipelineInfo};
 use crate::resources::image::ImageFormat;
 use crate::resources::material::MaterialInstanceHandle;
 use gfx;
@@ -66,6 +66,7 @@ pub(crate) struct PassResources {
 
     pub(crate) pass_material: HashMap<PassId, crate::material::MaterialHandle>,
     pub(crate) compute_pipelines: HashMap<PassId, HashMap<ComputePipelineInfo, PipelineResources>>,
+    pub(crate) graphic_pipelines: HashMap<PassId, HashMap<GraphicsPipelineInfo, PipelineResources>>,
 }
 
 impl PassResources {
@@ -80,6 +81,11 @@ impl PassResources {
         }
 
         for (_, pipes) in self.compute_pipelines {
+            let pipes = pipes.values().map(|res| res.pipeline_handle);
+            storages.pipeline.borrow_mut().destroy(res_list, pipes);
+        }
+
+        for (_, pipes) in self.graphic_pipelines {
             let pipes = pipes.values().map(|res| res.pipeline_handle);
             storages.pipeline.borrow_mut().destroy(res_list, pipes);
         }

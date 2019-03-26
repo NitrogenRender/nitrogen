@@ -60,7 +60,7 @@ impl From<Primitive> for gfx::Primitive {
 
 /// Blend mode used for color attachments.
 #[allow(missing_docs)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BlendMode {
     Alpha,
     Add,
@@ -68,7 +68,7 @@ pub enum BlendMode {
 }
 
 /// Depth-test mode description.
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub struct DepthMode {
     /// Function that determines whether the test fails or succeeds.
     pub func: Comparison,
@@ -78,7 +78,7 @@ pub struct DepthMode {
 
 /// Comparison modes used for depth and stencil tests.
 #[allow(missing_docs)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub enum Comparison {
     Never,
     Less,
@@ -108,6 +108,7 @@ impl From<Comparison> for gfx::pso::Comparison {
 }
 
 /// Set of shaders used in graphics passes.
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct GraphicShaders {
     pub vertex: Shader<VertexShaderHandle>,
     pub fragment: Option<Shader<FragmentShaderHandle>>,
@@ -115,6 +116,7 @@ pub struct GraphicShaders {
 }
 
 /// Description of a graphics pass pipeline.
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct GraphicsPipelineInfo {
     /// Vertex-attribute layout used in the pipeline (if any).
     pub vertex_attrib: Option<VertexAttribHandle>,

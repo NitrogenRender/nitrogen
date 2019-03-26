@@ -39,6 +39,9 @@ pub enum PrepareError {
     #[display(fmt = "Renderpass invalid. Is the graph compiled?")]
     InvalidRenderPass,
 
+    #[display(fmt = "Famebuffer invalid. Is the graph compiled?")]
+    InvalidFramebuffer,
+
     #[display(fmt = "Pipeline could not be created because a mandatory shader handle is invalid")]
     InvalidShaderHandle,
 
@@ -91,91 +94,6 @@ pub(crate) unsafe fn prepare_graphics_pass_base(
 
     Ok(())
 }
-
-/*
-pub(crate) unsafe fn prepare(
-    usages: &ResourceUsages,
-    backbuffer: &mut Backbuffer,
-    device: &DeviceContext,
-    storages: &mut Storages,
-    exec: &ExecutionGraph,
-    resolved: &GraphWithNamesResolved,
-    passes: &[(PassName, PassInfo)],
-    context: ExecutionContext,
-) -> Result<GraphResources, PrepareError> {
-    let mut res = GraphResources {
-        exec_context: context.clone(),
-        external_resources: HashSet::new(),
-        images: HashMap::new(),
-        samplers: HashMap::new(),
-        buffers: HashMap::new(),
-    };
-
-    for batch in &exec.pass_execution {
-        // TODO this should probably be moved into the execution phase once a better
-        // memory allocator is in place
-        // Maybe instead things can be aliased if the size and format matches? :thinking:
-        for create in &batch.resource_create {
-            let res_info = &resolved.infos[create];
-            create_resource(
-                usages, device, &context, backbuffer, storages, *create, res_info, &mut res,
-            );
-        }
-
-        for pass in &batch.passes {
-            let info = &passes[pass.0].1;
-
-            if let Some(mat) = base.pipelines_mat.get(pass) {
-                let instance = storages.material.create_instance(device, *mat).unwrap();
-
-                res.pass_mats.insert(*pass, instance);
-            }
-
-            prepare_pass(
-                backbuffer, base, device, storages, resolved, *pass, info, &mut res,
-            )?;
-        }
-    }
-
-    Ok(res)
-}
-
-*/
-
-/*
-
-pub(crate) unsafe fn prepare_pass(
-    backbuffer: &mut Backbuffer,
-    base: &GraphBaseResources,
-    device: &DeviceContext,
-    storages: &mut Storages,
-    resolved: &GraphWithNamesResolved,
-    pass: PassId,
-    info: &PassInfo,
-    res: &mut GraphResources,
-) -> Result<(), PrepareError> {
-    match info {
-        PassInfo::Graphics { .. } => {
-            // create framebuffers
-            let render_pass = base.render_passes[&pass];
-            let render_pass_raw = storages
-                .render_pass
-                .raw(render_pass)
-                .ok_or(PrepareError::InvalidRenderPass)?;
-
-
-            res.framebuffers.insert(pass, (framebuffer, extent));
-
-            Ok(())
-        }
-        PassInfo::Compute(_) => {
-            // nothing to prepare for compute passes
-            Ok(())
-        }
-    }
-}
-
-*/
 
 pub(crate) unsafe fn prepare_resources(
     device: &DeviceContext,
@@ -657,57 +575,96 @@ pub(crate) unsafe fn create_pipeline_compute(
     Ok(pipeline_handle)
 }
 
-/*
-unsafe fn create_pipeline_graphics(
+pub(crate) unsafe fn create_pipeline_graphics(
     device: &DeviceContext,
-    storages: &mut Storages,
-    render_pass: RenderPassHandle,
+    storages: &Storages,
+    pass: PassId,
     pass_material: Option<MaterialHandle>,
-    info: &GraphicsPassInfo,
+    info: &GraphicsPipelineInfo,
+    render_pass: RenderPassHandle,
 ) -> Result<PipelineHandle, PrepareError> {
     use crate::pipeline;
 
-    let layouts = create_pipeline_base(storages.material, pass_material, &info.materials[..]);
+    let material_storage = storages.material.borrow();
+    let mut shader_storage = storages.shader.borrow_mut();
+    let mut pipeline_storage = storages.pipeline.borrow_mut();
+
+    let layouts = create_pipeline_base(&*material_storage, pass_material, &info.materials[..]);
 
     let layouts = layouts
         .into_iter()
         .map(|(_, data)| data)
         .collect::<Vec<_>>();
 
+    let mut push_constants = SmallVec::<[_; 1]>::new();
+    if let Some(range) = &info.push_constants {
+        push_constants.push(range.clone());
+    }
+
+    let vertex_shader = {
+        let raw = shader_storage
+            .raw_vertex(info.shaders.vertex.handle)
+            .ok_or(PrepareError::InvalidShaderHandle)?;
+
+        pipeline::ShaderInfo {
+            content: raw.spirv_content.as_slice(),
+            entry: &raw.entry_point,
+            specialization: &info.shaders.vertex.specialization,
+        }
+    };
+
+    let fragment_shader = if let Some(sh) = &info.shaders.fragment {
+        let raw = shader_storage
+            .raw_fragment(sh.handle)
+            .ok_or(PrepareError::InvalidShaderHandle)?;
+
+        let info = pipeline::ShaderInfo {
+            content: raw.spirv_content.as_slice(),
+            entry: &raw.entry_point,
+            specialization: &sh.specialization,
+        };
+        Some(info)
+    } else {
+        None
+    };
+
+    let geometry_shader = if let Some(sh) = &info.shaders.geometry {
+        let raw = shader_storage
+            .raw_geometry(sh.handle)
+            .ok_or(PrepareError::InvalidShaderHandle)?;
+
+        let info = pipeline::ShaderInfo {
+            content: raw.spirv_content.as_slice(),
+            entry: &raw.entry_point,
+            specialization: &sh.specialization,
+        };
+        Some(info)
+    } else {
+        None
+    };
+
     let create_info = pipeline::GraphicsPipelineCreateInfo {
         vertex_attribs: info.vertex_attrib,
         primitive: info.primitive,
-        shader_vertex: pipeline::ShaderInfo {
-            content: &info.shaders.vertex.content,
-            entry: &info.shaders.vertex.entry,
-        },
-        shader_fragment: if info.shaders.fragment.is_some() {
-            Some(pipeline::ShaderInfo {
-                content: &info.shaders.fragment.as_ref().unwrap().content,
-                entry: &info.shaders.fragment.as_ref().unwrap().entry,
-            })
-        } else {
-            None
-        },
-        // TODO add support for geometry shaders
-        shader_geometry: None,
+        shader_vertex: vertex_shader,
+        shader_fragment: fragment_shader,
+        shader_geometry: geometry_shader,
         descriptor_set_layout: &layouts[..],
-        push_constants: &info.push_constants[..],
+        push_constants: push_constants.as_slice(),
         blend_modes: &info.blend_modes[..],
         depth_mode: info.depth_mode,
     };
 
-    let pipeline_handle = storages.pipeline.create_graphics_pipeline(
+    let pipeline_handle = pipeline_storage.create_graphics_pipeline(
         device,
-        storages.render_pass,
-        storages.vertex_attrib,
+        &*storages.render_pass.borrow(),
+        &*storages.vertex_attrib.borrow(),
         render_pass,
         create_info,
     )?;
 
     Ok(pipeline_handle)
 }
-*/
 
 unsafe fn create_resource(
     device: &DeviceContext,

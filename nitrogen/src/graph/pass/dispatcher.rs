@@ -218,6 +218,8 @@ mod compute {
         where
             F: FnOnce(&mut ComputeCommandBuffer) -> R,
         {
+            let material_storage = self.storages.material.borrow();
+
             // TODO fetch this from a cache rather than calling this every time.
             let desc = self.pass_impl.borrow().configure(config);
 
@@ -225,12 +227,12 @@ mod compute {
             let compute_pipelines = &mut self.pass_res.compute_pipelines;
             let pass_materials = &mut self.pass_res.pass_material;
 
+            let pass_mat = pass_materials.get(&self.pass_id).cloned();
+
             let pipelines = compute_pipelines.entry(self.pass_id).or_default();
 
             if !pipelines.contains_key(&desc) {
                 // create new pipeline!
-                let pass_mat = pass_materials.get(&self.pass_id).cloned();
-
                 let pipe = create_pipeline_compute(
                     self.device,
                     self.storages,
@@ -261,6 +263,24 @@ mod compute {
 
             self.cmd.bind_compute_pipeline(&pipe_raw.pipeline);
 
+            // pass material exists, bind it.
+            if let Some(mat) = pass_mat {
+                let instance = {
+                    let mat = material_storage.raw(mat).unwrap();
+
+                    let instance = self.graph_res.pass_mat_instances[&self.pass_id];
+
+                    mat.instance_raw(instance.instance).unwrap()
+                };
+
+                self.cmd.bind_compute_descriptor_sets(
+                    &pipe_raw.layout,
+                    0,
+                    Some(&instance.set),
+                    &[],
+                );
+            }
+
             let mut cmd = {
                 ComputeCommandBuffer {
                     buf: self.cmd,
@@ -280,6 +300,7 @@ pub use self::graphics::*;
 mod graphics {
     use super::*;
     use crate::graph::builder::resource_descriptor::ImageClearValue;
+    use crate::graph::execution::create_pipeline_graphics;
     use crate::graph::pass::command::GraphicsCommandBuffer;
     use crate::graph::pass::GraphicsPass;
 
@@ -515,7 +536,113 @@ mod graphics {
         where
             F: FnOnce(&mut GraphicsCommandBuffer) -> R,
         {
-            unimplemented!()
+            let material_storage = self.storages.material.borrow();
+            let render_pass_storage = self.storages.render_pass.borrow();
+
+            let render_pass_handle = self.pass_res.render_passes[&self.pass_id];
+
+            let desc = self.pass_impl.borrow().configure(config);
+
+            let graphics_pipelines = &mut self.pass_res.graphic_pipelines;
+            let pass_materials = &mut self.pass_res.pass_material;
+
+            let pass_mat = pass_materials.get(&self.pass_id).cloned();
+            let pipelines = graphics_pipelines.entry(self.pass_id).or_default();
+
+            if !pipelines.contains_key(&desc) {
+                // create new pipeline!!
+                let pipe = create_pipeline_graphics(
+                    self.device,
+                    self.storages,
+                    self.pass_id,
+                    pass_mat,
+                    &desc,
+                    render_pass_handle,
+                )?;
+
+                pipelines.insert(
+                    desc.clone(),
+                    PipelineResources {
+                        pipeline_handle: pipe,
+                    },
+                );
+            }
+
+            let pipeline_storage = self.storages.pipeline.borrow();
+
+            let read_storages = ReadStorages {
+                buffer: self.storages.buffer.borrow(),
+                material: self.storages.material.borrow(),
+                image: self.storages.image.borrow(),
+            };
+
+            let render_pass = render_pass_storage
+                .raw(render_pass_handle)
+                .ok_or(PrepareError::InvalidRenderPass)?;
+
+            let pipe = pipelines.get(&desc).unwrap();
+
+            let pipe_raw = pipeline_storage.raw_graphics(pipe.pipeline_handle).unwrap();
+
+            let (fb, fb_extent) = {
+                self.graph_res
+                    .framebuffers
+                    .get(&self.pass_id)
+                    .ok_or(PrepareError::InvalidFramebuffer)?
+            };
+
+            let viewport = gfx::pso::Viewport {
+                // TODO depth boundaries
+                depth: 0.0..1.0,
+                rect: gfx::pso::Rect {
+                    x: 0,
+                    y: 0,
+                    w: fb_extent.width as i16,
+                    h: fb_extent.height as i16,
+                },
+            };
+
+            let ret = {
+                self.cmd.bind_graphics_pipeline(&pipe_raw.pipeline);
+
+                // pass material exists, bind it.
+                if let Some(mat) = pass_mat {
+                    let instance = {
+                        let mat = material_storage.raw(mat).unwrap();
+
+                        let instance = self.graph_res.pass_mat_instances[&self.pass_id];
+
+                        mat.instance_raw(instance.instance).unwrap()
+                    };
+
+                    self.cmd.bind_graphics_descriptor_sets(
+                        &pipe_raw.layout,
+                        0,
+                        Some(&instance.set),
+                        &[],
+                    );
+                }
+
+                self.cmd.set_viewports(0, &[viewport.clone()]);
+                self.cmd.set_scissors(0, &[viewport.rect]);
+
+                {
+                    let encoder =
+                        self.cmd
+                            .begin_render_pass_inline(render_pass, fb, viewport.rect, &[]);
+
+                    let mut command = GraphicsCommandBuffer {
+                        storages: &read_storages,
+                        viewport_rect: viewport.rect,
+                        pipeline_layout: &pipe_raw.layout,
+                        encoder,
+                    };
+
+                    f(&mut command)
+                }
+            };
+
+            Ok(ret)
         }
     }
 }
