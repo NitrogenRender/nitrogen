@@ -13,7 +13,6 @@ use super::{
 use crate::graph::builder::resource_descriptor::{ImageWriteType, ResourceDescriptor};
 use crate::graph::builder::{GraphBuilder, PassType};
 use crate::graph::{ComputePassAccessor, GraphicPassAccessor, PassName};
-use core::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
@@ -127,7 +126,7 @@ impl CompileError {
 }
 
 pub(crate) struct CompiledGraph {
-    pub(crate) pass_names: Vec<PassName>,
+    pub(crate) _pass_names: Vec<PassName>,
 
     pub(crate) compute_passes: HashMap<PassId, ComputePassAccessor>,
     pub(crate) graphic_passes: HashMap<PassId, GraphicPassAccessor>,
@@ -142,7 +141,7 @@ pub(crate) struct CompiledGraph {
 }
 
 pub(crate) fn compile_graph(
-    mut builder: GraphBuilder,
+    builder: GraphBuilder,
 ) -> Result<CompiledGraph, (Vec<PassName>, Vec<CompileError>)> {
     let mut errors = vec![];
 
@@ -225,7 +224,7 @@ pub(crate) fn compile_graph(
     let contextual_resources = {
         let mut set = HashSet::new();
 
-        for (id, info) in &resolved.infos {
+        for (id, _info) in &resolved.infos {
             if resolved.is_resource_context_dependent(*id) {
                 set.insert(*id);
             }
@@ -236,7 +235,7 @@ pub(crate) fn compile_graph(
 
     if errors.is_empty() {
         Ok(CompiledGraph {
-            pass_names,
+            _pass_names: pass_names,
 
             contextual_passes,
             contextual_resources,

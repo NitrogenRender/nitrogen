@@ -15,13 +15,10 @@ use crate::graph::{builder, GraphExecError};
 use crate::material::MaterialHandle;
 use crate::vertex_attrib::VertexAttribHandle;
 
-use crate::util::CowString;
-
 use crate::resources::shader::{
     ComputeShaderHandle, FragmentShaderHandle, GeometryShaderHandle, VertexShaderHandle,
 };
 use smallvec::SmallVec;
-use std::borrow::Cow;
 
 /// Numerical identifier for a pass.
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, Debug)]

@@ -14,7 +14,7 @@ pub(crate) use self::prepare::*;
 
 pub use self::prepare::PrepareError;
 
-use super::{PassId, PassName, ResourceId, Storages};
+use super::{PassId, ResourceId, Storages};
 use crate::resources::{
     buffer::BufferHandle, image::ImageHandle, pipeline::PipelineHandle,
     render_pass::RenderPassHandle, sampler::SamplerHandle,
@@ -25,11 +25,8 @@ use crate::submit_group::ResourceList;
 
 use std::collections::{HashMap, HashSet};
 
-use smallvec::SmallVec;
-
 use crate::graph::pass::dispatcher::ResourceRefError;
 use crate::graph::pass::{ComputePipelineInfo, GraphicsPipelineInfo};
-use crate::resources::image::ImageFormat;
 use crate::resources::material::MaterialInstanceHandle;
 use gfx;
 

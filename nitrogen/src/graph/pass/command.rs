@@ -14,8 +14,7 @@ use crate::material::{MaterialInstanceHandle, MaterialStorage};
 
 use crate::buffer::{BufferHandle, BufferStorage};
 
-use crate::graph::ImageClearValue;
-use crate::image::{ImageHandle, ImageStorage};
+use crate::image::ImageStorage;
 use std::cell::Ref;
 
 /// Type used for the indices in the index buffer.
@@ -31,7 +30,7 @@ pub enum IndexType {
 pub(crate) struct ReadStorages<'a> {
     pub(crate) buffer: Ref<'a, BufferStorage>,
     pub(crate) material: Ref<'a, MaterialStorage>,
-    pub(crate) image: Ref<'a, ImageStorage>,
+    pub(crate) _image: Ref<'a, ImageStorage>,
 }
 
 /// CommandBuffer object used to issue commands to a graphics queue.

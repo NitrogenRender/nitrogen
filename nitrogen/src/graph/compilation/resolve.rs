@@ -95,7 +95,7 @@ impl GraphWithNamesResolved {
     pub(crate) fn is_resource_context_dependent(&self, id: ResourceId) -> bool {
         use crate::image;
 
-        let (id, info) = if let Some((id, info)) = self.create_info(id) {
+        let (_id, info) = if let Some((id, info)) = self.create_info(id) {
             (id, info)
         } else {
             return false;

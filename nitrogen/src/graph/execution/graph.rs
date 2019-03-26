@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use super::*;
-use crate::graph::{GraphWithNamesResolved, ResourceName};
 
 use crate::graph::compilation::CompiledGraph;
 use std::collections::HashSet;

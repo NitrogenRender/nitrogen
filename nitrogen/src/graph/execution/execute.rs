@@ -19,8 +19,7 @@ use crate::device::DeviceContext;
 use crate::graph::builder::PassType;
 use crate::graph::pass::dispatcher::{RawComputeDispatcher, RawGraphicsDispatcher};
 use crate::resources::command_pool::{CommandPoolCompute, CommandPoolGraphics};
-use crate::resources::material::{MaterialInstanceHandle, MaterialStorage};
-use crate::resources::semaphore_pool::{SemaphoreList, SemaphorePool};
+use crate::resources::material::MaterialInstanceHandle;
 use crate::submit_group::QueueSyncRefs;
 
 pub(crate) unsafe fn execute<'a>(

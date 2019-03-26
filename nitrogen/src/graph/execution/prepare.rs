@@ -17,7 +17,7 @@ use crate::resources::{image, sampler};
 
 use crate::device::DeviceContext;
 
-use crate::resources::material::{MaterialError, MaterialHandle, MaterialInstanceHandle};
+use crate::resources::material::{MaterialError, MaterialHandle};
 use smallvec::SmallVec;
 
 use crate::graph::builder::PassType;
@@ -28,8 +28,6 @@ use crate::resources::image::ImageError;
 use crate::resources::material::MaterialStorage;
 use crate::resources::pipeline::PipelineError;
 use crate::resources::render_pass::RenderPassError;
-use gfx::device::Device;
-use gfx::image::Layout::Preinitialized;
 use std::collections::BTreeMap;
 
 /// Errors that can occur when trying to prepare resources for a graph execution.
@@ -171,7 +169,7 @@ pub(crate) unsafe fn prepare_graphics_passes(
             }
 
             let is_contextual = compiled.contextual_passes.contains(pass);
-            let renders_to_backbuffer = compiled
+            let _renders_to_backbuffer = compiled
                 .passes_that_render_to_the_backbuffer
                 .contains_key(pass);
 
@@ -199,8 +197,6 @@ pub(crate) unsafe fn prepare_graphics_pass(
     graph: &Graph,
     pass: PassId,
 ) -> Result<(), PrepareError> {
-    let render_pass_storage = storages.render_pass.borrow();
-
     let render_pass = *pass_res
         .render_passes
         .get(&pass)
@@ -262,7 +258,7 @@ unsafe fn create_render_pass(
                 _ => false,
             })
             .filter_map(|(res, _ty, binding)| {
-                let (origin, info) = resolved_graph.create_info(*res).unwrap();
+                let (_origin, info) = resolved_graph.create_info(*res).unwrap();
 
                 let format = match info {
                     ResourceCreateInfo::Image(ImageInfo::Create(img)) => img.format.into(),
@@ -536,12 +532,12 @@ unsafe fn create_framebuffer(
 pub(crate) unsafe fn create_pipeline_compute(
     device: &DeviceContext,
     storages: &Storages,
-    pass: PassId,
+    _pass: PassId,
     pass_material: Option<MaterialHandle>,
     info: &ComputePipelineInfo,
 ) -> Result<PipelineHandle, PrepareError> {
     let material_storage = storages.material.borrow();
-    let mut shader_storage = storages.shader.borrow_mut();
+    let shader_storage = storages.shader.borrow();
     let mut pipeline_storage = storages.pipeline.borrow_mut();
 
     let layouts = create_pipeline_base(&*material_storage, pass_material, &info.materials[..]);
@@ -578,7 +574,7 @@ pub(crate) unsafe fn create_pipeline_compute(
 pub(crate) unsafe fn create_pipeline_graphics(
     device: &DeviceContext,
     storages: &Storages,
-    pass: PassId,
+    _pass: PassId,
     pass_material: Option<MaterialHandle>,
     info: &GraphicsPipelineInfo,
     render_pass: RenderPassHandle,
@@ -586,7 +582,7 @@ pub(crate) unsafe fn create_pipeline_graphics(
     use crate::pipeline;
 
     let material_storage = storages.material.borrow();
-    let mut shader_storage = storages.shader.borrow_mut();
+    let shader_storage = storages.shader.borrow();
     let mut pipeline_storage = storages.pipeline.borrow_mut();
 
     let layouts = create_pipeline_base(&*material_storage, pass_material, &info.materials[..]);
@@ -698,7 +694,7 @@ unsafe fn create_resource(
             res.images.insert(id, *img);
 
             if let Some(sampler) = backbuffer.samplers.get(name) {
-                let old_sampler = res.samplers.insert(id, *sampler);
+                let _old_sampler = res.samplers.insert(id, *sampler);
             }
 
             Ok(())

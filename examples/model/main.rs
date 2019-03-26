@@ -10,7 +10,6 @@ use nitrogen_examples_common::resource::*;
 use cgmath::*;
 use nitrogen::graph::builder::resource_descriptor::ImageClearValue;
 use nitrogen::graph::builder::GraphBuilder;
-use nitrogen::graph::{GraphicsPipelineInfo, ResourceDescriptor};
 use nitrogen::resources::shader::{FragmentShaderHandle, ShaderInfo, VertexShaderHandle};
 use nitrogen::resources::vertex_attrib::VertexAttribHandle;
 
@@ -152,8 +151,6 @@ unsafe fn create_graph(
     index: buffer::BufferHandle,
     num_vertices: usize,
 ) -> graph::GraphHandle {
-    use std::borrow::Cow;
-
     let mut builder = GraphBuilder::new("Pass3d");
 
     // base pass

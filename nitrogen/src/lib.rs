@@ -85,11 +85,9 @@ pub use crate::resources::vertex_attrib;
 
 pub mod graph;
 
-use crate::graph::{ComputePassAccessor, Storages};
 use crate::resources::image::ImageHandle;
 use crate::resources::shader;
 use std::cell::RefCell;
-use std::rc::Rc;
 use std::sync::Arc;
 
 /// An opaque handle to a display

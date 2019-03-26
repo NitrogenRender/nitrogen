@@ -16,7 +16,6 @@ use crate::resources::{
     pipeline::PipelineStorage,
     render_pass::RenderPassStorage,
     sampler::SamplerStorage,
-    semaphore_pool::{SemaphoreList, SemaphorePool},
     vertex_attrib::VertexAttribStorage,
 };
 
@@ -44,7 +43,6 @@ pub use self::store::*;
 use crate::resources::shader::ShaderStorage;
 use crate::submit_group::{QueueSyncRefs, ResourceList};
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
 
 pub(crate) struct Storages<'a> {
     pub shader: &'a RefCell<ShaderStorage>,
@@ -91,6 +89,8 @@ pub enum GraphError {
 /// Graphs are conceptually made up of a set of *passes*. Each pass is a single step transformation
 /// in the graph.
 pub struct Graph {
+    pub(crate) _name: GraphName,
+
     pub(crate) compiled_graph: CompiledGraph,
     pub(crate) exec_graph: ExecutionGraph,
     pub(crate) res_usage: ResourceUsages,
@@ -115,6 +115,8 @@ impl GraphStorage {
         storages: &mut Storages,
         builder: GraphBuilder,
     ) -> Result<GraphHandle, GraphError> {
+        let name = builder.name.clone();
+
         let compiled = compile_graph(builder).map_err(|(names, errors)| {
             let errors = errors.into_iter().map(|err| err.to_diagnostic(&names));
             GraphError::CompilationErrors(errors.collect())
@@ -155,6 +157,8 @@ impl GraphStorage {
         let res_usage = derive_resource_usage(&exec_graph, &compiled);
 
         let graph = Graph {
+            _name: name,
+
             compiled_graph: compiled,
             exec_graph,
             res_usage,

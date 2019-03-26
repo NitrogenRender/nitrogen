@@ -1,18 +1,14 @@
 use crate::device::DeviceContext;
-use crate::graph::builder::resource_descriptor::{
-    ResourceReadType, ResourceType, ResourceWriteType,
-};
-use crate::graph::compilation::CompileError::ResourceTypeMismatch;
+use crate::graph::builder::resource_descriptor::ResourceType;
 use crate::graph::compilation::{CompiledGraph, ResourceId};
 use crate::graph::execution::{
     create_pipeline_compute, GraphResources, PassResources, PipelineResources,
 };
 use crate::graph::pass::command::{ComputeCommandBuffer, ReadStorages};
 use crate::graph::pass::{ComputePass, PassId};
-use crate::graph::{ComputePassAccessor, Graph, PrepareError, ResourceName, Storages};
+use crate::graph::{PrepareError, ResourceName, Storages};
 use crate::resources::buffer::BufferHandle;
 use crate::resources::image::ImageHandle;
-use crate::resources::pipeline::PipelineError;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -258,7 +254,7 @@ mod compute {
             let read_storages = ReadStorages {
                 buffer: self.storages.buffer.borrow(),
                 material: self.storages.material.borrow(),
-                image: self.storages.image.borrow(),
+                _image: self.storages.image.borrow(),
             };
 
             let pipe = pipelines.get(&desc).unwrap();
@@ -577,7 +573,7 @@ mod graphics {
             let read_storages = ReadStorages {
                 buffer: self.storages.buffer.borrow(),
                 material: self.storages.material.borrow(),
-                image: self.storages.image.borrow(),
+                _image: self.storages.image.borrow(),
             };
 
             let render_pass = render_pass_storage
