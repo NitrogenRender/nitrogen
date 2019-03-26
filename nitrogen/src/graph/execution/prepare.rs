@@ -20,6 +20,7 @@ use crate::device::DeviceContext;
 use crate::resources::material::{MaterialError, MaterialHandle, MaterialInstanceHandle};
 use smallvec::SmallVec;
 
+use crate::graph::builder::PassType;
 use crate::graph::compilation::CompiledGraph;
 use crate::graph::ResourceName;
 use crate::resources::buffer::BufferError;
@@ -179,6 +180,7 @@ pub(crate) unsafe fn prepare_pass(
 pub(crate) unsafe fn prepare_resources(
     device: &DeviceContext,
     storages: &Storages,
+    res_list: &mut ResourceList,
     graph: &Graph,
     res: &mut GraphResources,
     backbuffer: &mut Backbuffer,
@@ -205,7 +207,7 @@ pub(crate) unsafe fn prepare_resources(
 
             if create {
                 create_resource(
-                    usages, device, context, backbuffer, storages, *res_id, info, res,
+                    device, storages, res_list, usages, res, backbuffer, *res_id, info, context,
                 )?;
             }
         }
@@ -222,6 +224,84 @@ pub(crate) unsafe fn prepare_resources(
                 }
             }
         }
+    }
+
+    Ok(())
+}
+
+pub(crate) unsafe fn prepare_graphics_passes(
+    device: &DeviceContext,
+    storages: &Storages,
+    res_list: &mut ResourceList,
+    pass_res: &PassResources,
+    res: &mut GraphResources,
+    backbuffer: &Backbuffer,
+    graph: &Graph,
+    create_non_contextual: bool,
+    create_contextual: bool,
+) -> Result<(), PrepareError> {
+    let compiled = &graph.compiled_graph;
+    let resolved = &compiled.graph_resources;
+    let exec = &graph.exec_graph;
+
+    for batch in &exec.pass_execution {
+        for pass in &batch.passes {
+            let ty = resolved.pass_types[pass];
+
+            if ty != PassType::Graphics {
+                continue;
+            }
+
+            let is_contextual = compiled.contextual_passes.contains(pass);
+            let renders_to_backbuffer = compiled
+                .passes_that_render_to_the_backbuffer
+                .contains_key(pass);
+
+            let create =
+                (is_contextual && create_contextual) || (!is_contextual && create_non_contextual);
+
+            if create {
+                prepare_graphics_pass(
+                    device, storages, res_list, pass_res, res, backbuffer, graph, *pass,
+                )?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+pub(crate) unsafe fn prepare_graphics_pass(
+    device: &DeviceContext,
+    storages: &Storages,
+    res_list: &mut ResourceList,
+    pass_res: &PassResources,
+    res: &mut GraphResources,
+    backbuffer: &Backbuffer,
+    graph: &Graph,
+    pass: PassId,
+) -> Result<(), PrepareError> {
+    let render_pass_storage = storages.render_pass.borrow();
+
+    let render_pass = *pass_res
+        .render_passes
+        .get(&pass)
+        .ok_or(PrepareError::InvalidRenderPass)?;
+
+    let framebuffer_res = create_framebuffer(
+        device,
+        storages,
+        &graph.compiled_graph.graph_resources,
+        backbuffer,
+        res,
+        render_pass,
+        pass,
+    )?;
+
+    let old = res.framebuffers.insert(pass, framebuffer_res);
+
+    if let Some((fb, _)) = old {
+        res_list.queue_framebuffer(fb);
     }
 
     Ok(())
@@ -420,7 +500,7 @@ unsafe fn create_framebuffer(
     res: &GraphResources,
     render_pass: RenderPassHandle,
     pass: PassId,
-) -> Result<(), PrepareError> {
+) -> Result<(crate::types::Framebuffer, gfx::image::Extent), PrepareError> {
     let image_storage = storages.image.borrow();
     let render_pass_storage = storages.render_pass.borrow();
 
@@ -532,7 +612,7 @@ unsafe fn create_framebuffer(
         .device
         .create_framebuffer(render_pass_raw, views, extent)?;
 
-    Ok(())
+    Ok((framebuffer, extent))
 }
 
 pub(crate) unsafe fn create_pipeline_compute(
@@ -630,14 +710,15 @@ unsafe fn create_pipeline_graphics(
 */
 
 unsafe fn create_resource(
-    usages: &ResourceUsages,
     device: &DeviceContext,
-    context: &ExecutionContext,
-    backbuffer: &mut Backbuffer,
     storages: &Storages,
+    res_list: &mut ResourceList,
+    usages: &ResourceUsages,
+    res: &mut GraphResources,
+    backbuffer: &mut Backbuffer,
     id: ResourceId,
     info: &ResourceCreateInfo,
-    res: &mut GraphResources,
+    context: &ExecutionContext,
 ) -> Result<(), PrepareError> {
     let mut image_storage = storages.image.borrow_mut();
     let mut sampler_storage = storages.sampler.borrow_mut();
@@ -647,15 +728,20 @@ unsafe fn create_resource(
         ResourceCreateInfo::Image(ImageInfo::BackbufferRead { name, .. }) => {
             // read image from backbuffer
 
+            // NOTE: do **not** destroy previous resources when a backbuffer resource overrides it.
+            // This is because a backbuffer resource can only override another backbuffer resource.
+            // (At least it should.)
+
             let img = backbuffer
                 .images
                 .get(name)
                 .ok_or_else(|| PrepareError::InvalidBackbufferResource(name.clone()))?;
-            res.images.insert(id, *img);
             res.external_resources.insert(id);
 
+            res.images.insert(id, *img);
+
             if let Some(sampler) = backbuffer.samplers.get(name) {
-                res.samplers.insert(id, *sampler);
+                let old_sampler = res.samplers.insert(id, *sampler);
             }
 
             Ok(())
@@ -696,7 +782,8 @@ unsafe fn create_resource(
 
             let img_handle = image_storage.create(device, create_info)?;
 
-            res.images.insert(id, img_handle);
+            let old_image = res.images.insert(id, img_handle);
+            let mut old_sampler = None;
 
             // If the image is used for sampling then it means some other pass will read from it
             // as a color image. In that case we create a sampler for this image as well
@@ -714,7 +801,14 @@ unsafe fn create_resource(
                         ),
                     },
                 );
-                res.samplers.insert(id, sampler);
+                old_sampler = res.samplers.insert(id, sampler);
+            }
+
+            if let Some(old_img) = old_image {
+                image_storage.destroy(res_list, &[old_img]);
+            }
+            if let Some(old_samp) = old_sampler {
+                sampler_storage.destroy(res_list, &[old_samp]);
             }
 
             Ok(())
@@ -743,7 +837,11 @@ unsafe fn create_resource(
                 }
             };
 
-            res.buffers.insert(id, buffer);
+            let old_buf = res.buffers.insert(id, buffer);
+
+            if let Some(old_buf) = old_buf {
+                buffer_storage.destroy(res_list, &[old_buf]);
+            }
 
             Ok(())
         }

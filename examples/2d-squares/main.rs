@@ -406,6 +406,7 @@ unsafe fn create_graph(
                 let things = NUM_THINGS;
                 let Scale(s) = store.get().unwrap();
 
+                /*
                 dispatcher.with_config((), |cmd| {
                     cmd.push_constant::<[f32; 4]>(0, [1.0, 1.0, 1.0, 1.0]);
 
@@ -416,6 +417,7 @@ unsafe fn create_graph(
 
                     cmd.draw(0..4, 0..things as u32);
                 })?;
+                */
 
                 Ok(())
             }

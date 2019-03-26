@@ -33,10 +33,12 @@ pub(crate) fn derive_resource_usage(
             if let Some((usage, _)) = usages.image.get_mut(&res) {
                 *usage |= IUsage::SAMPLED;
                 *usage |= IUsage::TRANSFER_SRC;
+                *usage |= IUsage::TRANSFER_DST;
             }
 
             if let Some(usage) = usages.buffer.get_mut(&res) {
                 *usage |= BUsage::TRANSFER_SRC;
+                *usage |= BUsage::TRANSFER_DST;
             }
         });
 

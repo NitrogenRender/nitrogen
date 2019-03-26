@@ -196,22 +196,16 @@ impl GraphStorage {
             .get_mut(graph_handle)
             .ok_or(GraphExecError::InvalidGraph)?;
 
-        let compiled = &graph.compiled_graph;
-
-        // execution context size changed, some resources might need to be recreated
-        // TODO!!!
-
         match res.exec_context.clone() {
             None => {
                 // create new resources from scratch
                 let mut resources = GraphResources::default();
                 resources.exec_context = Some(context.clone());
 
-                println!("create new resources");
-
                 prepare_resources(
                     device,
                     storages,
+                    sync.res_list,
                     graph,
                     &mut resources,
                     backbuffer,
@@ -219,6 +213,19 @@ impl GraphStorage {
                     true,
                     true,
                     context,
+                )?;
+
+                // create graphics stuff.
+                prepare_graphics_passes(
+                    device,
+                    storages,
+                    sync.res_list,
+                    &graph.pass_resources,
+                    &mut resources,
+                    backbuffer,
+                    graph,
+                    true,
+                    true,
                 )?;
 
                 let resources = dbg!(resources);
@@ -229,13 +236,36 @@ impl GraphStorage {
             }
             Some(ref exec) if exec == context => {
                 // do nothing?
-                println!("don't create resources");
             }
             _ => {
                 // resources do exist but all resources that are contextual have to be
                 // recreated.
+                prepare_resources(
+                    device,
+                    storages,
+                    sync.res_list,
+                    graph,
+                    res,
+                    backbuffer,
+                    false,
+                    true,
+                    false,
+                    context,
+                )?;
 
-                println!("re-adjust resources");
+                prepare_graphics_passes(
+                    device,
+                    storages,
+                    sync.res_list,
+                    &graph.pass_resources,
+                    res,
+                    backbuffer,
+                    graph,
+                    false,
+                    true,
+                )?;
+
+                res.exec_context = Some(context.clone());
             }
         }
 
@@ -251,115 +281,22 @@ impl GraphStorage {
             res,
             context,
         )
+    }
 
-        /*
-        let resources = {
-            let (base_resources, usages) = {
-                let passes = &graph.passes[..];
+    pub(crate) fn resource_id(
+        &self,
+        handle: GraphHandle,
+        name: impl Into<ResourceName>,
+    ) -> Option<ResourceId> {
+        let graph = self.storage.get(handle)?;
 
-                // insert into cache
-                graph
-                    .exec_base_resources
-                    .entry(*exec_id)
-                    .or_insert_with(|| {
-                        execution::prepare_base(
-                            device,
-                            &backbuffer.usage,
-                            storages,
-                            exec,
-                            resolved,
-                            passes,
-                        )
-                    });
+        let id = graph
+            .compiled_graph
+            .graph_resources
+            .name_lookup
+            .get(&name.into())?;
 
-                // now read base again (some kind of reborrowing, need to investigate...)
-                let base = graph
-                    .exec_base_resources
-                    .get_mut(exec_id)
-                    .ok_or(GraphExecError::GraphNotCompiled)?;
-
-                graph.exec_usages.entry(*exec_id).or_insert_with(|| {
-                    execution::derive_resource_usage(
-                        &backbuffer.usage,
-                        exec,
-                        resolved,
-                        outputs.as_slice(),
-                    )
-                });
-
-                let usages = &graph.exec_usages[exec_id];
-
-                (base, usages)
-            };
-
-            match prev_res {
-                None => {
-                    // create new completely!
-                    let mut res = prepare(
-                        usages,
-                        backbuffer,
-                        base_resources,
-                        device,
-                        storages,
-                        exec,
-                        resolved,
-                        graph.passes.as_slice(),
-                        context.clone(),
-                    )?;
-
-                    // add the resolved outputs
-                    res.outputs = outputs;
-                    res.exec_version = *exec_id;
-                    res
-                }
-                Some(res) => {
-                    if Some(res.exec_version) == graph.last_exec && &res.exec_context == context {
-                        // same old resources, we can keep them!
-
-                        res
-                    } else {
-                        // recreate resources
-                        res.release(res_list, storages);
-
-                        let mut res = prepare(
-                            usages,
-                            backbuffer,
-                            base_resources,
-                            device,
-                            storages,
-                            exec,
-                            resolved,
-                            graph.passes.as_slice(),
-                            context.clone(),
-                        )?;
-
-                        // add the resolved outputs
-                        res.outputs = outputs;
-                        res.exec_version = *exec_id;
-                        res
-                    }
-                }
-            }
-        };
-
-        execution::execute(
-            device,
-            sem_pool,
-            sem_list,
-            cmd_pool_gfx,
-            cmd_pool_cmpt,
-            storages,
-            store,
-            exec,
-            resolved,
-            graph,
-            &graph.exec_base_resources[exec_id],
-            &resources,
-            context,
-        );
-
-        Ok(resources)
-        */
+        Some(*id)
     }
 }
 
