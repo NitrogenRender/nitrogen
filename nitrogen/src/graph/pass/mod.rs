@@ -107,8 +107,11 @@ impl From<Comparison> for gfx::pso::Comparison {
 /// Set of shaders used in graphics passes.
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct GraphicShaders {
+    /// Vertex-shader description.
     pub vertex: Shader<VertexShaderHandle>,
+    /// Optional fragment-shader description.
     pub fragment: Option<Shader<FragmentShaderHandle>>,
+    /// Optional geometry-shader description.
     pub geometry: Option<Shader<GeometryShaderHandle>>,
 }
 
@@ -166,43 +169,54 @@ pub trait GraphicsPass: Sized {
     ) -> Result<(), GraphExecError>;
 }
 
+/// A value description for a specialization constant;
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct Specialization {
-    pub id: u32,
-    pub value: SmallVec<[u8; 256]>,
+    pub(crate) id: u32,
+    pub(crate) value: SmallVec<[u8; 256]>,
 }
 
-pub fn specialization_constant<T: Copy>(id: u32, data: T) -> Specialization {
-    let data_size = std::mem::size_of::<T>();
+impl Specialization {
+    /// Create a specialization constant for `id` with value `data`.
+    pub fn new<T: Copy>(id: u32, data: T) -> Self {
+        let data_size = std::mem::size_of::<T>();
 
-    let mut spec_constant = Specialization {
-        id,
-        value: SmallVec::with_capacity(data_size),
-    };
+        let mut spec_constant = Specialization {
+            id,
+            value: SmallVec::with_capacity(data_size),
+        };
 
-    unsafe {
-        spec_constant.value.set_len(data_size);
+        unsafe {
+            spec_constant.value.set_len(data_size);
+        }
+
+        let data_ptr = spec_constant.value.as_mut_slice().as_ptr() as *mut T;
+
+        unsafe {
+            std::ptr::write_unaligned(data_ptr, data);
+        }
+
+        spec_constant
     }
-
-    let data_ptr = spec_constant.value.as_mut_slice().as_ptr() as *mut T;
-
-    unsafe {
-        std::ptr::write_unaligned(data_ptr, data);
-    }
-
-    spec_constant
 }
 
+/// A description of a shader object used for pipeline-creation.
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct Shader<HandleType> {
+    /// Handle to the shader object.
     pub handle: HandleType,
+    /// Specialization constant values to be used in the shader program.
     pub specialization: Vec<Specialization>,
 }
 
+/// Description of a compute pass pipeline.
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct ComputePipelineInfo {
+    /// Materials used, described by the descriptor-set binding and a handle to the material.
     pub materials: Vec<(usize, MaterialHandle)>,
+    /// Push-constant range (in bytes).
     pub push_constant_range: Option<std::ops::Range<u32>>,
+    /// Shader used in this pipeline.
     pub shader: Shader<ComputeShaderHandle>,
 }
 

@@ -76,9 +76,12 @@ pub(crate) struct GraphicPassAccessor {
     pub(crate) execute: Box<dyn Fn(&Store, RawGraphicsDispatcher) -> Result<(), GraphExecError>>,
 }
 
+/// Errors that can occur when dealing with graph preparation/execution.
 #[derive(Clone, Debug, From)]
 pub enum GraphError {
+    /// A set of graph-compilation errors.
     CompilationErrors(Vec<String>),
+    /// Error preparing graph- or pass-resources.
     PrepareError(PrepareError),
 }
 

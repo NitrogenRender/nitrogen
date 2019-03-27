@@ -245,7 +245,7 @@ unsafe fn create_graph(
                     primitive: config.primitive,
                     blend_modes: vec![config.blend_mode],
                     materials: vec![],
-                    push_constants: Some(0..32),
+                    push_constants: Some(0..128),
                 }
             }
 
@@ -320,13 +320,13 @@ unsafe fn create_graph(
                         mat: Matrix4<f32>,
                     ) {
                         cmd.push_constant(offset + 0, mat.x);
-                        cmd.push_constant(offset + 4, mat.y);
-                        cmd.push_constant(offset + 8, mat.z);
-                        cmd.push_constant(offset + 12, mat.w);
+                        cmd.push_constant(offset + 16, mat.y);
+                        cmd.push_constant(offset + 32, mat.z);
+                        cmd.push_constant(offset + 48, mat.w);
                     }
 
                     push_matrix(cmd, 0, mvp);
-                    push_matrix(cmd, 16, m);
+                    push_matrix(cmd, 64, m);
 
                     cmd.bind_vertex_buffers(&[(self.position, 0), (self.normal, 0)]);
 
@@ -347,13 +347,13 @@ unsafe fn create_graph(
                             mat: Matrix4<f32>,
                         ) {
                             cmd.push_constant(offset + 0, mat.x);
-                            cmd.push_constant(offset + 4, mat.y);
-                            cmd.push_constant(offset + 8, mat.z);
-                            cmd.push_constant(offset + 12, mat.w);
+                            cmd.push_constant(offset + 16, mat.y);
+                            cmd.push_constant(offset + 32, mat.z);
+                            cmd.push_constant(offset + 48, mat.w);
                         }
 
                         push_matrix(cmd, 0, mvp);
-                        push_matrix(cmd, 16, m);
+                        push_matrix(cmd, 64, m);
 
                         cmd.bind_vertex_buffers(&[(self.position, 0), (self.normal, 0)]);
 

@@ -1,3 +1,10 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+//! Dispatchers are used to retrieve references to graph-resources and dispatch calls to
+//! the underlying pipeline objects.
+
 use crate::device::DeviceContext;
 use crate::graph::builder::resource_descriptor::ResourceType;
 use crate::graph::compilation::{CompiledGraph, ResourceId};
@@ -12,9 +19,13 @@ use crate::resources::image::ImageHandle;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+/// Access type of a resource.
 #[derive(Debug, Copy, Clone)]
 pub enum ResourceAccessType {
+    /// Read access.
     Read(ResourceType),
+
+    /// Write access.
     Write(ResourceType),
 }
 
@@ -32,31 +43,49 @@ impl ResourceAccessType {
     }
 }
 
+/// Errors that can occur when acquiring references to graph resources.
 #[derive(Debug, Clone)]
 pub enum ResourceRefError {
+    /// An invalid resource was requested.
+    ///
+    /// This resource was not defined in the graph.
     InvalidResourceReferenced {
+        /// Pass which requested the resource.
         pass: PassId,
+        /// Name of the resource.
         name: ResourceName,
     },
+    /// A resource was requested with an unsupported access type.
     AccessViolation {
+        /// Pass which requested the resource.
         pass: PassId,
+        /// Name of the resource.
         resource: ResourceName,
+        /// The requested access type of the resource.
         attempted: ResourceAccessType,
+        /// The support access type of the resource.
         expected: ResourceAccessType,
     },
+    /// A resource was requested that is unaccessable from the given pass.
     ResourceNotUsableInPass {
+        /// Pass which requested the resource.
         pass: PassId,
+        /// Name of the resource.
         name: ResourceName,
     },
 }
 
+/// A reference handle to an image resource with write access.
 #[derive(Clone, Copy, Debug)]
 pub struct ImageWriteRef(pub(crate) ImageHandle);
+/// A reference handle to an image resource with read access.
 #[derive(Clone, Copy, Debug)]
 pub struct ImageReadRef(pub(crate) ImageHandle);
 
+/// A reference handle to a buffer resource with write access.
 #[derive(Clone, Copy, Debug)]
 pub struct BufferWriteRef(pub(crate) BufferHandle);
+/// A reference handle to a buffer resource with read access.
 #[derive(Clone, Copy, Debug)]
 pub struct BufferReadRef(pub(crate) BufferHandle);
 
@@ -92,6 +121,9 @@ mod compute {
         }
     }
 
+    /// A dispatcher for compute passes.
+    ///
+    /// Used to retrieve graph-resource references and dispatch calls to the underlying pipelines.
     pub struct ComputeDispatcher<'a, T: ComputePass> {
         pub(crate) cmd: &'a mut crate::resources::command_pool::CmdBufType<gfx::Compute>,
         pub(crate) device: &'a DeviceContext,
@@ -140,6 +172,7 @@ mod compute {
 
         // resource access
 
+        /// Retrieve a write-reference to an image resource.
         pub fn image_write_ref(
             &self,
             name: impl Into<ResourceName>,
@@ -157,6 +190,7 @@ mod compute {
             Ok(ImageWriteRef(*handle))
         }
 
+        /// Retrieve a read-reference to an image resource.
         pub fn image_read_ref(
             &self,
             name: impl Into<ResourceName>,
@@ -174,6 +208,7 @@ mod compute {
             Ok(ImageReadRef(*handle))
         }
 
+        /// Retrieve a write-reference to a buffer resource.
         pub fn buffer_write_ref(
             &self,
             name: impl Into<ResourceName>,
@@ -191,6 +226,7 @@ mod compute {
             Ok(BufferWriteRef(*handle))
         }
 
+        /// Retrieve a read-reference to a buffer resource.
         pub fn buffer_read_ref(
             &self,
             name: impl Into<ResourceName>,
@@ -210,6 +246,8 @@ mod compute {
 
         // pipeline config
 
+        /// Create a command-buffer and execute the given closure with a pipeline that supports
+        /// the configuration given by `config`.
         pub unsafe fn with_config<F, R>(
             &mut self,
             config: T::Config,
@@ -332,6 +370,9 @@ mod graphics {
         }
     }
 
+    /// A dispatcher for graphic passes.
+    ///
+    /// Used to retrieve graph-resource references and dispatch calls to the underlying pipelines.
     pub struct GraphicsDispatcher<'a, T: GraphicsPass> {
         pub(crate) cmd: &'a mut crate::resources::command_pool::CmdBufType<gfx::Graphics>,
         pub(crate) device: &'a DeviceContext,
@@ -381,6 +422,7 @@ mod graphics {
 
         // resource access
 
+        /// Retrieve a write-reference to an image resource.
         pub fn image_write_ref(
             &self,
             name: impl Into<ResourceName>,
@@ -398,6 +440,7 @@ mod graphics {
             Ok(ImageWriteRef(*handle))
         }
 
+        /// Retrieve a read-reference to an image resource.
         pub fn image_read_ref(
             &self,
             name: impl Into<ResourceName>,
@@ -415,6 +458,7 @@ mod graphics {
             Ok(ImageReadRef(*handle))
         }
 
+        /// Retrieve a write-reference to a buffer resource.
         pub fn buffer_write_ref(
             &self,
             name: impl Into<ResourceName>,
@@ -432,6 +476,7 @@ mod graphics {
             Ok(BufferWriteRef(*handle))
         }
 
+        /// Retrieve a read-reference to a buffer resource.
         pub fn buffer_read_ref(
             &self,
             name: impl Into<ResourceName>,
@@ -528,6 +573,8 @@ mod graphics {
 
         // pipelines
 
+        /// Create a command-buffer and execute the given closure with a pipeline that supports
+        /// the configuration given by `config`.
         pub unsafe fn with_config<F, R>(
             &mut self,
             config: T::Config,

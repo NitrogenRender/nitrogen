@@ -558,7 +558,7 @@ pub(crate) unsafe fn create_pipeline_compute(
 
     let mut push_constants = SmallVec::<[_; 1]>::new();
     if let Some(range) = &info.push_constant_range {
-        push_constants.push(range.clone());
+        push_constants.push((range.start / 4)..(range.end / 4));
     }
 
     let shader = shader_storage
@@ -603,7 +603,7 @@ pub(crate) unsafe fn create_pipeline_graphics(
 
     let mut push_constants = SmallVec::<[_; 1]>::new();
     if let Some(range) = &info.push_constants {
-        push_constants.push(range.clone());
+        push_constants.push((range.start / 4)..(range.end / 4));
     }
 
     let vertex_shader = {

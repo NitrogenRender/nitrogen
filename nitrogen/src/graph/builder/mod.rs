@@ -1,3 +1,9 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+//! Builder object for creating and describing graphs.
+
 pub mod resource_descriptor;
 
 pub use self::resource_descriptor::*;
@@ -13,8 +19,10 @@ pub(crate) enum PassType {
     Graphics,
 }
 
+/// Name of a graph.
 pub type GraphName = CowString;
 
+/// Object used to create graphs.
 pub struct GraphBuilder {
     pub(crate) name: GraphName,
     pub(crate) compute_passes: Vec<(PassName, ComputePassAccessor)>,
@@ -23,6 +31,7 @@ pub struct GraphBuilder {
 }
 
 impl GraphBuilder {
+    /// Create a new `GraphBuilder` for a graph named `name`.
     pub fn new(name: impl Into<GraphName>) -> Self {
         GraphBuilder {
             name: name.into(),
@@ -32,11 +41,16 @@ impl GraphBuilder {
         }
     }
 
+    /// Add a compute pass to the graph with a given name.
     pub fn add_compute_pass(
         &mut self,
         name: impl Into<GraphName>,
         pass: impl ComputePass + 'static,
     ) {
+        // Because the ComputePass trait has an associated type, it can not be used like
+        // `dyn ComputePass`.
+        // To get around this, a list of "accessor closures" are provided which hide the concrete
+        // type of the pass.
         let accessor = {
             let pass_ref_prepare = Rc::new(RefCell::new(pass));
             let pass_ref_describe = pass_ref_prepare.clone();
@@ -64,11 +78,16 @@ impl GraphBuilder {
         self.compute_passes.push((name.into(), accessor));
     }
 
+    /// Add a graphics pass to the graph with a given name.
     pub fn add_graphics_pass(
         &mut self,
         name: impl Into<GraphName>,
         pass: impl GraphicsPass + 'static,
     ) {
+        // Because the GraphicsPass trait has an associated type, it can not be used like
+        // `dyn ComputePass`.
+        // To get around this, a list of "accessor closures" are provided which hide the concrete
+        // type of the pass.
         let accessor = {
             let pass_ref_prepare = Rc::new(RefCell::new(pass));
             let pass_ref_describe = pass_ref_prepare.clone();
@@ -96,6 +115,10 @@ impl GraphBuilder {
         self.graphic_passes.push((name.into(), accessor));
     }
 
+    /// Add a "target resource" to the graph.
+    ///
+    /// A target resource can be used as an "output" of the graph and is used to determine the
+    /// final graph execution order.
     pub fn add_target(&mut self, resource_name: impl Into<ResourceName>) {
         self.targets.push(resource_name.into());
     }

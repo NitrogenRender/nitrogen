@@ -217,22 +217,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/*
-
-        let info = graph::ComputePassInfo {
-            shader: graph::ShaderInfo {
-                content: Cow::Borrowed(include_bytes!(concat!(
-                    env!("OUT_DIR"),
-                    "/2d-squares/move.hlsl.comp.spirv"
-                ),)),
-                entry: "ComputeMain".into(),
-            },
-            materials: vec![(0, material)],
-            push_constants: Some(0..4),
-        };
-
-*/
-
 unsafe fn create_graph(
     ctx: &mut nit::Context,
     vertex_attrib: vtx::VertexAttribHandle,
@@ -265,7 +249,7 @@ unsafe fn create_graph(
             fn configure(&self, _config: Self::Config) -> graph::ComputePipelineInfo {
                 graph::ComputePipelineInfo {
                     materials: vec![(0, self.mat_instance.material())],
-                    push_constant_range: Some(0..4),
+                    push_constant_range: Some(0..16),
                     shader: graph::Shader {
                         handle: self.shader,
                         specialization: vec![],
@@ -297,9 +281,9 @@ unsafe fn create_graph(
 
                 dispatcher.with_config((), |cmd| {
                     cmd.push_constant::<u32>(0, wide);
-                    cmd.push_constant::<u32>(1, NUM_THINGS as u32);
+                    cmd.push_constant::<u32>(4, NUM_THINGS as u32);
 
-                    cmd.push_constant::<f32>(2, *delta as f32);
+                    cmd.push_constant::<f32>(8, *delta as f32);
 
                     cmd.bind_material(0, self.mat_instance);
 
@@ -373,7 +357,7 @@ unsafe fn create_graph(
                     primitive: graph::Primitive::TriangleStrip,
                     blend_modes: vec![graph::BlendMode::Alpha],
                     materials: vec![(0, self.mat_instance.material())],
-                    push_constants: Some(0..5),
+                    push_constants: Some(0..20),
                 }
             }
 
@@ -409,7 +393,7 @@ unsafe fn create_graph(
                 dispatcher.with_config((), |cmd| {
                     cmd.push_constant::<[f32; 4]>(0, [1.0, 1.0, 1.0, 1.0]);
 
-                    cmd.push_constant::<f32>(4, *s);
+                    cmd.push_constant::<f32>(16, *s);
 
                     cmd.bind_vertex_buffers(&[(self.buffer, 0)]);
                     cmd.bind_material(0, self.mat_instance);

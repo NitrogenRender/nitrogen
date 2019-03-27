@@ -1,32 +1,55 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+//! Storage for shader programs.
+
 use crate::util::storage::{Handle, Storage};
 use crate::util::CowString;
 use std::marker::PhantomData;
 
+/// Name of the "entry point" of a shader program.
+///
+/// The entry point is the name of the function which will be invoked during
+/// the shader execution.
 pub type EntryPoint = CowString;
 
+/// Information describing a shader program.
 pub struct ShaderInfo<'a> {
+    /// The compiled SPIR-V code of the shader.
     pub spirv_content: &'a [u8],
+
+    /// The entry point (function name) of the shader program.
     pub entry_point: EntryPoint,
 }
 
+/// A strongly typed shader program resource.
+///
+/// The type parameter `T` denotes the shader type.
 pub struct Shader<T> {
-    pub spirv_content: Vec<u8>,
-    pub entry_point: EntryPoint,
+    pub(crate) spirv_content: Vec<u8>,
+    pub(crate) entry_point: EntryPoint,
 
     pub(crate) _marker: PhantomData<T>,
 }
 
+/// Type denoting a compute shader program.
 pub struct Compute;
+/// Type denoting a vertex shader program.
 pub struct Vertex;
+/// Type denoting a fragment shader program.
 pub struct Fragment;
+/// Type denoting a geometry shader program.
 pub struct Geometry;
 
+/// Opaque handle to a compute shader program resource.
 pub type ComputeShaderHandle = Handle<Shader<Compute>>;
+/// Opaque handle to a vertex shader program resource.
 pub type VertexShaderHandle = Handle<Shader<Vertex>>;
+/// Opaque handle to a fragment shader program resource.
 pub type FragmentShaderHandle = Handle<Shader<Fragment>>;
+/// Opaque handle to a geometry shader program resource.
 pub type GeometryShaderHandle = Handle<Shader<Geometry>>;
-
-pub struct VertexShader {}
 
 pub(crate) struct ShaderStorage {
     pub(crate) compute_storage: Storage<Shader<Compute>>,

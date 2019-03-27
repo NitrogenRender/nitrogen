@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-//! Functionality for the setup-phase of passes.
+//! Functionality for the describe-phase of passes.
 
 use crate::graph::ResourceName;
 
@@ -270,32 +270,45 @@ pub enum BufferStorageType {
 /// Ways a resource can be used with read-access.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum ResourceReadType {
+    /// Image read
     Image(ImageReadType),
+    /// Buffer read
     Buffer(BufferReadType),
+    /// virtual read - only used to express dependencies between passes.
     Virtual,
 }
 
 /// Ways an image can be used with read-access.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum ImageReadType {
+    /// Color access of the image.
     Color,
+    /// Storage access of the image. Storage images can contain arbitrary data. Read+Write.
     Storage,
+    /// Depth-stencil access of the image. Generally used as an attachment of a render-pass.
     DepthStencil,
 }
 
 /// Ways a buffer can be used with read-access.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum BufferReadType {
+    /// Storage access of the buffer. Read+Write.
     Storage,
+    /// Same as `Storage` but uses an image as the backing storage.
     StorageTexel,
+    /// Uniform access of the buffer. Read only.
     Uniform,
+    /// Same as `Uniform` but uses an image as the backing storage.
     UniformTexel,
 }
 
 /// Ways a resource can be used with write-access.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum ResourceWriteType {
+    /// Image write.
     Image(ImageWriteType),
+
+    /// Buffer write.
     Buffer(BufferWriteType),
 }
 

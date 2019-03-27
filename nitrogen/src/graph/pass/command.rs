@@ -145,8 +145,6 @@ impl<'a> GraphicsCommandBuffer<'a> {
     }
 
     /// Upload a value to the push-constant memory.
-    ///
-    /// **NOTE**: the offset is in 4-bytes, not bytes!!!
     pub unsafe fn push_constant<T: Sized + Copy>(&mut self, offset: u32, data: T) {
         use smallvec::SmallVec;
         let mut buf = SmallVec::<[u32; 256]>::new();
@@ -155,7 +153,7 @@ impl<'a> GraphicsCommandBuffer<'a> {
 
         {
             let u32_slice = data_to_u32_slice(data, &mut buf[..]);
-            self.push_constant_raw(offset, u32_slice);
+            self.push_constant_raw(offset / 4, u32_slice);
         }
     }
 
@@ -217,8 +215,6 @@ impl<'a> ComputeCommandBuffer<'a> {
     }
 
     /// Upload a value to the push-constant memory.
-    ///
-    /// **NOTE**: the offset is in 4-bytes, not bytes!!!
     pub unsafe fn push_constant<T: Sized + Copy>(&mut self, offset: u32, data: T) {
         use smallvec::SmallVec;
         let mut buf = SmallVec::<[u32; 256]>::new();
@@ -227,7 +223,7 @@ impl<'a> ComputeCommandBuffer<'a> {
 
         {
             let u32_slice = data_to_u32_slice(data, &mut buf[..]);
-            self.push_constant_raw(offset, u32_slice);
+            self.push_constant_raw(offset / 4, u32_slice);
         }
     }
 }

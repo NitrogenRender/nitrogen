@@ -50,7 +50,7 @@
 //!
 //! [`Context`]: ./struct.Context.html
 
-// #![warn(missing_docs)]
+#![warn(missing_docs)]
 
 #[macro_use]
 extern crate derive_more;
@@ -410,6 +410,7 @@ impl Context {
 
     // shader
 
+    /// Create a compute shader and retrieve the handle.
     pub fn compute_shader_create(
         &mut self,
         info: shader::ShaderInfo,
@@ -417,22 +418,26 @@ impl Context {
         self.shader_storage.borrow_mut().create_compute_shader(info)
     }
 
+    /// Destroy a compute shader object.
     pub fn compute_shader_destroy(&mut self, handle: shader::ComputeShaderHandle) {
         self.shader_storage
             .borrow_mut()
             .destroy_compute_shader(handle);
     }
 
+    /// Create a vertex shader and retrieve the handle.
     pub fn vertex_shader_create(&mut self, info: shader::ShaderInfo) -> shader::VertexShaderHandle {
         self.shader_storage.borrow_mut().create_vertex_shader(info)
     }
 
+    /// Destroy a vertex shader object.
     pub fn vertex_shader_destroy(&mut self, handle: shader::VertexShaderHandle) {
         self.shader_storage
             .borrow_mut()
             .destroy_vertex_shader(handle);
     }
 
+    /// Create a fragment shader and retrieve the handle.
     pub fn fragment_shader_create(
         &mut self,
         info: shader::ShaderInfo,
@@ -442,12 +447,14 @@ impl Context {
             .create_fragment_shader(info)
     }
 
+    /// Destroy a fragment shader object.
     pub fn fragment_shader_destroy(&mut self, handle: shader::FragmentShaderHandle) {
         self.shader_storage
             .borrow_mut()
             .destroy_fragment_shader(handle);
     }
 
+    /// Create a geometry shader and retrieve the handle.
     pub fn geometry_shader_create(
         &mut self,
         info: shader::ShaderInfo,
@@ -457,6 +464,7 @@ impl Context {
             .create_geometry_shader(info)
     }
 
+    /// Destroy a geometry shader object.
     pub fn geometry_shader_destroy(&mut self, handle: shader::GeometryShaderHandle) {
         self.shader_storage
             .borrow_mut()

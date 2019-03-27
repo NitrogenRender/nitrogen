@@ -152,10 +152,10 @@ unsafe fn create_graph(
                 ComputePipelineInfo {
                     shader: Shader {
                         handle: self.shader,
-                        specialization: vec![specialization_constant(0, config)],
+                        specialization: vec![Specialization::new(0, config)],
                     },
                     materials: vec![(0, self.mat.material())],
-                    push_constant_range: Some(0..1),
+                    push_constant_range: Some(0..4),
                 }
             }
 
