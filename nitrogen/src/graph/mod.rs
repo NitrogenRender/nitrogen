@@ -64,12 +64,20 @@ pub type PassName = CowString;
 /// Type used to name resources.
 pub type ResourceName = CowString;
 
+// The ComputePass (and GraphicsPass) traits now have associated types, which means it's not
+// possible anymore to use `dyn ComputePass` to store the passes (since they can't be named).
+//
+// Fortunately the `Config` associated type never "escapes" to the *called* interface.
+//
+// The solution here is to use "accessor closures" which capture the actual value with the
+// associated type and perform further dispatch from there.
 pub(crate) struct ComputePassAccessor {
     pub(crate) prepare: Box<dyn Fn(&mut Store)>,
     pub(crate) describe: Box<dyn Fn(&mut ResourceDescriptor)>,
     pub(crate) execute: Box<dyn Fn(&Store, RawComputeDispatcher) -> Result<(), GraphExecError>>,
 }
 
+// Same explanation as `ComputePassAccessor`
 pub(crate) struct GraphicPassAccessor {
     pub(crate) prepare: Box<dyn Fn(&mut Store)>,
     pub(crate) describe: Box<dyn Fn(&mut ResourceDescriptor)>,
