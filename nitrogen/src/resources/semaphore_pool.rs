@@ -90,11 +90,11 @@ impl SemaphoreList {
         }
     }
 
-    pub(crate) fn add_prev_semaphore(&mut self, sem: Semaphore<'_>) {
+    pub(crate) fn add_prev_semaphore<'a>(&'a mut self, sem: Semaphore<'a>) {
         self.prev_semaphores.push(unsafe { sem.into_idx() });
     }
 
-    pub(crate) fn add_next_semaphore(&mut self, sem: Semaphore<'_>) {
+    pub(crate) fn add_next_semaphore<'a>(&'a mut self, sem: Semaphore<'a>) {
         self.next_semaphores.push(unsafe { sem.into_idx() });
     }
 

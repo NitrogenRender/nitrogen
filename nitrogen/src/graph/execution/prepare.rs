@@ -8,92 +8,27 @@ use crate::types;
 use gfx;
 
 use crate::graph::{
-    BufferReadType, BufferStorageType, BufferWriteType, ComputePassInfo, ExecutionContext,
-    GraphResourcesResolved, GraphicsPassInfo, ImageInfo, ImageReadType, ImageWriteType, PassInfo,
-    ResourceCreateInfo, ResourceReadType, ResourceWriteType,
+    BufferReadType, BufferStorageType, BufferWriteType, ExecutionContext, Graph,
+    GraphWithNamesResolved, ImageInfo, ImageReadType, ImageWriteType, ResourceCreateInfo,
+    ResourceReadType, ResourceWriteType,
 };
 
 use crate::resources::{image, sampler};
 
 use crate::device::DeviceContext;
 
-use crate::resources::material::MaterialHandle;
+use crate::resources::material::{MaterialError, MaterialHandle};
 use smallvec::SmallVec;
 
+use crate::graph::builder::PassType;
+use crate::graph::compilation::CompiledGraph;
 use crate::graph::ResourceName;
+use crate::resources::buffer::BufferError;
+use crate::resources::image::ImageError;
 use crate::resources::material::MaterialStorage;
+use crate::resources::pipeline::PipelineError;
+use crate::resources::render_pass::RenderPassError;
 use std::collections::BTreeMap;
-
-pub(crate) unsafe fn prepare_base(
-    device: &DeviceContext,
-    backbuffer_usage: &BackbufferUsage,
-    storages: &mut Storages,
-    exec: &ExecutionGraph,
-    resolved: &GraphResourcesResolved,
-    passes: &[(PassName, PassInfo)],
-) -> GraphBaseResources {
-    let mut res = GraphBaseResources::default();
-
-    for batch in &exec.pass_execution {
-        for pass in &batch.passes {
-            let info = &passes[pass.0].1;
-
-            prepare_pass_base(
-                device,
-                backbuffer_usage,
-                storages,
-                resolved,
-                *pass,
-                info,
-                &mut res,
-            );
-        }
-    }
-
-    res
-}
-
-pub(crate) unsafe fn prepare_pass_base(
-    device: &DeviceContext,
-    backbuffer_usage: &BackbufferUsage,
-    storages: &mut Storages,
-    resolved: &GraphResourcesResolved,
-    pass: PassId,
-    info: &PassInfo,
-    res: &mut GraphBaseResources,
-) -> Option<()> {
-    match info {
-        PassInfo::Graphics(info) => {
-            // Create render pass
-            let render_pass =
-                create_render_pass(device, backbuffer_usage, storages, resolved, pass)?;
-
-            // insert into resources
-            res.render_passes.insert(pass, render_pass);
-
-            // create pipeline object
-            let (pipe, mat) =
-                create_pipeline_graphics(device, storages, resolved, render_pass, pass, info)?;
-
-            res.pipelines_graphic.insert(pass, pipe);
-            if let Some(mat) = mat {
-                res.pipelines_mat.insert(pass, mat);
-            }
-
-            Some(())
-        }
-        PassInfo::Compute(info) => {
-            let (pipeline, mat) = create_pipeline_compute(device, storages, resolved, pass, info)?;
-
-            res.pipelines_compute.insert(pass, pipeline);
-            if let Some(mat) = mat {
-                res.pipelines_mat.insert(pass, mat);
-            }
-
-            Some(())
-        }
-    }
-}
 
 /// Errors that can occur when trying to prepare resources for a graph execution.
 #[allow(missing_docs)]
@@ -101,6 +36,12 @@ pub(crate) unsafe fn prepare_pass_base(
 pub enum PrepareError {
     #[display(fmt = "Renderpass invalid. Is the graph compiled?")]
     InvalidRenderPass,
+
+    #[display(fmt = "Famebuffer invalid. Is the graph compiled?")]
+    InvalidFramebuffer,
+
+    #[display(fmt = "Pipeline could not be created because a mandatory shader handle is invalid")]
+    InvalidShaderHandle,
 
     #[display(fmt = "Resource {:?} is referenced which is invalid", _0)]
     InvalidResource(ResourceId),
@@ -119,209 +60,182 @@ pub enum PrepareError {
 
     #[display(fmt = "Out of memory: {}", _0)]
     OutOfMemory(gfx::device::OutOfMemory),
+
+    #[display(fmt = "Error creating renderpass: {}", _0)]
+    RenderPassError(RenderPassError),
+
+    #[display(fmt = "Error creating a pipeline: {}", _0)]
+    PipelineError(PipelineError),
+
+    #[display(fmt = "Error creating a material or material instance: {}", _0)]
+    MaterialError(MaterialError),
+
+    #[display(fmt = "Error creating an image: {}", _0)]
+    ImageError(ImageError),
+
+    #[display(fmt = "Error creating a buffer: {}", _0)]
+    BufferError(BufferError),
 }
 
 impl std::error::Error for PrepareError {}
 
-pub(crate) unsafe fn prepare(
-    usages: &ResourceUsages,
-    backbuffer: &mut Backbuffer,
-    base: &mut GraphBaseResources,
+pub(crate) unsafe fn prepare_graphics_pass_base(
     device: &DeviceContext,
-    storages: &mut Storages,
-    exec: &ExecutionGraph,
-    resolved: &GraphResourcesResolved,
-    passes: &[(PassName, PassInfo)],
-    context: ExecutionContext,
-) -> Result<GraphResources, PrepareError> {
-    let mut res = GraphResources {
-        exec_version: 0, // will be filled by the caller
-        exec_context: context.clone(),
-        external_resources: HashSet::new(),
-        images: HashMap::new(),
-        samplers: HashMap::new(),
-        buffers: HashMap::new(),
-        framebuffers: HashMap::new(),
-        pass_mats: HashMap::new(),
-        outputs: SmallVec::new(), // will be filled by the caller
-    };
+    storages: &Storages,
+    pass_res: &mut PassResources,
+    pass: PassId,
+    compiled: &CompiledGraph,
+) -> Result<(), PrepareError> {
+    let render_pass = create_render_pass(device, storages, &compiled.graph_resources, pass)?;
 
-    for batch in &exec.pass_execution {
-        // TODO this should probably be moved into the execution phase once a better
-        // memory allocator is in place
-        // Maybe instead things can be aliased if the size and format matches? :thinking:
-        for create in &batch.resource_create {
-            let res_info = &resolved.infos[create];
-            create_resource(
-                usages, device, &context, backbuffer, storages, *create, res_info, &mut res,
-            );
-        }
+    pass_res.render_passes.insert(pass, render_pass);
 
-        for pass in &batch.passes {
-            let info = &passes[pass.0].1;
-
-            if let Some(mat) = base.pipelines_mat.get(pass) {
-                let instance = storages.material.create_instance(device, *mat).unwrap();
-
-                res.pass_mats.insert(*pass, instance);
-            }
-
-            prepare_pass(
-                backbuffer, base, device, storages, resolved, *pass, info, &mut res,
-            )?;
-        }
-    }
-
-    Ok(res)
+    Ok(())
 }
 
-pub(crate) unsafe fn prepare_pass(
-    backbuffer: &mut Backbuffer,
-    base: &GraphBaseResources,
+pub(crate) struct ResourcePrepareOptions {
+    pub(crate) create_non_contextual: bool,
+    pub(crate) create_contextual: bool,
+    pub(crate) create_pass_mat: bool,
+}
+
+// this attribute is here because clippy keeps complaining, but there is no good way
+// to reduce the number of arguments here..
+#[allow(clippy::too_many_arguments)]
+pub(crate) unsafe fn prepare_resources(
     device: &DeviceContext,
-    storages: &mut Storages,
-    resolved: &GraphResourcesResolved,
-    pass: PassId,
-    info: &PassInfo,
+    storages: &Storages,
+    res_list: &mut ResourceList,
+    graph: &Graph,
     res: &mut GraphResources,
+    backbuffer: &mut Backbuffer,
+    options: ResourcePrepareOptions,
+    context: &ExecutionContext,
 ) -> Result<(), PrepareError> {
-    match info {
-        PassInfo::Graphics { .. } => {
-            // create framebuffers
-            let render_pass = base.render_passes[&pass];
-            let render_pass_raw = storages
-                .render_pass
-                .raw(render_pass)
-                .ok_or(PrepareError::InvalidRenderPass)?;
+    let resolved = &graph.compiled_graph.graph_resources;
+    let exec = &graph.exec_graph;
+    let compiled = &graph.compiled_graph;
+    let usages = &graph.res_usage;
 
-            // get all image views and dimensions for framebuffer creation
+    let pass_res = &graph.pass_resources;
 
-            let (views, dims): (SmallVec<[_; 16]>, SmallVec<[_; 16]>) = {
-                // we only care about images that are used as a color or depth-stencil attachment
-                let mut sorted_attachments = resolved.pass_writes[&pass]
-                    .iter()
-                    .filter(|(_, ty, _)| match ty {
-                        ResourceWriteType::Image(ImageWriteType::Color) => true,
-                        ResourceWriteType::Image(ImageWriteType::DepthStencil) => true,
-                        _ => false,
-                    })
-                    .collect::<SmallVec<[_; 16]>>();
+    for batch in &exec.pass_execution {
+        for res_id in &batch.resource_create {
+            let info = &resolved.infos[res_id];
 
-                // Sort them by binding
-                sorted_attachments
-                    .as_mut_slice()
-                    .sort_by_key(|(_, _, binding)| binding);
+            let is_contextual = compiled.contextual_resources.contains(res_id);
 
-                // resolve all the references, preserve error
-                let mut res_view_dims = sorted_attachments
-                    .into_iter()
-                    .map(|(res_id, _, _)| -> Result<_, PrepareError> {
-                        let res_id = resolved
-                            .moved_from(*res_id)
-                            .ok_or_else(|| PrepareError::InvalidResource(*res_id))?;
-                        let (_, create_info) = resolved
-                            .create_info(res_id)
-                            .ok_or_else(|| PrepareError::InvalidResource(res_id))?;
+            let create = (is_contextual && options.create_contextual)
+                || (!is_contextual && options.create_non_contextual);
 
-                        let handle = match create_info {
-                            ResourceCreateInfo::Image(ImageInfo::BackbufferRead(n)) => {
-                                backbuffer.images.get(n).ok_or_else(|| {
-                                    PrepareError::InvalidBackbufferResource(n.clone())
-                                })?
-                            }
-                            ResourceCreateInfo::Image(ImageInfo::Create(_)) => res
-                                .images
-                                .get(&res_id)
-                                .ok_or_else(|| PrepareError::InvalidImageResource(res_id))?,
-                            // buffer attachments???
-                            _ => unreachable!(),
-                        };
-
-                        let image = storages
-                            .image
-                            .raw(*handle)
-                            .ok_or_else(|| PrepareError::InvalidImageHandle(*handle))?;
-
-                        Ok((&image.view, &image.dimension))
-                    })
-                    // depth textures might be "read" from when using for testing without writing
-                    .chain(
-                        resolved.pass_reads[&pass]
-                            .iter()
-                            .filter(|(_, ty, _, _)| match ty {
-                                ResourceReadType::Image(ImageReadType::DepthStencil) => true,
-                                _ => false,
-                            })
-                            .map(|(res_id, _, _, _)| -> Result<_, PrepareError> {
-                                let res_id = resolved
-                                    .moved_from(*res_id)
-                                    .ok_or_else(|| PrepareError::InvalidResource(*res_id))?;
-
-                                let handle = res.images[&res_id];
-
-                                let image = storages
-                                    .image
-                                    .raw(handle)
-                                    .ok_or_else(|| PrepareError::InvalidImageHandle(handle))?;
-
-                                Ok((&image.view, &image.dimension))
-                            }),
-                    );
-
-                // fold all the results into array, aborting on the first encountered error
-                // then bubble up the error
-                let view_dims: SmallVec<[_; 16]> = res_view_dims.try_fold(
-                    SmallVec::new(),
-                    |mut acc, val| -> Result<_, PrepareError> {
-                        acc.push(val?);
-                        Ok(acc)
-                    },
+            if create {
+                create_resource(
+                    device, storages, res_list, usages, res, backbuffer, *res_id, info, context,
                 )?;
-
-                // split into views and dimensions
-                view_dims.into_iter().unzip()
-            };
-
-            // find "THE" extent of the framebuffer
-            // TODO check that all dimensions are the same using `all()`?
-            let extent = {
-                dims.as_slice()
-                    .iter()
-                    .map(|img_dim| img_dim.as_triple(1))
-                    .map(|(x, y, z)| gfx::image::Extent {
-                        width: x,
-                        height: y,
-                        depth: z,
-                    })
-                    .next()
-                    .ok_or(PrepareError::CantInferFramebufferExtent)?
-            };
-
-            use gfx::Device;
-
-            // wheeeey
-            let framebuffer = device
-                .device
-                .create_framebuffer(render_pass_raw, views, extent)?;
-
-            res.framebuffers.insert(pass, (framebuffer, extent));
-
-            Ok(())
+            }
         }
-        PassInfo::Compute(_) => {
-            // nothing to prepare for compute passes
-            Ok(())
+
+        if options.create_pass_mat {
+            for pass in &batch.passes {
+                if let Some(mat) = pass_res.pass_material.get(pass) {
+                    let instance = storages
+                        .material
+                        .borrow_mut()
+                        .create_instance(device, *mat)?;
+
+                    res.pass_mat_instances.insert(*pass, instance);
+                }
+            }
         }
     }
+
+    Ok(())
+}
+
+pub(crate) struct GraphicsPassPrepareOptions {
+    pub(crate) create_non_contextual: bool,
+    pub(crate) create_contextual: bool,
+}
+
+pub(crate) unsafe fn prepare_graphics_passes(
+    device: &DeviceContext,
+    storages: &Storages,
+    res_list: &mut ResourceList,
+    res: &mut GraphResources,
+    backbuffer: &Backbuffer,
+    graph: &Graph,
+    options: GraphicsPassPrepareOptions,
+) -> Result<(), PrepareError> {
+    let compiled = &graph.compiled_graph;
+    let resolved = &compiled.graph_resources;
+    let exec = &graph.exec_graph;
+
+    for batch in &exec.pass_execution {
+        for pass in &batch.passes {
+            let ty = resolved.pass_types[pass];
+
+            if ty != PassType::Graphics {
+                continue;
+            }
+
+            let is_contextual = compiled.contextual_passes.contains(pass);
+            let _renders_to_backbuffer = compiled
+                .passes_that_render_to_the_backbuffer
+                .contains_key(pass);
+
+            let create = (is_contextual && options.create_contextual)
+                || (!is_contextual && options.create_non_contextual);
+
+            if create {
+                prepare_graphics_pass(device, storages, res_list, res, backbuffer, graph, *pass)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+pub(crate) unsafe fn prepare_graphics_pass(
+    device: &DeviceContext,
+    storages: &Storages,
+    res_list: &mut ResourceList,
+    res: &mut GraphResources,
+    backbuffer: &Backbuffer,
+    graph: &Graph,
+    pass: PassId,
+) -> Result<(), PrepareError> {
+    let pass_res = &graph.pass_resources;
+
+    let render_pass = *pass_res
+        .render_passes
+        .get(&pass)
+        .ok_or(PrepareError::InvalidRenderPass)?;
+
+    let framebuffer_res = create_framebuffer(
+        device,
+        storages,
+        &graph.compiled_graph.graph_resources,
+        backbuffer,
+        res,
+        render_pass,
+        pass,
+    )?;
+
+    let old = res.framebuffers.insert(pass, framebuffer_res);
+
+    if let Some((fb, _)) = old {
+        res_list.queue_framebuffer(fb);
+    }
+
+    Ok(())
 }
 
 unsafe fn create_render_pass(
     device: &DeviceContext,
-    backbuffer_usage: &BackbufferUsage,
-    storages: &mut Storages,
-    resolved_graph: &GraphResourcesResolved,
+    storages: &Storages,
+    resolved_graph: &GraphWithNamesResolved,
     pass: PassId,
-) -> Option<RenderPassHandle> {
+) -> Result<RenderPassHandle, PrepareError> {
     // create a render pass handle for use in a graphics pass
     //
     // A render pass contains a list of "attachments" which are generally used for writing
@@ -353,31 +267,17 @@ unsafe fn create_render_pass(
                 _ => false,
             })
             .filter_map(|(res, _ty, binding)| {
-                let (origin, info) = resolved_graph.create_info(*res).unwrap();
+                let (_origin, info) = resolved_graph.create_info(*res)?;
 
-                let (format, clear) = match info {
-                    ResourceCreateInfo::Image(ImageInfo::Create(img)) => {
-                        (img.format.into(), origin == *res)
-                    }
-                    ResourceCreateInfo::Image(ImageInfo::BackbufferRead(name)) => {
-                        (*(backbuffer_usage.images.get(name)?), false)
-                    }
+                let format = match info {
+                    ResourceCreateInfo::Image(ImageInfo::Create(img)) => img.format.into(),
+                    ResourceCreateInfo::Image(ImageInfo::BackbufferRead { format, .. }) => *format,
                     _ => unreachable!(),
                 };
 
-                // let clear = clear && origin == *res;
+                let load_op = gfx::pass::AttachmentLoadOp::Load;
 
-                let load_op = if clear {
-                    gfx::pass::AttachmentLoadOp::Clear
-                } else {
-                    gfx::pass::AttachmentLoadOp::Load
-                };
-
-                let initial_layout = if clear {
-                    gfx::image::Layout::Undefined
-                } else {
-                    gfx::image::Layout::General
-                };
+                let initial_layout = gfx::image::Layout::General;
 
                 let (ops, stencil) = {
                     // applies to color AND depth
@@ -418,9 +318,9 @@ unsafe fn create_render_pass(
 
                         let format = match info {
                             ResourceCreateInfo::Image(ImageInfo::Create(img)) => img.format.into(),
-                            ResourceCreateInfo::Image(ImageInfo::BackbufferRead(_name)) => {
-                                unimplemented!()
-                            }
+                            ResourceCreateInfo::Image(ImageInfo::BackbufferRead {
+                                format, ..
+                            }) => *format,
                             _ => unreachable!(),
                         };
 
@@ -508,23 +408,193 @@ unsafe fn create_render_pass(
         dependencies: &[dependencies],
     };
 
-    storages.render_pass.create(device, create_info).ok()
+    let render_pass = storages
+        .render_pass
+        .borrow_mut()
+        .create(device, create_info)?;
+    Ok(render_pass)
 }
 
-unsafe fn create_pipeline_compute(
+unsafe fn create_framebuffer(
     device: &DeviceContext,
-    storages: &mut Storages,
-    resolved: &GraphResourcesResolved,
+    storages: &Storages,
+    resolved: &GraphWithNamesResolved,
+    backbuffer: &Backbuffer,
+    res: &GraphResources,
+    render_pass: RenderPassHandle,
     pass: PassId,
-    info: &ComputePassInfo,
-) -> Option<(PipelineHandle, Option<MaterialHandle>)> {
-    let (layouts, pass_mat) = create_pipeline_base(
-        device,
-        resolved,
-        storages.material,
-        pass,
-        &info.materials[..],
-    )?;
+) -> Result<(crate::types::Framebuffer, gfx::image::Extent), PrepareError> {
+    let image_storage = storages.image.borrow();
+    let render_pass_storage = storages.render_pass.borrow();
+
+    let render_pass_raw = render_pass_storage
+        .raw(render_pass)
+        .ok_or(PrepareError::InvalidRenderPass)?;
+
+    // get all image views and dimensions for framebuffer creation
+    let (views, dims): (SmallVec<[_; 16]>, SmallVec<[_; 16]>) = {
+        // we only care about images that are used as a color or depth-stencil attachment
+        let mut sorted_attachments = resolved.pass_writes[&pass]
+            .iter()
+            .filter(|(_, ty, _)| match ty {
+                ResourceWriteType::Image(ImageWriteType::Color) => true,
+                ResourceWriteType::Image(ImageWriteType::DepthStencil) => true,
+                _ => false,
+            })
+            .collect::<SmallVec<[_; 16]>>();
+
+        // Sort them by binding
+        sorted_attachments
+            .as_mut_slice()
+            .sort_by_key(|(_, _, binding)| binding);
+
+        // resolve all the references, preserve error
+        let mut res_view_dims = sorted_attachments
+            .into_iter()
+            .map(|(res_id, _, _)| -> Result<_, PrepareError> {
+                let res_id = resolved
+                    .moved_from(*res_id)
+                    .ok_or_else(|| PrepareError::InvalidResource(*res_id))?;
+                let (_, create_info) = resolved
+                    .create_info(res_id)
+                    .ok_or_else(|| PrepareError::InvalidResource(res_id))?;
+
+                let handle = match create_info {
+                    ResourceCreateInfo::Image(ImageInfo::BackbufferRead { name, .. }) => backbuffer
+                        .images
+                        .get(name)
+                        .ok_or_else(|| PrepareError::InvalidBackbufferResource(name.clone()))?,
+                    ResourceCreateInfo::Image(ImageInfo::Create(_)) => res
+                        .images
+                        .get(&res_id)
+                        .ok_or_else(|| PrepareError::InvalidImageResource(res_id))?,
+                    // buffer attachments???
+                    _ => unreachable!(),
+                };
+
+                let image = image_storage
+                    .raw(*handle)
+                    .ok_or_else(|| PrepareError::InvalidImageHandle(*handle))?;
+
+                Ok((&image.view, &image.dimension))
+            })
+            // depth textures might be "read" from when using for testing without writing
+            .chain(
+                resolved.pass_reads[&pass]
+                    .iter()
+                    .filter(|(_, ty, _, _)| match ty {
+                        ResourceReadType::Image(ImageReadType::DepthStencil) => true,
+                        _ => false,
+                    })
+                    .map(|(res_id, _, _, _)| -> Result<_, PrepareError> {
+                        let res_id = resolved
+                            .moved_from(*res_id)
+                            .ok_or_else(|| PrepareError::InvalidResource(*res_id))?;
+
+                        let handle = res.images[&res_id];
+
+                        let image = image_storage
+                            .raw(handle)
+                            .ok_or_else(|| PrepareError::InvalidImageHandle(handle))?;
+
+                        Ok((&image.view, &image.dimension))
+                    }),
+            );
+
+        // fold all the results into array, aborting on the first encountered error
+        // then bubble up the error
+        let view_dims: SmallVec<[_; 16]> =
+            res_view_dims.try_fold(SmallVec::new(), |mut acc, val| -> Result<_, PrepareError> {
+                acc.push(val?);
+                Ok(acc)
+            })?;
+
+        // split into views and dimensions
+        view_dims.into_iter().unzip()
+    };
+
+    // find "THE" extent of the framebuffer
+    // TODO check that all dimensions are the same using `all()`?
+    let extent = {
+        dims.as_slice()
+            .iter()
+            .map(|img_dim| img_dim.as_triple(1))
+            .map(|(x, y, z)| gfx::image::Extent {
+                width: x,
+                height: y,
+                depth: z,
+            })
+            .next()
+            .ok_or(PrepareError::CantInferFramebufferExtent)?
+    };
+
+    use gfx::Device;
+
+    // wheeeey
+    let framebuffer = device
+        .device
+        .create_framebuffer(render_pass_raw, views, extent)?;
+
+    Ok((framebuffer, extent))
+}
+
+pub(crate) unsafe fn create_pipeline_compute(
+    device: &DeviceContext,
+    storages: &Storages,
+    _pass: PassId,
+    pass_material: Option<MaterialHandle>,
+    info: &ComputePipelineInfo,
+) -> Result<PipelineHandle, PrepareError> {
+    let material_storage = storages.material.borrow();
+    let shader_storage = storages.shader.borrow();
+    let mut pipeline_storage = storages.pipeline.borrow_mut();
+
+    let layouts = create_pipeline_base(&*material_storage, pass_material, &info.materials[..]);
+
+    let layouts = layouts
+        .into_iter()
+        .map(|(_, data)| data)
+        .collect::<Vec<_>>();
+
+    let mut push_constants = SmallVec::<[_; 1]>::new();
+    if let Some(range) = &info.push_constant_range {
+        push_constants.push((range.start / 4)..(range.end / 4));
+    }
+
+    let shader = shader_storage
+        .raw_compute(info.shader.handle)
+        .ok_or(PrepareError::InvalidShaderHandle)?;
+
+    let create_info = crate::pipeline::ComputePipelineCreateInfo {
+        shader: crate::pipeline::ShaderInfo {
+            content: shader.spirv_content.as_slice(),
+            entry: &shader.entry_point,
+            specialization: &info.shader.specialization,
+        },
+        descriptor_set_layout: &layouts[..],
+        push_constants: push_constants.as_slice(),
+    };
+
+    let pipeline_handle = pipeline_storage.create_compute_pipeline(device, create_info)?;
+
+    Ok(pipeline_handle)
+}
+
+pub(crate) unsafe fn create_pipeline_graphics(
+    device: &DeviceContext,
+    storages: &Storages,
+    _pass: PassId,
+    pass_material: Option<MaterialHandle>,
+    info: &GraphicsPipelineInfo,
+    render_pass: RenderPassHandle,
+) -> Result<PipelineHandle, PrepareError> {
+    use crate::pipeline;
+
+    let material_storage = storages.material.borrow();
+    let shader_storage = storages.shader.borrow();
+    let mut pipeline_storage = storages.pipeline.borrow_mut();
+
+    let layouts = create_pipeline_base(&*material_storage, pass_material, &info.materials[..]);
 
     let layouts = layouts
         .into_iter()
@@ -533,109 +603,113 @@ unsafe fn create_pipeline_compute(
 
     let mut push_constants = SmallVec::<[_; 1]>::new();
     if let Some(range) = &info.push_constants {
-        push_constants.push(range.clone());
+        push_constants.push((range.start / 4)..(range.end / 4));
     }
 
-    let create_info = crate::pipeline::ComputePipelineCreateInfo {
-        shader: crate::pipeline::ShaderInfo {
-            entry: &info.shader.entry,
-            content: &info.shader.content,
-        },
-        descriptor_set_layout: &layouts[..],
-        push_constants: push_constants.as_slice(),
+    let vertex_shader = {
+        let raw = shader_storage
+            .raw_vertex(info.shaders.vertex.handle)
+            .ok_or(PrepareError::InvalidShaderHandle)?;
+
+        pipeline::ShaderInfo {
+            content: raw.spirv_content.as_slice(),
+            entry: &raw.entry_point,
+            specialization: &info.shaders.vertex.specialization,
+        }
     };
 
-    let pipeline_handle = storages
-        .pipeline
-        .create_compute_pipeline(device, create_info)
-        .ok();
+    let fragment_shader = if let Some(sh) = &info.shaders.fragment {
+        let raw = shader_storage
+            .raw_fragment(sh.handle)
+            .ok_or(PrepareError::InvalidShaderHandle)?;
 
-    pipeline_handle.map(|handle| (handle, pass_mat))
-}
+        let info = pipeline::ShaderInfo {
+            content: raw.spirv_content.as_slice(),
+            entry: &raw.entry_point,
+            specialization: &sh.specialization,
+        };
+        Some(info)
+    } else {
+        None
+    };
 
-unsafe fn create_pipeline_graphics(
-    device: &DeviceContext,
-    storages: &mut Storages,
-    resolved_graph: &GraphResourcesResolved,
-    render_pass: RenderPassHandle,
-    pass: PassId,
-    info: &GraphicsPassInfo,
-) -> Option<(PipelineHandle, Option<MaterialHandle>)> {
-    use crate::pipeline;
+    let geometry_shader = if let Some(sh) = &info.shaders.geometry {
+        let raw = shader_storage
+            .raw_geometry(sh.handle)
+            .ok_or(PrepareError::InvalidShaderHandle)?;
 
-    let (layouts, pass_mat) = create_pipeline_base(
-        device,
-        resolved_graph,
-        storages.material,
-        pass,
-        &info.materials[..],
-    )?;
-
-    let layouts = layouts
-        .into_iter()
-        .map(|(_, data)| data)
-        .collect::<Vec<_>>();
+        let info = pipeline::ShaderInfo {
+            content: raw.spirv_content.as_slice(),
+            entry: &raw.entry_point,
+            specialization: &sh.specialization,
+        };
+        Some(info)
+    } else {
+        None
+    };
 
     let create_info = pipeline::GraphicsPipelineCreateInfo {
         vertex_attribs: info.vertex_attrib,
         primitive: info.primitive,
-        shader_vertex: pipeline::ShaderInfo {
-            content: &info.shaders.vertex.content,
-            entry: &info.shaders.vertex.entry,
-        },
-        shader_fragment: if info.shaders.fragment.is_some() {
-            Some(pipeline::ShaderInfo {
-                content: &info.shaders.fragment.as_ref().unwrap().content,
-                entry: &info.shaders.fragment.as_ref().unwrap().entry,
-            })
-        } else {
-            None
-        },
-        // TODO add support for geometry shaders
-        shader_geometry: None,
+        shader_vertex: vertex_shader,
+        shader_fragment: fragment_shader,
+        shader_geometry: geometry_shader,
         descriptor_set_layout: &layouts[..],
-        push_constants: &info.push_constants[..],
+        push_constants: push_constants.as_slice(),
         blend_modes: &info.blend_modes[..],
         depth_mode: info.depth_mode,
     };
 
-    let pipeline_handle = storages
-        .pipeline
-        .create_graphics_pipeline(
-            device,
-            storages.render_pass,
-            storages.vertex_attrib,
-            render_pass,
-            create_info,
-        )
-        .ok();
+    let pipeline_handle = pipeline_storage.create_graphics_pipeline(
+        device,
+        &*storages.render_pass.borrow(),
+        &*storages.vertex_attrib.borrow(),
+        render_pass,
+        create_info,
+    )?;
 
-    pipeline_handle.map(|handle| (handle, pass_mat))
+    Ok(pipeline_handle)
 }
 
+// this attribute is here because clippy keeps complaining, but there is no good way
+// to reduce the number of arguments here..
+#[allow(clippy::too_many_arguments)]
 unsafe fn create_resource(
-    usages: &ResourceUsages,
     device: &DeviceContext,
-    context: &ExecutionContext,
+    storages: &Storages,
+    res_list: &mut ResourceList,
+    usages: &ResourceUsages,
+    res: &mut GraphResources,
     backbuffer: &mut Backbuffer,
-    storages: &mut Storages,
     id: ResourceId,
     info: &ResourceCreateInfo,
-    res: &mut GraphResources,
-) -> Option<()> {
+    context: &ExecutionContext,
+) -> Result<(), PrepareError> {
+    let mut image_storage = storages.image.borrow_mut();
+    let mut sampler_storage = storages.sampler.borrow_mut();
+    let mut buffer_storage = storages.buffer.borrow_mut();
+
     match info {
-        ResourceCreateInfo::Image(ImageInfo::BackbufferRead(name)) => {
+        ResourceCreateInfo::Image(ImageInfo::BackbufferRead { name, .. }) => {
             // read image from backbuffer
 
-            let img = backbuffer.images.get(name)?;
-            res.images.insert(id, *img);
+            // NOTE: do **not** destroy previous resources when a backbuffer resource overrides it.
+            // This is because a backbuffer resource can only override another backbuffer resource.
+            // (At least it should.)
+
+            let img = backbuffer
+                .images
+                .get(name)
+                .ok_or_else(|| PrepareError::InvalidBackbufferResource(name.clone()))?;
             res.external_resources.insert(id);
 
+            res.images.insert(id, *img);
+
             if let Some(sampler) = backbuffer.samplers.get(name) {
-                res.samplers.insert(id, *sampler);
+                let _old_sampler = res.samplers.insert(id, *sampler);
             }
 
-            Some(())
+            Ok(())
         }
 
         ResourceCreateInfo::Image(ImageInfo::Create(img)) => {
@@ -671,14 +745,14 @@ unsafe fn create_resource(
                 is_transient: false,
             };
 
-            let img_handle = storages.image.create(device, create_info).ok()?;
+            let img_handle = image_storage.create(device, create_info)?;
 
-            res.images.insert(id, img_handle);
+            let old_image = res.images.insert(id, img_handle);
 
             // If the image is used for sampling then it means some other pass will read from it
             // as a color image. In that case we create a sampler for this image as well
-            if usages.0.contains(gfx::image::Usage::SAMPLED) {
-                let sampler = storages.sampler.create(
+            let old_sampler = if usages.0.contains(gfx::image::Usage::SAMPLED) {
+                let sampler = sampler_storage.create(
                     device,
                     sampler::SamplerCreateInfo {
                         min_filter: sampler::Filter::Linear,
@@ -691,10 +765,19 @@ unsafe fn create_resource(
                         ),
                     },
                 );
-                res.samplers.insert(id, sampler);
+                res.samplers.insert(id, sampler)
+            } else {
+                None
+            };
+
+            if let Some(old_img) = old_image {
+                image_storage.destroy(res_list, &[old_img]);
+            }
+            if let Some(old_samp) = old_sampler {
+                sampler_storage.destroy(res_list, &[old_samp]);
             }
 
-            Some(())
+            Ok(())
         }
         ResourceCreateInfo::Buffer(buf) => {
             let usage = usages.buffer[&id];
@@ -707,10 +790,7 @@ unsafe fn create_resource(
                         usage,
                     };
 
-                    storages
-                        .buffer
-                        .device_local_create(device, create_info)
-                        .ok()?
+                    buffer_storage.device_local_create(device, create_info)?
                 }
                 BufferStorageType::HostVisible => {
                     let create_info = crate::buffer::CpuVisibleCreateInfo {
@@ -719,38 +799,65 @@ unsafe fn create_resource(
                         usage,
                     };
 
-                    storages
-                        .buffer
-                        .cpu_visible_create(device, create_info)
-                        .ok()?
+                    buffer_storage.cpu_visible_create(device, create_info)?
                 }
             };
 
-            res.buffers.insert(id, buffer);
+            let old_buf = res.buffers.insert(id, buffer);
 
-            Some(())
+            if let Some(old_buf) = old_buf {
+                buffer_storage.destroy(res_list, &[old_buf]);
+            }
+
+            Ok(())
         }
         ResourceCreateInfo::Virtual => {
             // External resources don't really "exist", they are just markers, so nothing to do here
-            Some(())
+            Ok(())
         }
     }
 }
 
 unsafe fn create_pipeline_base<'a>(
-    device: &DeviceContext,
-    resolved: &GraphResourcesResolved,
-    material_storage: &'a mut MaterialStorage,
-    pass: PassId,
+    material_storage: &'a MaterialStorage,
+    pass_material: Option<MaterialHandle>,
     materials: &[(usize, MaterialHandle)],
-) -> Option<(
-    BTreeMap<usize, &'a types::DescriptorSetLayout>,
-    Option<MaterialHandle>,
-)> {
+) -> BTreeMap<usize, &'a types::DescriptorSetLayout> {
     let mut sets = BTreeMap::new();
 
+    // base material
+    if let Some(pass_material) = pass_material {
+        if let Some(mat) = material_storage.raw(pass_material) {
+            sets.insert(0, &mat.desc_set_layout);
+        }
+    }
+
+    // other materials
+    for (set, material) in materials {
+        let mat = match material_storage.raw(*material) {
+            Some(mat) => mat,
+            None => continue,
+        };
+
+        let layout = &mat.desc_set_layout;
+
+        sets.insert(*set, layout);
+    }
+
+    sets
+}
+
+/// Create the material for a pass.
+pub(crate) unsafe fn create_pass_material(
+    device: &DeviceContext,
+    material_storage: &mut MaterialStorage,
+    graph: &GraphWithNamesResolved,
+    pass: PassId,
+) -> Result<Option<MaterialHandle>, PrepareError> {
+    use gfx::Device;
+
     let (core_desc, core_range) = {
-        let reads = resolved.pass_reads[&pass]
+        let reads = graph.pass_reads[&pass]
             .iter()
             .filter(|(_id, _ty, _, _)| match _ty {
                 ResourceReadType::Virtual => false,
@@ -773,7 +880,7 @@ unsafe fn create_pipeline_base<'a>(
                 });
 
         // writing to resources that are not color or depth images happens via descriptors as well
-        let writes = resolved.pass_writes[&pass]
+        let writes = graph.pass_writes[&pass]
             .iter()
             .filter(|(_res, ty, _binding)| {
                 match ty {
@@ -899,38 +1006,9 @@ unsafe fn create_pipeline_base<'a>(
         (descriptors, range)
     };
 
-    // pass material
-    let pass_mat = {
-        use gfx::Device;
+    let pass_set_layout = device.device.create_descriptor_set_layout(core_desc, &[])?;
 
-        let pass_set_layout = device
-            .device
-            .create_descriptor_set_layout(core_desc, &[])
-            .ok()?;
+    let mat = material_storage.create_raw(device, pass_set_layout, core_range, 16);
 
-        let pass_mat = material_storage.create_raw(device, pass_set_layout, core_range, 16);
-
-        if let Some(pass_mat) = pass_mat {
-            let raw_mat = material_storage.raw(pass_mat).unwrap();
-            sets.insert(0, &raw_mat.desc_set_layout);
-        }
-
-        pass_mat
-    };
-
-    // material sets
-    {
-        for (set, material) in materials {
-            let mat = match material_storage.raw(*material) {
-                Some(mat) => mat,
-                None => continue,
-            };
-
-            let layout = &mat.desc_set_layout;
-
-            sets.insert(*set, layout);
-        }
-    }
-
-    Some((sets, pass_mat))
+    Ok(mat)
 }

@@ -2,9 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-//! Functionality for the setup-phase of passes.
+//! Functionality for the describe-phase of passes.
 
-use super::ResourceName;
+use crate::graph::ResourceName;
 
 use crate::image;
 
@@ -12,7 +12,7 @@ use self::ResourceReadType as R;
 use self::ResourceWriteType as W;
 
 /// Resource types that can be used in graphs and passes.
-#[derive(Hash, Debug, Clone, Copy)]
+#[derive(Hash, Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ResourceType {
     /// An image resource
     Image,
@@ -31,9 +31,7 @@ pub(crate) enum ResourceCreateInfo {
 
 /// Type used to record which resources are used in what ways.
 #[derive(Hash, Default)]
-pub struct GraphBuilder {
-    pub(crate) enabled: bool,
-
+pub struct ResourceDescriptor {
     /// Mapping from names to resource create information
     pub(crate) resource_creates: Vec<(ResourceName, ResourceCreateInfo)>,
     /// Mapping from new name to src name
@@ -50,7 +48,7 @@ pub struct GraphBuilder {
     pub(crate) resource_backbuffer: Vec<(ResourceName, ResourceName)>,
 }
 
-impl GraphBuilder {
+impl ResourceDescriptor {
     pub(crate) fn new() -> Self {
         Default::default()
     }
@@ -64,14 +62,22 @@ impl GraphBuilder {
     }
 
     /// Read an image resource from the backbuffer and give it a graph-local name.
-    pub fn image_backbuffer_get<BN, LN>(&mut self, backbuffer_name: BN, local_name: LN)
-    where
+    pub fn image_backbuffer_get<BN, LN, F>(
+        &mut self,
+        backbuffer_name: BN,
+        local_name: LN,
+        format: F,
+    ) where
         BN: Into<ResourceName>,
         LN: Into<ResourceName>,
+        F: Into<gfx::format::Format>,
     {
         self.resource_creates.push((
             local_name.into(),
-            ResourceCreateInfo::Image(ImageInfo::BackbufferRead(backbuffer_name.into())),
+            ResourceCreateInfo::Image(ImageInfo::BackbufferRead {
+                name: backbuffer_name.into(),
+                format: format.into(),
+            }),
         ));
     }
 
@@ -207,11 +213,6 @@ impl GraphBuilder {
     pub fn virtual_read<T: Into<ResourceName>>(&mut self, name: T) {
         self.resource_reads.push((name.into(), R::Virtual, 0, None));
     }
-
-    /// Enable this pass so it will be considered during the compilation phase.
-    pub fn enable(&mut self) {
-        self.enabled = true;
-    }
 }
 
 /// Value type used for depth data.
@@ -232,7 +233,10 @@ pub enum ImageClearValue {
 #[derive(Debug, Clone, Hash)]
 pub(crate) enum ImageInfo {
     Create(ImageCreateInfo),
-    BackbufferRead(ResourceName),
+    BackbufferRead {
+        name: ResourceName,
+        format: gfx::format::Format,
+    },
 }
 
 /// Information needed to create an image resource
@@ -263,38 +267,54 @@ pub enum BufferStorageType {
     DeviceLocal,
 }
 
+/// Ways a resource can be used with read-access.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub(crate) enum ResourceReadType {
+pub enum ResourceReadType {
+    /// Image read
     Image(ImageReadType),
+    /// Buffer read
     Buffer(BufferReadType),
+    /// virtual read - only used to express dependencies between passes.
     Virtual,
 }
 
+/// Ways an image can be used with read-access.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub(crate) enum ImageReadType {
+pub enum ImageReadType {
+    /// Color access of the image.
     Color,
+    /// Storage access of the image. Storage images can contain arbitrary data. Read+Write.
     Storage,
+    /// Depth-stencil access of the image. Generally used as an attachment of a render-pass.
     DepthStencil,
 }
 
+/// Ways a buffer can be used with read-access.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub(crate) enum BufferReadType {
+pub enum BufferReadType {
+    /// Storage access of the buffer. Read+Write.
     Storage,
+    /// Same as `Storage` but uses an image as the backing storage.
     StorageTexel,
+    /// Uniform access of the buffer. Read only.
     Uniform,
+    /// Same as `Uniform` but uses an image as the backing storage.
     UniformTexel,
 }
 
-///
+/// Ways a resource can be used with write-access.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub(crate) enum ResourceWriteType {
+pub enum ResourceWriteType {
+    /// Image write.
     Image(ImageWriteType),
+
+    /// Buffer write.
     Buffer(BufferWriteType),
 }
 
 /// Ways an image can be used when writing to it.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub(crate) enum ImageWriteType {
+pub enum ImageWriteType {
     /// A color attachment of a Framebuffer
     Color,
 
@@ -307,7 +327,7 @@ pub(crate) enum ImageWriteType {
 
 /// Ways a buffer can be used when writing to it
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
-pub(crate) enum BufferWriteType {
+pub enum BufferWriteType {
     /// A buffer used for reading or writing.
     Storage,
 
@@ -334,8 +354,8 @@ impl From<ResourceReadType> for ResourceType {
     }
 }
 
-impl From<ResourceCreateInfo> for ResourceType {
-    fn from(inf: ResourceCreateInfo) -> Self {
+impl From<&ResourceCreateInfo> for ResourceType {
+    fn from(inf: &ResourceCreateInfo) -> Self {
         match inf {
             ResourceCreateInfo::Image(..) => ResourceType::Image,
             ResourceCreateInfo::Buffer(..) => ResourceType::Buffer,

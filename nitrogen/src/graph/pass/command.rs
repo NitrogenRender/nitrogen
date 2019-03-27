@@ -14,8 +14,8 @@ use crate::material::{MaterialInstanceHandle, MaterialStorage};
 
 use crate::buffer::{BufferHandle, BufferStorage};
 
-use crate::graph::ImageClearValue;
-use crate::image::{ImageHandle, ImageStorage};
+use crate::image::ImageStorage;
+use std::cell::Ref;
 
 /// Type used for the indices in the index buffer.
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash)]
@@ -27,135 +27,14 @@ pub enum IndexType {
     U32,
 }
 
-#[derive(Clone)]
 pub(crate) struct ReadStorages<'a> {
-    pub(crate) buffer: &'a BufferStorage,
-    pub(crate) material: &'a MaterialStorage,
-    pub(crate) image: &'a ImageStorage,
+    pub(crate) buffer: Ref<'a, BufferStorage>,
+    pub(crate) material: Ref<'a, MaterialStorage>,
+    pub(crate) _image: Ref<'a, ImageStorage>,
 }
 
 /// CommandBuffer object used to issue commands to a graphics queue.
 pub struct GraphicsCommandBuffer<'a> {
-    pub(crate) buf: &'a mut crate::resources::command_pool::CmdBufType<gfx::Graphics>,
-    pub(crate) storages: &'a ReadStorages<'a>,
-
-    pub(crate) framebuffer: Option<&'a types::Framebuffer>,
-    pub(crate) viewport_rect: gfx::pso::Rect,
-
-    pub(crate) render_pass: &'a types::RenderPass,
-    pub(crate) pipeline_layout: &'a types::PipelineLayout,
-}
-
-impl<'a> GraphicsCommandBuffer<'a> {
-    /// Start a render pass. Draw calls can only be issued from a [`RenderPassEncoder`].
-    ///
-    /// If any attachments have to be cleared, values from `clear_values` are used **in order of
-    /// declaration**.
-    ///
-    /// [`RenderPassEncoder`]: ./struct.RenderPassEncoder.html
-    pub unsafe fn begin_render_pass<C>(&mut self, clear_values: C) -> Option<RenderPassEncoder<'_>>
-    where
-        C: IntoIterator,
-        C::Item: std::borrow::Borrow<ImageClearValue>,
-    {
-        let encoder = self.buf.begin_render_pass_inline(
-            self.render_pass,
-            self.framebuffer?,
-            self.viewport_rect,
-            clear_values.into_iter().map(|clear_value| {
-                use std::borrow::Borrow;
-                match clear_value.borrow() {
-                    ImageClearValue::Color(color) => {
-                        gfx::command::ClearValue::Color(gfx::command::ClearColor::Float(*color))
-                    }
-                    ImageClearValue::DepthStencil(depth, stencil) => {
-                        gfx::command::ClearValue::DepthStencil(gfx::command::ClearDepthStencil(
-                            *depth, *stencil,
-                        ))
-                    }
-                }
-            }),
-        );
-
-        Some(RenderPassEncoder {
-            encoder,
-            viewport_rect: self.viewport_rect,
-            storages: self.storages,
-            pipeline_layout: self.pipeline_layout,
-        })
-    }
-
-    /// Dispatch a clearing command for image `image` using the clear value `clear`.
-    pub unsafe fn clear_image(&mut self, image: ImageHandle, clear: ImageClearValue) -> Option<()> {
-        let img = self.storages.image.raw(image)?;
-
-        let entry_barrier = gfx::memory::Barrier::Image {
-            states: (gfx::image::Access::empty(), gfx::image::Layout::Undefined)
-                ..(
-                    gfx::image::Access::TRANSFER_WRITE,
-                    gfx::image::Layout::TransferDstOptimal,
-                ),
-            target: img.image.raw(),
-            families: None,
-            range: gfx::image::SubresourceRange {
-                aspects: img.aspect,
-                levels: 0..1,
-                layers: 0..1,
-            },
-        };
-
-        self.buf.pipeline_barrier(
-            gfx::pso::PipelineStage::TOP_OF_PIPE..gfx::pso::PipelineStage::TRANSFER,
-            gfx::memory::Dependencies::empty(),
-            &[entry_barrier],
-        );
-
-        self.buf.clear_image(
-            img.image.raw(),
-            gfx::image::Layout::TransferDstOptimal,
-            match clear {
-                ImageClearValue::Color(color) => gfx::command::ClearColor::Float(color),
-                _ => gfx::command::ClearColor::Float([0.0; 4]),
-            },
-            match clear {
-                ImageClearValue::DepthStencil(depth, stencil) => {
-                    gfx::command::ClearDepthStencil(depth, stencil)
-                }
-                _ => gfx::command::ClearDepthStencil(1.0, 0),
-            },
-            &[gfx::image::SubresourceRange {
-                aspects: img.aspect,
-                levels: 0..1,
-                layers: 0..1,
-            }],
-        );
-
-        let exit_barrier = gfx::memory::Barrier::Image {
-            states: (
-                gfx::image::Access::TRANSFER_WRITE,
-                gfx::image::Layout::TransferDstOptimal,
-            )..(gfx::image::Access::empty(), gfx::image::Layout::General),
-            target: img.image.raw(),
-            families: None,
-            range: gfx::image::SubresourceRange {
-                aspects: img.aspect,
-                levels: 0..1,
-                layers: 0..1,
-            },
-        };
-
-        self.buf.pipeline_barrier(
-            gfx::pso::PipelineStage::TRANSFER..gfx::pso::PipelineStage::BOTTOM_OF_PIPE,
-            gfx::memory::Dependencies::empty(),
-            &[exit_barrier],
-        );
-
-        Some(())
-    }
-}
-
-/// An Encoder used to dispatch commands inside a render pass
-pub struct RenderPassEncoder<'a> {
     pub(crate) encoder: gfx::command::RenderPassInlineEncoder<'a, back::Backend>,
     pub(crate) storages: &'a ReadStorages<'a>,
 
@@ -163,7 +42,7 @@ pub struct RenderPassEncoder<'a> {
     pub(crate) viewport_rect: gfx::pso::Rect,
 }
 
-impl<'a> RenderPassEncoder<'a> {
+impl<'a> GraphicsCommandBuffer<'a> {
     /// Dispatch a draw call for "array" rendering.
     ///
     /// This draw mode treats every vertex in the vertex buffer as an input-vertex.
@@ -195,7 +74,7 @@ impl<'a> RenderPassEncoder<'a> {
         T: IntoIterator<Item = I>,
         T::Item: std::borrow::Borrow<(BufferHandle, usize)>,
     {
-        let stores = self.storages.clone();
+        let stores = self.storages;
 
         let bufs = buffers.into_iter().filter_map(|i| {
             let (buffer, index) = i.borrow();
@@ -215,7 +94,7 @@ impl<'a> RenderPassEncoder<'a> {
         offset: u64,
         index_type: IndexType,
     ) {
-        let stores = self.storages.clone();
+        let stores = self.storages;
 
         let buffer_raw = stores.buffer.raw(buffer).map(|buf| buf.buffer.raw());
 
@@ -245,8 +124,8 @@ impl<'a> RenderPassEncoder<'a> {
     ) -> Option<()> {
         let layout = self.pipeline_layout;
 
-        let mat = self.storages.material.raw(material.0)?;
-        let instance = mat.instance_raw(material.1)?;
+        let mat = self.storages.material.raw(material.material)?;
+        let instance = mat.instance_raw(material.instance)?;
 
         let set = &instance.set;
 
@@ -266,8 +145,6 @@ impl<'a> RenderPassEncoder<'a> {
     }
 
     /// Upload a value to the push-constant memory.
-    ///
-    /// **NOTE**: the offset is in 4-bytes, not bytes!!!
     pub unsafe fn push_constant<T: Sized + Copy>(&mut self, offset: u32, data: T) {
         use smallvec::SmallVec;
         let mut buf = SmallVec::<[u32; 256]>::new();
@@ -276,7 +153,7 @@ impl<'a> RenderPassEncoder<'a> {
 
         {
             let u32_slice = data_to_u32_slice(data, &mut buf[..]);
-            self.push_constant_raw(offset, u32_slice);
+            self.push_constant_raw(offset / 4, u32_slice);
         }
     }
 
@@ -321,8 +198,8 @@ impl<'a> ComputeCommandBuffer<'a> {
     ) -> Option<()> {
         let layout = self.pipeline_layout;
 
-        let mat = self.storages.material.raw(material.0)?;
-        let instance = mat.instance_raw(material.1)?;
+        let mat = self.storages.material.raw(material.material)?;
+        let instance = mat.instance_raw(material.instance)?;
 
         let set = &instance.set;
 
@@ -338,8 +215,6 @@ impl<'a> ComputeCommandBuffer<'a> {
     }
 
     /// Upload a value to the push-constant memory.
-    ///
-    /// **NOTE**: the offset is in 4-bytes, not bytes!!!
     pub unsafe fn push_constant<T: Sized + Copy>(&mut self, offset: u32, data: T) {
         use smallvec::SmallVec;
         let mut buf = SmallVec::<[u32; 256]>::new();
@@ -348,7 +223,7 @@ impl<'a> ComputeCommandBuffer<'a> {
 
         {
             let u32_slice = data_to_u32_slice(data, &mut buf[..]);
-            self.push_constant_raw(offset, u32_slice);
+            self.push_constant_raw(offset / 4, u32_slice);
         }
     }
 }

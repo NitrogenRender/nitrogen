@@ -14,7 +14,7 @@ pub(crate) use self::prepare::*;
 
 pub use self::prepare::PrepareError;
 
-use super::{PassId, PassName, ResourceId, Storages};
+use super::{PassId, ResourceId, Storages};
 use crate::resources::{
     buffer::BufferHandle, image::ImageHandle, pipeline::PipelineHandle,
     render_pass::RenderPassHandle, sampler::SamplerHandle,
@@ -25,9 +25,9 @@ use crate::submit_group::ResourceList;
 
 use std::collections::{HashMap, HashSet};
 
-use smallvec::SmallVec;
-
-use crate::resources::image::ImageFormat;
+use crate::graph::pass::dispatcher::ResourceRefError;
+use crate::graph::pass::{ComputePipelineInfo, GraphicsPipelineInfo};
+use crate::resources::material::MaterialInstanceHandle;
 use gfx;
 
 /// Errors that can occur when executing a graph.
@@ -37,11 +37,11 @@ pub enum GraphExecError {
     #[display(fmt = "Invalid graph handle")]
     InvalidGraph,
 
-    #[display(fmt = "The graph has not been compiled before executing")]
-    GraphNotCompiled,
-
     #[display(fmt = "Graph resources could not be created: {}", _0)]
     ResourcePrepareError(PrepareError),
+
+    #[display(fmt = "Attempted to use a graph resource in an invalid way: {:?}", _0)]
+    ResourceRefError(ResourceRefError),
 }
 
 impl std::error::Error for GraphExecError {}
@@ -52,55 +52,60 @@ pub(crate) struct ResourceUsages {
     buffer: HashMap<ResourceId, gfx::buffer::Usage>,
 }
 
-#[derive(Debug, Default)]
-pub(crate) struct GraphBaseResources {
-    render_passes: HashMap<PassId, RenderPassHandle>,
-
-    pipelines_graphic: HashMap<PassId, PipelineHandle>,
-    pipelines_compute: HashMap<PassId, PipelineHandle>,
-    pub(crate) pipelines_mat: HashMap<PassId, crate::material::MaterialHandle>,
+#[derive(Debug)]
+pub(crate) struct PipelineResources {
+    pub(crate) pipeline_handle: PipelineHandle,
 }
 
-impl GraphBaseResources {
+#[derive(Debug, Default)]
+pub(crate) struct PassResources {
+    pub(crate) render_passes: HashMap<PassId, RenderPassHandle>,
+
+    pub(crate) pass_material: HashMap<PassId, crate::material::MaterialHandle>,
+    pub(crate) compute_pipelines: HashMap<PassId, HashMap<ComputePipelineInfo, PipelineResources>>,
+    pub(crate) graphic_pipelines: HashMap<PassId, HashMap<GraphicsPipelineInfo, PipelineResources>>,
+}
+
+impl PassResources {
     pub(crate) fn release(self, res_list: &mut ResourceList, storages: &mut Storages) {
         storages
             .render_pass
+            .borrow_mut()
             .destroy(res_list, self.render_passes.values());
 
-        storages
-            .pipeline
-            .destroy(res_list, self.pipelines_graphic.values());
-
-        storages
-            .pipeline
-            .destroy(res_list, self.pipelines_compute.values());
-
-        for (_, mat) in self.pipelines_mat {
+        for (_, mat) in self.pass_material {
             res_list.queue_material(mat);
+        }
+
+        for (_, pipes) in self.compute_pipelines {
+            let pipes = pipes.values().map(|res| res.pipeline_handle);
+            storages.pipeline.borrow_mut().destroy(res_list, pipes);
+        }
+
+        for (_, pipes) in self.graphic_pipelines {
+            let pipes = pipes.values().map(|res| res.pipeline_handle);
+            storages.pipeline.borrow_mut().destroy(res_list, pipes);
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct GraphResources {
-    pub(crate) exec_version: usize,
-    pub(crate) exec_context: super::ExecutionContext,
+    pub(crate) exec_context: Option<super::ExecutionContext>,
+
+    pub(crate) pass_mat_instances: HashMap<PassId, MaterialInstanceHandle>,
+
+    pub(crate) framebuffers: HashMap<PassId, (types::Framebuffer, gfx::image::Extent)>,
 
     pub(crate) external_resources: HashSet<ResourceId>,
     pub(crate) images: HashMap<ResourceId, ImageHandle>,
     samplers: HashMap<ResourceId, SamplerHandle>,
     pub(crate) buffers: HashMap<ResourceId, BufferHandle>,
-
-    framebuffers: HashMap<PassId, (types::Framebuffer, gfx::image::Extent)>,
-
-    pass_mats: HashMap<PassId, crate::material::MaterialInstanceHandle>,
-
-    pub(crate) outputs: SmallVec<[ResourceId; 16]>,
 }
 
 impl GraphResources {
     pub(crate) fn release(self, res_list: &mut ResourceList, storages: &mut Storages) {
-        storages.image.destroy(
+        storages.image.borrow_mut().destroy(
             res_list,
             self.images.iter().filter_map(|(res, handle)| {
                 if self.external_resources.contains(res) {
@@ -111,25 +116,29 @@ impl GraphResources {
             }),
         );
 
-        storages.sampler.destroy(res_list, self.samplers.values());
-
-        storages.buffer.destroy(res_list, self.buffers.values());
-
         for (_, (fb, _)) in self.framebuffers {
             res_list.queue_framebuffer(fb);
         }
 
-        for mat_instance in self.pass_mats.values() {
-            res_list.queue_material_instance(*mat_instance);
+        for (_, inst) in self.pass_mat_instances {
+            res_list.queue_material_instance(inst);
         }
+
+        storages
+            .sampler
+            .borrow_mut()
+            .destroy(res_list, self.samplers.values());
+
+        storages
+            .buffer
+            .borrow_mut()
+            .destroy(res_list, self.buffers.values());
     }
 }
 
 /// Backbuffers contain resources which can persist graph executions.
 #[derive(Debug, Default)]
 pub struct Backbuffer {
-    pub(crate) usage: BackbufferUsage,
-
     pub(crate) images: HashMap<super::ResourceName, ImageHandle>,
 
     // TODO there are no writes to this, only one read. removing??
@@ -148,25 +157,8 @@ impl Backbuffer {
     }
 
     /// Insert an image into the Backbuffer with a given name.
-    ///
-    /// Since an image-handle on its own does not carry format information with it,
-    /// the format has to be passed explicitly.
-    ///
-    /// impl-note: Maybe this should be a method on `Context` instead, so the format can be read
-    /// automatically?
-    pub fn image_put<T: Into<super::ResourceName>>(
-        &mut self,
-        name: T,
-        image: ImageHandle,
-        format: ImageFormat,
-    ) {
+    pub fn image_put<T: Into<super::ResourceName>>(&mut self, name: T, image: ImageHandle) {
         let name = name.into();
         self.images.insert(name.clone(), image);
-        self.usage.images.insert(name, format.into());
     }
-}
-
-#[derive(Debug, Default)]
-pub(crate) struct BackbufferUsage {
-    pub(crate) images: HashMap<super::ResourceName, gfx::format::Format>,
 }

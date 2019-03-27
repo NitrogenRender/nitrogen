@@ -7,6 +7,11 @@ use nitrogen_examples_common::{
     main_loop::{MainLoop, UserData},
 };
 
+use nitrogen::graph::builder::resource_descriptor::ImageClearValue;
+use nitrogen::graph::builder::GraphBuilder;
+use nitrogen::resources::shader::{
+    ComputeShaderHandle, FragmentShaderHandle, ShaderInfo, VertexShaderHandle,
+};
 use nitrogen::{self as nit, buffer, graph, image, material, submit_group, vertex_attrib as vtx};
 
 struct Delta(pub f64);
@@ -169,7 +174,7 @@ fn init(
         }
     }
 
-    let graph = create_graph(ctx, vtx_def, material, instance_material, vertex_buffer);
+    let graph = unsafe { create_graph(ctx, vtx_def, instance_material, vertex_buffer) };
 
     // write initial scale to the store
     {
@@ -212,46 +217,55 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn create_graph(
+unsafe fn create_graph(
     ctx: &mut nit::Context,
     vertex_attrib: vtx::VertexAttribHandle,
-    material: material::MaterialHandle,
     mat_instance: material::MaterialInstanceHandle,
     buffer: buffer::BufferHandle,
 ) -> graph::GraphHandle {
-    use std::borrow::Cow;
-
-    let graph = ctx.graph_create();
+    let mut builder = GraphBuilder::new("Main");
 
     {
-        let info = graph::ComputePassInfo {
-            shader: graph::ShaderInfo {
-                content: Cow::Borrowed(include_bytes!(concat!(
+        let shader = {
+            let info = ShaderInfo {
+                entry_point: "ComputeMain".into(),
+                spirv_content: include_bytes!(concat!(
                     env!("OUT_DIR"),
                     "/2d-squares/move.hlsl.comp.spirv"
-                ),)),
-                entry: "ComputeMain".into(),
-            },
-            materials: vec![(0, material)],
-            push_constants: Some(0..4),
+                )),
+            };
+
+            ctx.compute_shader_create(info)
         };
 
         struct MovePass {
             mat_instance: material::MaterialInstanceHandle,
+            shader: ComputeShaderHandle,
         }
 
-        impl graph::ComputePassImpl for MovePass {
-            fn setup(&mut self, _: &mut graph::Store, builder: &mut graph::GraphBuilder) {
-                builder.virtual_create("Positions");
+        impl graph::ComputePass for MovePass {
+            type Config = ();
 
-                builder.enable();
+            fn configure(&self, _config: Self::Config) -> graph::ComputePipelineInfo {
+                graph::ComputePipelineInfo {
+                    materials: vec![(0, self.mat_instance.material())],
+                    push_constant_range: Some(0..16),
+                    shader: graph::Shader {
+                        handle: self.shader,
+                        specialization: vec![],
+                    },
+                }
+            }
+
+            fn describe(&mut self, res: &mut graph::ResourceDescriptor) {
+                res.virtual_create("Positions");
             }
 
             unsafe fn execute(
                 &self,
                 store: &graph::Store,
-                cmd: &mut graph::ComputeCommandBuffer<'_>,
-            ) {
+                dispatcher: &mut graph::ComputeDispatcher<Self>,
+            ) -> Result<(), graph::GraphExecError> {
                 let mut batch_size = 1024;
                 let mut wide = NUM_THINGS as u32 / batch_size;
 
@@ -263,62 +277,94 @@ fn create_graph(
                     }
                 }
 
-                cmd.push_constant::<u32>(0, wide);
-                cmd.push_constant::<u32>(1, NUM_THINGS as u32);
+                let Delta(delta) = store.get().unwrap();
 
-                let Delta(delta) = store.get::<Delta>().unwrap();
+                dispatcher.with_config((), |cmd| {
+                    cmd.push_constant::<u32>(0, wide);
+                    cmd.push_constant::<u32>(4, NUM_THINGS as u32);
 
-                cmd.push_constant::<f32>(2, *delta as f32);
+                    cmd.push_constant::<f32>(8, *delta as f32);
 
-                cmd.bind_material(0, self.mat_instance);
+                    cmd.bind_material(0, self.mat_instance);
 
-                cmd.dispatch([wide, batch_size, 1]);
+                    cmd.dispatch([wide, batch_size, 1]);
+                })?;
+
+                Ok(())
             }
         }
 
-        let pass = MovePass { mat_instance };
+        let pass = MovePass {
+            mat_instance,
+            shader,
+        };
 
-        ctx.graph_add_compute_pass(graph, "MovePass", info, pass);
+        builder.add_compute_pass("MovePass", pass);
     }
 
     {
-        let info = graph::GraphicsPassInfo {
-            vertex_attrib: Some(vertex_attrib),
-            depth_mode: None,
-            stencil_mode: None,
-            shaders: graph::Shaders {
-                vertex: graph::ShaderInfo {
-                    content: Cow::Borrowed(include_bytes!(concat!(
-                        env!("OUT_DIR"),
-                        "/2d-squares/quad.hlsl.vert.spirv"
-                    ),)),
-                    entry: "VertexMain".into(),
-                },
-                fragment: Some(graph::ShaderInfo {
-                    content: Cow::Borrowed(include_bytes!(concat!(
-                        env!("OUT_DIR"),
-                        "/2d-squares/quad.hlsl.frag.spirv"
-                    ),)),
-                    entry: "FragmentMain".into(),
-                }),
-                geometry: None,
-            },
-            primitive: graph::Primitive::TriangleStrip,
-            blend_modes: vec![graph::BlendMode::Alpha],
-            materials: vec![(0, material)],
-            push_constants: vec![(0..5)],
+        let vertex_shader = {
+            let info = ShaderInfo {
+                entry_point: "VertexMain".into(),
+                spirv_content: include_bytes!(concat!(
+                    env!("OUT_DIR"),
+                    "/2d-squares/quad.hlsl.vert.spirv"
+                )),
+            };
+
+            ctx.vertex_shader_create(info)
+        };
+
+        let fragment_shader = {
+            let info = ShaderInfo {
+                entry_point: "FragmentMain".into(),
+                spirv_content: include_bytes!(concat!(
+                    env!("OUT_DIR"),
+                    "/2d-squares/quad.hlsl.frag.spirv"
+                )),
+            };
+
+            ctx.fragment_shader_create(info)
         };
 
         struct Pass2D {
             buffer: buffer::BufferHandle,
             mat_instance: material::MaterialInstanceHandle,
+            vertex: vtx::VertexAttribHandle,
+            vertex_shader: VertexShaderHandle,
+            fragment_shader: FragmentShaderHandle,
         }
 
-        impl graph::GraphicsPassImpl for Pass2D {
-            fn setup(&mut self, _: &mut graph::Store, builder: &mut graph::GraphBuilder) {
-                builder.virtual_read("Positions");
+        impl graph::GraphicsPass for Pass2D {
+            type Config = ();
 
-                builder.image_create(
+            fn configure(&self, _config: Self::Config) -> graph::GraphicsPipelineInfo {
+                graph::GraphicsPipelineInfo {
+                    vertex_attrib: Some(self.vertex),
+                    depth_mode: None,
+                    stencil_mode: None,
+                    shaders: graph::GraphicShaders {
+                        vertex: graph::Shader {
+                            handle: self.vertex_shader,
+                            specialization: vec![],
+                        },
+                        fragment: Some(graph::Shader {
+                            handle: self.fragment_shader,
+                            specialization: vec![],
+                        }),
+                        geometry: None,
+                    },
+                    primitive: graph::Primitive::TriangleStrip,
+                    blend_modes: vec![graph::BlendMode::Alpha],
+                    materials: vec![(0, self.mat_instance.material())],
+                    push_constants: Some(0..20),
+                }
+            }
+
+            fn describe(&mut self, res: &mut graph::ResourceDescriptor) {
+                res.virtual_read("Positions");
+
+                res.image_create(
                     "Canvas",
                     graph::ImageCreateInfo {
                         size_mode: image::ImageSizeMode::ContextRelative {
@@ -329,45 +375,50 @@ fn create_graph(
                     },
                 );
 
-                builder.image_write_color("Canvas", 0);
-
-                builder.enable();
+                res.image_write_color("Canvas", 0);
             }
 
             unsafe fn execute(
                 &self,
                 store: &graph::Store,
-                cmd: &mut graph::GraphicsCommandBuffer<'_>,
-            ) {
+                dispatcher: &mut graph::GraphicsDispatcher<Self>,
+            ) -> Result<(), graph::GraphExecError> {
+                let canvas = dispatcher.image_write_ref("Canvas")?;
+
+                dispatcher.clear_image(canvas, ImageClearValue::Color([0.1, 0.1, 0.2, 1.0]));
+
                 let things = NUM_THINGS;
-
-                let mut cmd = cmd
-                    .begin_render_pass(&[graph::ImageClearValue::Color([0.1, 0.1, 0.2, 1.0])])
-                    .unwrap();
-
-                cmd.push_constant::<[f32; 4]>(0, [1.0, 1.0, 1.0, 1.0]);
-
                 let Scale(s) = store.get().unwrap();
-                cmd.push_constant(4, *s);
 
-                cmd.bind_vertex_buffers(&[(self.buffer, 0)]);
-                cmd.bind_material(0, self.mat_instance);
+                dispatcher.with_config((), |cmd| {
+                    cmd.push_constant::<[f32; 4]>(0, [1.0, 1.0, 1.0, 1.0]);
 
-                cmd.draw(0..4, 0..things as u32);
+                    cmd.push_constant::<f32>(16, *s);
+
+                    cmd.bind_vertex_buffers(&[(self.buffer, 0)]);
+                    cmd.bind_material(0, self.mat_instance);
+
+                    cmd.draw(0..4, 0..things as u32);
+                })?;
+
+                Ok(())
             }
         }
 
         let pass = Pass2D {
             buffer,
             mat_instance,
+            vertex: vertex_attrib,
+            vertex_shader,
+            fragment_shader,
         };
 
-        ctx.graph_add_graphics_pass(graph, "2D Pass", info, pass);
+        builder.add_graphics_pass("2D Pass", pass);
     }
 
-    ctx.graph_add_output(graph, "Canvas");
+    builder.add_target("Canvas");
 
-    graph
+    ctx.graph_create(builder).unwrap()
 }
 
 fn create_instance_data() -> Vec<InstanceData> {

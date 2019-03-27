@@ -153,7 +153,7 @@ impl SubmitGroup {
             &mut self.sem_pool,
             &mut self.sem_list,
             &self.pool_graphics,
-            &ctx.image_storage,
+            &*ctx.image_storage.borrow(),
             image,
         )
     }
@@ -172,7 +172,9 @@ impl SubmitGroup {
     ) -> Option<()> {
         use graph::ImageClearValue;
 
-        let img = ctx.image_storage.raw(image)?;
+        let image_storage = ctx.image_storage.borrow();
+
+        let img = image_storage.raw(image)?;
 
         let sem = self.sem_pool.alloc();
 
@@ -273,8 +275,10 @@ impl SubmitGroup {
         dst_region: std::ops::Range<gfx::image::Offset>,
         src_region: std::ops::Range<gfx::image::Offset>,
     ) -> Option<()> {
-        let dst = ctx.image_storage.raw(dst)?;
-        let src = ctx.image_storage.raw(src)?;
+        let image_storage = ctx.image_storage.borrow();
+
+        let dst = image_storage.raw(dst)?;
+        let src = image_storage.raw(src)?;
 
         let blit = transfer::ImageBlit {
             dst: &dst.image,
@@ -319,10 +323,11 @@ impl SubmitGroup {
         ctx: &mut Context,
         backbuffer: &mut graph::Backbuffer,
         graph: graph::GraphHandle,
-        store: &graph::Store,
+        store: &mut graph::Store,
         exec_context: &graph::ExecutionContext,
     ) -> Result<(), graph::GraphExecError> {
         let mut storages = graph::Storages {
+            shader: &ctx.shader_storage,
             render_pass: &mut ctx.render_pass_storage,
             pipeline: &mut ctx.pipeline_storage,
             image: &mut ctx.image_storage,
@@ -332,29 +337,32 @@ impl SubmitGroup {
             material: &mut ctx.material_storage,
         };
 
-        let res = self.graph_resources.remove(&graph);
+        let res = self.graph_resources.entry(graph).or_default();
 
-        match ctx.graph_storage.execute(
+        let mut sync = QueueSyncRefs {
+            sem_pool: &self.sem_pool,
+            sem_list: &mut self.sem_list,
+            res_list: &mut self.res_destroys,
+        };
+
+        if let Err(err) = ctx.graph_storage.borrow_mut().execute(
             &ctx.device_ctx,
-            &self.sem_pool,
-            &mut self.sem_list,
-            &self.pool_graphics,
-            &self.pool_compute,
-            &mut self.res_destroys,
+            &mut sync,
             &mut storages,
+            (&self.pool_graphics, &self.pool_compute),
             store,
             graph,
-            backbuffer,
             res,
+            backbuffer,
             exec_context,
         ) {
-            Ok(res) => {
-                self.graph_resources.insert(graph, res);
+            /*
+            if let Some(res) = self.graph_resources.remove(&graph) {
+                res.release(&mut self.res_destroys, &mut storages);
             }
-            Err(err) => {
-                self.graph_resources.remove(&graph);
-                Err(err)?;
-            }
+            */
+
+            return Err(err)?;
         }
 
         Ok(())
@@ -369,6 +377,7 @@ impl SubmitGroup {
         use std::borrow::Borrow;
 
         let mut storages = graph::Storages {
+            shader: &ctx.shader_storage,
             render_pass: &mut ctx.render_pass_storage,
             pipeline: &mut ctx.pipeline_storage,
             image: &mut ctx.image_storage,
@@ -381,7 +390,12 @@ impl SubmitGroup {
         for handle in graph.into_iter() {
             let handle = *handle.borrow();
 
+            if let Some(res) = self.graph_resources.remove(&handle) {
+                res.release(&mut self.res_destroys, &mut storages);
+            }
+
             ctx.graph_storage
+                .borrow_mut()
                 .destroy(&mut self.res_destroys, &mut storages, handle);
         }
     }
@@ -393,13 +407,9 @@ impl SubmitGroup {
         graph: graph::GraphHandle,
         image: I,
     ) -> Option<image::ImageHandle> {
-        let g = ctx.graph_storage.storage.get(graph)?;
-        let input_num = g.last_input?;
-        let (resolve, _) = g.resolve_cache.get(&input_num)?;
-        let id = resolve.name_lookup.get(&image.into())?;
-        let id = resolve.moved_from(*id)?;
-
         let res = self.graph_resources.get(&graph)?;
+        let id = ctx.graph_storage.borrow().resource_id(graph, image)?;
+
         res.images.get(&id).cloned()
     }
 
@@ -408,6 +418,7 @@ impl SubmitGroup {
     /// [`Backbuffer`]: ../../graph/struct.Backbuffer.html
     pub fn backbuffer_destroy(&mut self, ctx: &mut Context, backbuffer: graph::Backbuffer) {
         ctx.image_storage
+            .borrow_mut()
             .destroy(&mut self.res_destroys, backbuffer.images.values())
     }
 
@@ -420,12 +431,16 @@ impl SubmitGroup {
         image: image::ImageHandle,
         data: image::ImageUploadInfo,
     ) -> Result<(), image::ImageError> {
-        ctx.image_storage.upload_data(
+        let mut sync = QueueSyncRefs {
+            res_list: &mut self.res_destroys,
+            sem_list: &mut self.sem_list,
+            sem_pool: &self.sem_pool,
+        };
+
+        ctx.image_storage.borrow_mut().upload_data(
             &ctx.device_ctx,
-            &self.sem_pool,
-            &mut self.sem_list,
+            &mut sync,
             &self.pool_transfer,
-            &mut self.res_destroys,
             image,
             data,
         )
@@ -435,7 +450,9 @@ impl SubmitGroup {
     ///
     /// [`Image`]: ../../resources/image/struct.Image.html
     pub fn image_destroy(&mut self, ctx: &mut Context, images: &[image::ImageHandle]) {
-        ctx.image_storage.destroy(&mut self.res_destroys, images)
+        ctx.image_storage
+            .borrow_mut()
+            .destroy(&mut self.res_destroys, images)
     }
 
     /// Queue the upload of data to a [cpu-visible] buffer object.
@@ -448,6 +465,7 @@ impl SubmitGroup {
         info: buffer::BufferUploadInfo<T>,
     ) -> Result<(), buffer::BufferError> {
         ctx.buffer_storage
+            .borrow()
             .cpu_visible_upload(&ctx.device_ctx, buffer, info)
     }
 
@@ -461,6 +479,7 @@ impl SubmitGroup {
         data: &mut [T],
     ) {
         ctx.buffer_storage
+            .borrow()
             .cpu_visible_read(&ctx.device_ctx, buffer, data);
     }
 
@@ -473,12 +492,16 @@ impl SubmitGroup {
         buffer: buffer::BufferHandle,
         info: buffer::BufferUploadInfo<T>,
     ) -> Result<(), buffer::BufferError> {
-        ctx.buffer_storage.device_local_upload(
+        let mut sync = QueueSyncRefs {
+            res_list: &mut self.res_destroys,
+            sem_list: &mut self.sem_list,
+            sem_pool: &self.sem_pool,
+        };
+
+        ctx.buffer_storage.borrow().device_local_upload(
             &ctx.device_ctx,
-            &self.sem_pool,
-            &mut self.sem_list,
+            &mut sync,
             &self.pool_transfer,
-            &mut self.res_destroys,
             buffer,
             info,
         )
@@ -488,7 +511,9 @@ impl SubmitGroup {
     ///
     /// [`Buffer`]: ../../resources/buffer/struct.Buffer.html
     pub fn buffer_destroy(&mut self, ctx: &mut Context, buffers: &[buffer::BufferHandle]) {
-        ctx.buffer_storage.destroy(&mut self.res_destroys, buffers);
+        ctx.buffer_storage
+            .borrow_mut()
+            .destroy(&mut self.res_destroys, buffers);
     }
 
     /// Queue the deletion of a [`Sampler`] object.
@@ -496,6 +521,7 @@ impl SubmitGroup {
     /// [`Sampler`]: ../../resources/sampler/index.html
     pub fn sampler_destroy(&mut self, ctx: &mut Context, samplers: &[sampler::SamplerHandle]) {
         ctx.sampler_storage
+            .borrow_mut()
             .destroy(&mut self.res_destroys, samplers)
     }
 
@@ -520,6 +546,7 @@ impl SubmitGroup {
     /// Release the `SubmitGroup` and all associated resources.
     pub unsafe fn release(mut self, ctx: &mut Context) {
         let mut storages = graph::Storages {
+            shader: &ctx.shader_storage,
             render_pass: &mut ctx.render_pass_storage,
             pipeline: &mut ctx.pipeline_storage,
             image: &mut ctx.image_storage,
@@ -557,6 +584,12 @@ impl SubmitGroup {
 
         self.sem_pool.reset();
     }
+}
+
+pub(crate) struct QueueSyncRefs<'a> {
+    pub(crate) sem_pool: &'a SemaphorePool,
+    pub(crate) sem_list: &'a mut SemaphoreList,
+    pub(crate) res_list: &'a mut ResourceList,
 }
 
 pub(crate) struct ResourceList {
@@ -683,12 +716,14 @@ impl ResourceList {
 
         {
             ctx.material_storage
+                .borrow_mut()
                 .destroy(&ctx.device_ctx, self.materials.as_slice());
             self.materials.clear();
         }
 
         {
             ctx.material_storage
+                .borrow_mut()
                 .destroy_instances(self.material_instances.as_slice());
             self.material_instances.clear();
         }

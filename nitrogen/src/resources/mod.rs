@@ -14,6 +14,7 @@ pub(crate) mod pipeline;
 pub(crate) mod render_pass;
 pub mod sampler;
 pub(crate) mod semaphore_pool;
+pub mod shader;
 pub mod vertex_attrib;
 
 use bitflags::bitflags;

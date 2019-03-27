@@ -20,9 +20,7 @@ use crate::util::transfer;
 
 use crate::device::DeviceContext;
 use crate::resources::command_pool::CommandPoolTransfer;
-use crate::resources::semaphore_pool::SemaphoreList;
-use crate::resources::semaphore_pool::SemaphorePool;
-use crate::submit_group::ResourceList;
+use crate::submit_group::{QueueSyncRefs, ResourceList};
 
 /// Source channel for a `Swizzle`
 #[repr(u8)]
@@ -546,10 +544,8 @@ impl ImageStorage {
     pub(crate) unsafe fn upload_data(
         &self,
         device: &DeviceContext,
-        sem_pool: &SemaphorePool,
-        sem_list: &mut SemaphoreList,
+        sync: &mut QueueSyncRefs,
         cmd_pool: &CommandPoolTransfer,
-        res_list: &mut ResourceList,
         handle: ImageHandle,
         data: ImageUploadInfo,
     ) -> Result<(), ImageError> {
@@ -690,9 +686,15 @@ impl ImageStorage {
             },
         };
 
-        transfer::copy_buffers_to_images(device, sem_pool, sem_list, cmd_pool, &[transfer_data]);
+        transfer::copy_buffers_to_images(
+            device,
+            sync.sem_pool,
+            sync.sem_list,
+            cmd_pool,
+            &[transfer_data],
+        );
 
-        res_list.queue_buffer(staging);
+        sync.res_list.queue_buffer(staging);
 
         Ok(())
     }

@@ -86,6 +86,8 @@ pub use crate::resources::vertex_attrib;
 pub mod graph;
 
 use crate::resources::image::ImageHandle;
+use crate::resources::shader;
+use std::cell::RefCell;
 use std::sync::Arc;
 
 /// An opaque handle to a display
@@ -115,15 +117,16 @@ pub type DisplayHandle = Handle<Display>;
 /// [`release`]: #method.release
 /// [methods]: #methods
 pub struct Context {
-    pub(crate) graph_storage: graph::GraphStorage,
+    pub(crate) graph_storage: RefCell<graph::GraphStorage>,
 
-    pub(crate) render_pass_storage: render_pass::RenderPassStorage,
-    pub(crate) pipeline_storage: pipeline::PipelineStorage,
-    pub(crate) image_storage: image::ImageStorage,
-    pub(crate) sampler_storage: sampler::SamplerStorage,
-    pub(crate) buffer_storage: buffer::BufferStorage,
-    pub(crate) vertex_attrib_storage: vertex_attrib::VertexAttribStorage,
-    pub(crate) material_storage: material::MaterialStorage,
+    pub(crate) render_pass_storage: RefCell<render_pass::RenderPassStorage>,
+    pub(crate) pipeline_storage: RefCell<pipeline::PipelineStorage>,
+    pub(crate) image_storage: RefCell<image::ImageStorage>,
+    pub(crate) sampler_storage: RefCell<sampler::SamplerStorage>,
+    pub(crate) buffer_storage: RefCell<buffer::BufferStorage>,
+    pub(crate) vertex_attrib_storage: RefCell<vertex_attrib::VertexAttribStorage>,
+    pub(crate) material_storage: RefCell<material::MaterialStorage>,
+    pub(crate) shader_storage: RefCell<shader::ShaderStorage>,
 
     pub(crate) displays: Storage<Display>,
     pub(crate) device_ctx: Arc<DeviceContext>,
@@ -154,6 +157,7 @@ impl Context {
         let pipeline_storage = pipeline::PipelineStorage::new();
         let render_pass_storage = render_pass::RenderPassStorage::new();
         let material_storage = material::MaterialStorage::new();
+        let shader_storage = shader::ShaderStorage::new();
 
         let graph_storage = graph::GraphStorage::new();
 
@@ -161,14 +165,17 @@ impl Context {
             instance,
             device_ctx,
             displays: Storage::new(),
-            pipeline_storage,
-            render_pass_storage,
-            image_storage,
-            sampler_storage,
-            buffer_storage,
-            vertex_attrib_storage,
-            material_storage,
-            graph_storage,
+
+            pipeline_storage: RefCell::new(pipeline_storage),
+            render_pass_storage: RefCell::new(render_pass_storage),
+            image_storage: RefCell::new(image_storage),
+            sampler_storage: RefCell::new(sampler_storage),
+            buffer_storage: RefCell::new(buffer_storage),
+            vertex_attrib_storage: RefCell::new(vertex_attrib_storage),
+            material_storage: RefCell::new(material_storage),
+            shader_storage: RefCell::new(shader_storage),
+
+            graph_storage: RefCell::new(graph_storage),
         }
     }
 
@@ -231,11 +238,11 @@ impl Context {
 
     /// Free all resources and release the `Context`
     pub unsafe fn release(self) {
-        self.buffer_storage.release(&self.device_ctx);
-        self.image_storage.release(&self.device_ctx);
-        self.sampler_storage.release(&self.device_ctx);
+        self.buffer_storage.into_inner().release(&self.device_ctx);
+        self.image_storage.into_inner().release(&self.device_ctx);
+        self.sampler_storage.into_inner().release(&self.device_ctx);
 
-        self.material_storage.release(&self.device_ctx);
+        self.material_storage.into_inner().release(&self.device_ctx);
 
         for (_, display) in self.displays {
             display.release(&self.device_ctx);
@@ -251,17 +258,19 @@ impl Context {
         &mut self,
         create_info: image::ImageCreateInfo<I>,
     ) -> Result<image::ImageHandle, image::ImageError> {
-        self.image_storage.create(&self.device_ctx, create_info)
+        self.image_storage
+            .borrow_mut()
+            .create(&self.device_ctx, create_info)
     }
 
     /// Get the format of an image.
     pub fn image_format(&self, image: ImageHandle) -> Option<gfx::format::Format> {
-        self.image_storage.format(image)
+        self.image_storage.borrow().format(image)
     }
 
     /// Get the usage flags of an image.
     pub fn image_usage(&self, image: ImageHandle) -> Option<gfx::image::Usage> {
-        self.image_storage.usage(image)
+        self.image_storage.borrow().usage(image)
     }
 
     // sampler
@@ -271,7 +280,9 @@ impl Context {
         &mut self,
         create_info: sampler::SamplerCreateInfo,
     ) -> sampler::SamplerHandle {
-        self.sampler_storage.create(&self.device_ctx, create_info)
+        self.sampler_storage
+            .borrow_mut()
+            .create(&self.device_ctx, create_info)
     }
 
     // buffer
@@ -285,6 +296,7 @@ impl Context {
         U: Into<gfx::buffer::Usage> + Clone,
     {
         self.buffer_storage
+            .borrow_mut()
             .cpu_visible_create(&self.device_ctx, create_info)
     }
 
@@ -300,6 +312,7 @@ impl Context {
         U: Into<gfx::buffer::Usage> + Clone,
     {
         self.buffer_storage
+            .borrow_mut()
             .device_local_create(&self.device_ctx, create_info)
     }
 
@@ -315,12 +328,12 @@ impl Context {
         &mut self,
         info: vertex_attrib::VertexAttribInfo,
     ) -> vertex_attrib::VertexAttribHandle {
-        self.vertex_attrib_storage.create(info)
+        self.vertex_attrib_storage.borrow_mut().create(info)
     }
 
     /// Destroy vertex attribute description objects.
     pub fn vertex_attribs_destroy(&mut self, handles: &[vertex_attrib::VertexAttribHandle]) {
-        self.vertex_attrib_storage.destroy(handles);
+        self.vertex_attrib_storage.borrow_mut().destroy(handles);
     }
 
     // material
@@ -334,7 +347,9 @@ impl Context {
         &mut self,
         create_info: material::MaterialCreateInfo,
     ) -> Result<material::MaterialHandle, material::MaterialError> {
-        self.material_storage.create(&self.device_ctx, create_info)
+        self.material_storage
+            .borrow_mut()
+            .create(&self.device_ctx, create_info)
     }
 
     /// Create material instances and retrieve handles for them.
@@ -347,6 +362,7 @@ impl Context {
         material: material::MaterialHandle,
     ) -> Result<material::MaterialInstanceHandle, material::MaterialError> {
         self.material_storage
+            .borrow_mut()
             .create_instance(&self.device_ctx, material)
     }
 
@@ -359,11 +375,11 @@ impl Context {
         T: IntoIterator,
         T::Item: ::std::borrow::Borrow<material::InstanceWrite>,
     {
-        self.material_storage.write_instance(
+        self.material_storage.borrow_mut().write_instance(
             &self.device_ctx,
-            &self.sampler_storage,
-            &self.image_storage,
-            &self.buffer_storage,
+            &*self.sampler_storage.borrow(),
+            &*self.image_storage.borrow(),
+            &*self.buffer_storage.borrow(),
             instance,
             data,
         );
@@ -372,73 +388,87 @@ impl Context {
     // graph
 
     /// Create a new graph and retrieve the handle.
-    pub fn graph_create(&mut self) -> graph::GraphHandle {
-        self.graph_storage.create()
-    }
-
-    /// Attach a graphics pass to a graph, adding it into the dependency chain when
-    /// compiling the graph.
-    pub fn graph_add_graphics_pass<T: Into<graph::PassName>>(
+    pub unsafe fn graph_create(
         &mut self,
-        graph: graph::GraphHandle,
-        name: T,
-        info: graph::GraphicsPassInfo,
-        pass_impl: impl graph::GraphicsPassImpl + 'static,
-    ) {
+        builder: graph::GraphBuilder,
+    ) -> Result<graph::GraphHandle, graph::GraphError> {
+        let mut storages = graph::Storages {
+            shader: &self.shader_storage,
+            render_pass: &mut self.render_pass_storage,
+            pipeline: &mut self.pipeline_storage,
+            image: &mut self.image_storage,
+            buffer: &mut self.buffer_storage,
+            vertex_attrib: &self.vertex_attrib_storage,
+            sampler: &mut self.sampler_storage,
+            material: &mut self.material_storage,
+        };
+
         self.graph_storage
-            .add_graphics_pass(graph, name, info, Box::new(pass_impl));
+            .borrow_mut()
+            .create(&self.device_ctx, &mut storages, builder)
     }
 
-    /// Attach a compute pass to a graph, adding it into the dependency chain when
-    /// compiling the graph.
-    pub fn graph_add_compute_pass<T: Into<graph::PassName>>(
+    // shader
+
+    /// Create a compute shader and retrieve the handle.
+    pub fn compute_shader_create(
         &mut self,
-        graph: graph::GraphHandle,
-        name: T,
-        info: graph::ComputePassInfo,
-        pass_impl: impl graph::ComputePassImpl + 'static,
-    ) {
-        self.graph_storage
-            .add_compute_pass(graph, name, info, Box::new(pass_impl));
+        info: shader::ShaderInfo,
+    ) -> shader::ComputeShaderHandle {
+        self.shader_storage.borrow_mut().create_compute_shader(info)
     }
 
-    /// Add a resource to the *output list* of a graph.
-    ///
-    /// Output resources can be retrieved using the [`graph_get_output_image`] and
-    /// [`graph_get_output_buffer`] methods.
-    ///
-    /// [`graph_get_output_image`]: #method.graph_get_output_image
-    /// [`graph_get_output_buffer`]: #method.graph_get_output_buffer
-    pub fn graph_add_output<T: Into<graph::ResourceName>>(
-        &mut self,
-        graph: graph::GraphHandle,
-        name: T,
-    ) {
-        self.graph_storage.add_output(graph, name);
+    /// Destroy a compute shader object.
+    pub fn compute_shader_destroy(&mut self, handle: shader::ComputeShaderHandle) {
+        self.shader_storage
+            .borrow_mut()
+            .destroy_compute_shader(handle);
     }
 
-    /// Compile a graph so it is optimized for execution.
-    ///
-    /// Compiling a graph is potentially a rather expensive operation, so results are cached when
-    /// it makes sense to do so. As a result it is safe to call this method every frame as it will
-    /// only perform computations the first time a "new configuration" of graph is encountered.
-    ///
-    /// The "user facing" graph operates with resource *names* and any dependencies are only
-    /// implied, not manifested in a datastructure somewhere, so the first thing to do is to
-    /// get all the "unrelated" nodes into a graph structure that has direct or indirect links to
-    /// all dependent nodes.
-    ///
-    /// This representation is then hashed to see if any further work has been done already
-    /// in the past.
-    ///
-    /// Any "backend" resources (pipelines, render passes...) for this graph permutation are
-    /// created and cached as well.
-    pub fn graph_compile(
+    /// Create a vertex shader and retrieve the handle.
+    pub fn vertex_shader_create(&mut self, info: shader::ShaderInfo) -> shader::VertexShaderHandle {
+        self.shader_storage.borrow_mut().create_vertex_shader(info)
+    }
+
+    /// Destroy a vertex shader object.
+    pub fn vertex_shader_destroy(&mut self, handle: shader::VertexShaderHandle) {
+        self.shader_storage
+            .borrow_mut()
+            .destroy_vertex_shader(handle);
+    }
+
+    /// Create a fragment shader and retrieve the handle.
+    pub fn fragment_shader_create(
         &mut self,
-        graph: graph::GraphHandle,
-        store: &mut graph::Store,
-    ) -> Result<(), Vec<graph::GraphCompileError>> {
-        self.graph_storage.compile(store, graph)
+        info: shader::ShaderInfo,
+    ) -> shader::FragmentShaderHandle {
+        self.shader_storage
+            .borrow_mut()
+            .create_fragment_shader(info)
+    }
+
+    /// Destroy a fragment shader object.
+    pub fn fragment_shader_destroy(&mut self, handle: shader::FragmentShaderHandle) {
+        self.shader_storage
+            .borrow_mut()
+            .destroy_fragment_shader(handle);
+    }
+
+    /// Create a geometry shader and retrieve the handle.
+    pub fn geometry_shader_create(
+        &mut self,
+        info: shader::ShaderInfo,
+    ) -> shader::GeometryShaderHandle {
+        self.shader_storage
+            .borrow_mut()
+            .create_geometry_shader(info)
+    }
+
+    /// Destroy a geometry shader object.
+    pub fn geometry_shader_destroy(&mut self, handle: shader::GeometryShaderHandle) {
+        self.shader_storage
+            .borrow_mut()
+            .destroy_geometry_shader(handle);
     }
 
     // submit group

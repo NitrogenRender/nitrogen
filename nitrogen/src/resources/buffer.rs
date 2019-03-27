@@ -16,9 +16,7 @@ use crate::util::allocator::{Allocator, AllocatorError, Buffer as AllocBuffer, B
 use crate::util::storage::{Handle, Storage};
 
 use crate::resources::command_pool::CommandPoolTransfer;
-use crate::resources::semaphore_pool::SemaphoreList;
-use crate::resources::semaphore_pool::SemaphorePool;
-use crate::submit_group::ResourceList;
+use crate::submit_group::{QueueSyncRefs, ResourceList};
 
 pub(crate) type BufferTypeInternal = AllocBuffer;
 
@@ -335,10 +333,8 @@ impl BufferStorage {
     pub(crate) unsafe fn device_local_upload<'a, T>(
         &self,
         device: &DeviceContext,
-        sem_pool: &SemaphorePool,
-        sem_list: &mut SemaphoreList,
+        sync: &mut QueueSyncRefs,
         cmd_pool: &CommandPoolTransfer,
-        res_list: &mut ResourceList,
         buffer: BufferHandle,
         info: BufferUploadInfo<'a, T>,
     ) -> Result<(), BufferError> {
@@ -378,8 +374,8 @@ impl BufferStorage {
 
         crate::transfer::copy_buffers(
             device,
-            sem_pool,
-            sem_list,
+            sync.sem_pool,
+            sync.sem_list,
             cmd_pool,
             &[crate::transfer::BufferTransfer {
                 src: &staging_buffer,
@@ -389,7 +385,7 @@ impl BufferStorage {
             }],
         );
 
-        res_list.queue_buffer(staging_buffer);
+        sync.res_list.queue_buffer(staging_buffer);
 
         Ok(())
     }

@@ -20,17 +20,17 @@ nitrogen-examples-common = { path = "common" }
 [build-dependencies]
 shaderc = "0.3.12"
 
-[[example]]
-name = "two-pass"
-path = "two-pass/main.rs"
+# [[example]]
+# name = "two-pass"
+# path = "two-pass/main.rs"
 
 [[example]]
 name = "2d-squares"
 path = "2d-squares/main.rs"
 
-[[example]]
-name = "multi-target"
-path = "multi-target/main.rs"
+# [[example]]
+# name = "multi-target"
+# path = "multi-target/main.rs"
 
 [[example]]
 name = "compute"

@@ -4,6 +4,9 @@
 
 use nitrogen::*;
 
+use nitrogen::graph::builder::GraphBuilder;
+use nitrogen::resources::shader;
+use nitrogen::resources::shader::{FragmentShaderHandle, VertexShaderHandle};
 use nitrogen_examples_common::*;
 
 struct QuadData {
@@ -104,55 +107,78 @@ fn init_resources(
 }
 
 fn create_graph(ctx: &mut Context) -> graph::GraphHandle {
-    use std::borrow::Cow;
+    let mut builder = GraphBuilder::new("OpaqueAlpha");
 
-    let graph = ctx.graph_create();
+    let vertex = {
+        let info = shader::ShaderInfo {
+            entry_point: "VertexMain".into(),
+            spirv_content: include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/opaque-alpha/canvas.hlsl.vert.spirv"
+            )),
+        };
+
+        ctx.vertex_shader_create(info)
+    };
+
+    let fragment = {
+        let info = shader::ShaderInfo {
+            entry_point: "FragmentMain".into(),
+            spirv_content: include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/opaque-alpha/canvas.hlsl.frag.spirv"
+            )),
+        };
+
+        ctx.fragment_shader_create(info)
+    };
 
     // Opaque pass
     {
-        let info = graph::GraphicsPassInfo {
-            vertex_attrib: None,
-            depth_mode: Some(graph::DepthMode {
-                func: graph::Comparison::Less,
-                write: true,
-            }),
-            stencil_mode: None,
-            shaders: graph::Shaders {
-                vertex: graph::ShaderInfo {
-                    entry: "VertexMain".into(),
-                    content: Cow::Borrowed(include_bytes!(concat!(
-                        env!("OUT_DIR"),
-                        "/opaque-alpha/canvas.hlsl.vert.spirv",
-                    ))),
-                },
-                fragment: Some(graph::ShaderInfo {
-                    entry: "FragmentMain".into(),
-                    content: Cow::Borrowed(include_bytes!(concat!(
-                        env!("OUT_DIR"),
-                        "/opaque-alpha/canvas.hlsl.frag.spirv",
-                    ))),
-                }),
-                geometry: None,
-            },
-            primitive: graph::Primitive::TriangleStrip,
-            blend_modes: vec![graph::BlendMode::Alpha],
-            materials: vec![],
-            push_constants: vec![
-                // (0..2) canvas_size
-                // (2..4) quad_pos
-                // (4..6) quad_size
-                // (6..7) quad_depth
-                // (7..8) padding
-                // (8..12) quad_color
-                (0..12),
-            ],
-        };
+        struct OpaquePass {
+            vertex: VertexShaderHandle,
+            fragment: FragmentShaderHandle,
+        }
 
-        struct OpaquePass;
+        impl graph::GraphicsPass for OpaquePass {
+            type Config = ();
 
-        impl graph::GraphicsPassImpl for OpaquePass {
-            fn setup(&mut self, _store: &mut graph::Store, builder: &mut graph::GraphBuilder) {
-                builder.image_create(
+            fn configure(&self, _config: Self::Config) -> graph::GraphicsPipelineInfo {
+                graph::GraphicsPipelineInfo {
+                    vertex_attrib: None,
+                    depth_mode: Some(graph::DepthMode {
+                        write: true,
+                        func: graph::Comparison::Less,
+                    }),
+                    stencil_mode: None,
+                    shaders: graph::GraphicShaders {
+                        vertex: graph::Shader {
+                            handle: self.vertex,
+                            specialization: vec![],
+                        },
+                        fragment: Some(graph::Shader {
+                            handle: self.fragment,
+                            specialization: vec![],
+                        }),
+                        geometry: None,
+                    },
+                    primitive: graph::Primitive::TriangleStrip,
+                    blend_modes: vec![graph::BlendMode::Alpha],
+                    materials: vec![],
+                    push_constants: Some(
+                        // (0..8) canvas_size
+                        // (8..16) quad_pos
+                        // (16..24) quad_size
+                        // (24..28) quad_depth
+                        // (28..32) padding
+                        // (32..48) quad_color
+                        0..48,
+                    ),
+                }
+            }
+
+            fn describe(&mut self, res: &mut graph::ResourceDescriptor) {
+                res.image_create(
                     "Canvas",
                     graph::ImageCreateInfo {
                         size_mode: image::ImageSizeMode::ContextRelative {
@@ -163,9 +189,7 @@ fn create_graph(ctx: &mut Context) -> graph::GraphHandle {
                     },
                 );
 
-                builder.image_write_color("Canvas", 0);
-
-                builder.image_create(
+                res.image_create(
                     "Depth",
                     graph::ImageCreateInfo {
                         format: image::ImageFormat::D32FloatS8Uint,
@@ -176,125 +200,134 @@ fn create_graph(ctx: &mut Context) -> graph::GraphHandle {
                     },
                 );
 
-                builder.image_write_depth_stencil("Depth");
-
-                builder.enable();
+                res.image_write_color("Canvas", 0);
+                res.image_write_depth_stencil("Depth");
             }
 
             unsafe fn execute(
                 &self,
                 store: &graph::Store,
-                cmd: &mut graph::GraphicsCommandBuffer<'_>,
-            ) {
+                dispatcher: &mut graph::GraphicsDispatcher<Self>,
+            ) -> Result<(), graph::GraphExecError> {
                 use nitrogen::graph::ImageClearValue::*;
 
                 let size = store.get::<main_loop::CanvasSize>().unwrap();
                 let quads = store.get::<Quads>().unwrap();
 
-                let mut cmd = cmd
-                    .begin_render_pass(&[Color([0.7, 0.7, 1.0, 1.0]), DepthStencil(1.0, 0)])
-                    .unwrap();
+                let canvas = dispatcher.image_write_ref("Canvas")?;
+                let depth = dispatcher.image_write_ref("Depth")?;
 
-                cmd.push_constant::<[f32; 2]>(0, [size.0, size.1]);
+                dispatcher.clear_image(canvas, Color([0.7, 0.7, 1.0, 1.0]));
+                dispatcher.clear_image(depth, DepthStencil(1.0, 0));
 
-                for quad in &quads.quads {
-                    cmd.push_constant::<[f32; 2]>(2, quad.pos);
-                    cmd.push_constant::<[f32; 2]>(4, quad.size);
+                dispatcher.with_config((), |cmd| {
+                    cmd.push_constant::<[f32; 2]>(0, [size.0, size.1]);
 
-                    cmd.push_constant::<f32>(6, quad.depth);
+                    for quad in &quads.quads {
+                        cmd.push_constant::<[f32; 2]>(8, quad.pos);
+                        cmd.push_constant::<[f32; 2]>(16, quad.size);
 
-                    cmd.push_constant::<[f32; 4]>(8, quad.color);
+                        cmd.push_constant::<f32>(24, quad.depth);
 
-                    cmd.draw(0..4, 0..1);
-                }
+                        cmd.push_constant::<[f32; 4]>(32, quad.color);
+
+                        cmd.draw(0..4, 0..1);
+                    }
+                })?;
+
+                Ok(())
             }
         }
 
-        ctx.graph_add_graphics_pass(graph, "OpaquePass", info, OpaquePass);
+        let pass = OpaquePass { fragment, vertex };
+
+        builder.add_graphics_pass("OpaquePass", pass);
     }
 
     // Alpha pass
     {
-        let info = graph::GraphicsPassInfo {
-            vertex_attrib: None,
-            depth_mode: Some(graph::DepthMode {
-                func: graph::Comparison::Less,
-                write: false,
-            }),
-            stencil_mode: None,
-            shaders: graph::Shaders {
-                vertex: graph::ShaderInfo {
-                    entry: "VertexMain".into(),
-                    content: Cow::Borrowed(include_bytes!(concat!(
-                        env!("OUT_DIR"),
-                        "/opaque-alpha/canvas.hlsl.vert.spirv",
-                    ))),
-                },
-                fragment: Some(graph::ShaderInfo {
-                    entry: "FragmentMain".into(),
-                    content: Cow::Borrowed(include_bytes!(concat!(
-                        env!("OUT_DIR"),
-                        "/opaque-alpha/canvas.hlsl.frag.spirv",
-                    ))),
-                }),
-                geometry: None,
-            },
-            primitive: graph::Primitive::TriangleStrip,
-            blend_modes: vec![graph::BlendMode::Alpha],
-            materials: vec![],
-            push_constants: vec![
-                // (0..2) canvas_size
-                // (2..4) quad_pos
-                // (4..6) quad_size
-                // (6..7) quad_depth
-                // (7..8) padding
-                // (8..12) quad_color
-                (0..12),
-            ],
-        };
+        struct AlphaPass {
+            vertex: VertexShaderHandle,
+            fragment: FragmentShaderHandle,
+        }
 
-        struct AlphaPass;
+        impl graph::GraphicsPass for AlphaPass {
+            type Config = ();
 
-        impl graph::GraphicsPassImpl for AlphaPass {
-            fn setup(&mut self, _store: &mut graph::Store, builder: &mut graph::GraphBuilder) {
-                builder.image_move("Canvas", "CanvasFinal");
+            fn configure(&self, _config: Self::Config) -> graph::GraphicsPipelineInfo {
+                graph::GraphicsPipelineInfo {
+                    vertex_attrib: None,
+                    depth_mode: Some(graph::DepthMode {
+                        write: false,
+                        func: graph::Comparison::Less,
+                    }),
+                    stencil_mode: None,
+                    shaders: graph::GraphicShaders {
+                        vertex: graph::Shader {
+                            handle: self.vertex,
+                            specialization: vec![],
+                        },
+                        fragment: Some(graph::Shader {
+                            handle: self.fragment,
+                            specialization: vec![],
+                        }),
+                        geometry: None,
+                    },
+                    primitive: graph::Primitive::TriangleStrip,
+                    blend_modes: vec![graph::BlendMode::Alpha],
+                    materials: vec![],
+                    push_constants: Some(
+                        // (0..8) canvas_size
+                        // (8..16) quad_pos
+                        // (16..24) quad_size
+                        // (24..28) quad_depth
+                        // (28..32) padding
+                        // (32..48) quad_color
+                        0..48,
+                    ),
+                }
+            }
 
-                builder.image_write_color("CanvasFinal", 0);
+            fn describe(&mut self, res: &mut graph::ResourceDescriptor) {
+                res.image_move("Canvas", "CanvasFinal");
 
-                builder.image_read_depth_stencil("Depth");
-
-                builder.enable();
+                res.image_write_color("CanvasFinal", 0);
+                res.image_read_depth_stencil("Depth");
             }
 
             unsafe fn execute(
                 &self,
                 store: &graph::Store,
-                cmd: &mut graph::GraphicsCommandBuffer<'_>,
-            ) {
+                dispatcher: &mut graph::GraphicsDispatcher<Self>,
+            ) -> Result<(), graph::GraphExecError> {
                 let size = store.get::<main_loop::CanvasSize>().unwrap();
                 let quads = store.get::<QuadsAlpha>().unwrap();
 
-                let mut cmd = cmd.begin_render_pass(&[]).unwrap();
+                dispatcher.with_config((), |cmd| {
+                    cmd.push_constant::<[f32; 2]>(0, [size.0, size.1]);
 
-                cmd.push_constant::<[f32; 2]>(0, [size.0, size.1]);
+                    for quad in &quads.quads {
+                        cmd.push_constant::<[f32; 2]>(8, quad.pos);
+                        cmd.push_constant::<[f32; 2]>(16, quad.size);
 
-                for quad in &quads.quads {
-                    cmd.push_constant::<[f32; 2]>(2, quad.pos);
-                    cmd.push_constant::<[f32; 2]>(4, quad.size);
+                        cmd.push_constant::<f32>(24, quad.depth);
 
-                    cmd.push_constant::<f32>(6, quad.depth);
+                        cmd.push_constant::<[f32; 4]>(32, quad.color);
 
-                    cmd.push_constant::<[f32; 4]>(8, quad.color);
+                        cmd.draw(0..4, 0..1);
+                    }
+                })?;
 
-                    cmd.draw(0..4, 0..1);
-                }
+                Ok(())
             }
         }
 
-        ctx.graph_add_graphics_pass(graph, "AlphaPass", info, AlphaPass);
+        let pass = AlphaPass { vertex, fragment };
+
+        builder.add_graphics_pass("AlphaPass", pass);
     }
 
-    ctx.graph_add_output(graph, "CanvasFinal");
+    builder.add_target("CanvasFinal");
 
-    graph
+    unsafe { ctx.graph_create(builder) }.unwrap()
 }

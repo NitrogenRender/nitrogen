@@ -9,13 +9,11 @@ use gfx::Device;
 use crate::device::DeviceContext;
 use crate::submit_group::ResourceList;
 
-#[derive(From, Display)]
+#[derive(Clone, From, Display, Debug)]
 pub enum RenderPassError {
     #[display(fmt = "Out of memory")]
     OutOfMemory(gfx::device::OutOfMemory),
 }
-
-pub type Result<T> = ::std::result::Result<T, RenderPassError>;
 
 pub struct RenderPass {
     render_pass: crate::types::RenderPass,
@@ -44,7 +42,7 @@ impl RenderPassStorage {
         &mut self,
         device: &DeviceContext,
         create_info: RenderPassCreateInfo,
-    ) -> Result<RenderPassHandle> {
+    ) -> Result<RenderPassHandle, RenderPassError> {
         let pass = device.device.create_render_pass(
             create_info.attachments,
             create_info.subpasses,
