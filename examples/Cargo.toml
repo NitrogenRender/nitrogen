@@ -36,9 +36,9 @@ path = "2d-squares/main.rs"
 name = "compute"
 path = "compute/main.rs"
 
-# [[example]]
-# name = "opaque-alpha"
-# path = "opaque-alpha/main.rs"
+[[example]]
+name = "opaque-alpha"
+path = "opaque-alpha/main.rs"
 
 [[example]]
 name = "model"

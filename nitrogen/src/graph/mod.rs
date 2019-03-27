@@ -306,7 +306,7 @@ impl GraphStorage {
             .name_lookup
             .get(&name.into())?;
 
-        Some(*id)
+        graph.compiled_graph.graph_resources.moved_from(*id)
     }
 }
 
