@@ -144,6 +144,9 @@ impl GraphWithNamesResolved {
                                 dependency.context |= context;
 
                                 if let Some(name) = bb {
+                                    if dependency.backbuffer.is_none() {
+                                        dependency.backbuffer = Some(vec![]);
+                                    }
                                     dependency.backbuffer = dependency.backbuffer.map(|mut val| {
                                         val.push(name);
                                         val

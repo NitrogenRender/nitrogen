@@ -81,12 +81,12 @@ pub use crate::resources::material;
 pub(crate) use crate::resources::pipeline;
 pub(crate) use crate::resources::render_pass;
 pub use crate::resources::sampler;
+pub use crate::resources::shader;
 pub use crate::resources::vertex_attrib;
 
 pub mod graph;
 
 use crate::resources::image::ImageHandle;
-use crate::resources::shader;
 use std::cell::RefCell;
 use std::sync::Arc;
 

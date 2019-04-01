@@ -23,10 +23,11 @@ use crate::types;
 
 use crate::submit_group::ResourceList;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::graph::pass::dispatcher::ResourceRefError;
 use crate::graph::pass::{ComputePipelineInfo, GraphicsPipelineInfo};
+use crate::graph::ResourceName;
 use crate::resources::material::MaterialInstanceHandle;
 use gfx;
 
@@ -36,6 +37,9 @@ use gfx;
 pub enum GraphExecError {
     #[display(fmt = "Invalid graph handle")]
     InvalidGraph,
+
+    #[display(fmt = "Invalid backbuffer")]
+    IncompatibleBackbuffer,
 
     #[display(fmt = "Graph resources could not be created: {}", _0)]
     ResourcePrepareError(PrepareError),
@@ -160,5 +164,31 @@ impl Backbuffer {
     pub fn image_put<T: Into<super::ResourceName>>(&mut self, name: T, image: ImageHandle) {
         let name = name.into();
         self.images.insert(name.clone(), image);
+    }
+
+    pub(crate) fn is_compatible(&self, compat: &BTreeMap<ResourceName, ImageHandle>) -> bool {
+        for (name, handle) in compat {
+            if self.images.get(name) != Some(handle) {
+                return false;
+            }
+        }
+        true
+    }
+
+    pub(crate) fn make_compat(
+        &self,
+        passes: &HashMap<PassId, Vec<ResourceName>>,
+    ) -> Option<BTreeMap<ResourceName, ImageHandle>> {
+        let mut map = BTreeMap::new();
+
+        for names in passes.values() {
+            for name in names {
+                let handle = self.images.get(name)?;
+
+                map.insert(name.clone(), *handle);
+            }
+        }
+
+        Some(map)
     }
 }

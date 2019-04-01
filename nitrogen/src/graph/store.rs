@@ -301,14 +301,18 @@ mod tests {
             assert_eq!(elem, Some(&mut 42));
         }
 
-        store.get_mut::<usize>().map(|val| *val = 1337);
+        if let Some(val) = store.get_mut::<usize>() {
+            *val = 1337;
+        }
 
         {
             let elem = store.get::<usize>();
             assert_eq!(elem, Some(&1337));
         }
 
-        store.get_mut::<u32>().map(|val| *val = 12);
+        if let Some(val) = store.get_mut::<u32>() {
+            *val = 12;
+        };
 
         assert_eq!(store.get::<u32>(), None);
     }

@@ -319,7 +319,7 @@ unsafe fn create_graph(
                         offset: u32,
                         mat: Matrix4<f32>,
                     ) {
-                        cmd.push_constant(offset + 0, mat.x);
+                        cmd.push_constant(offset, mat.x);
                         cmd.push_constant(offset + 16, mat.y);
                         cmd.push_constant(offset + 32, mat.z);
                         cmd.push_constant(offset + 48, mat.w);
@@ -346,7 +346,7 @@ unsafe fn create_graph(
                             offset: u32,
                             mat: Matrix4<f32>,
                         ) {
-                            cmd.push_constant(offset + 0, mat.x);
+                            cmd.push_constant(offset, mat.x);
                             cmd.push_constant(offset + 16, mat.y);
                             cmd.push_constant(offset + 32, mat.z);
                             cmd.push_constant(offset + 48, mat.w);

@@ -155,6 +155,7 @@ pub(crate) unsafe fn prepare_resources(
 pub(crate) struct GraphicsPassPrepareOptions {
     pub(crate) create_non_contextual: bool,
     pub(crate) create_contextual: bool,
+    pub(crate) create_backbuffer: bool,
 }
 
 pub(crate) unsafe fn prepare_graphics_passes(
@@ -179,12 +180,13 @@ pub(crate) unsafe fn prepare_graphics_passes(
             }
 
             let is_contextual = compiled.contextual_passes.contains(pass);
-            let _renders_to_backbuffer = compiled
+            let renders_to_backbuffer = compiled
                 .passes_that_render_to_the_backbuffer
                 .contains_key(pass);
 
             let create = (is_contextual && options.create_contextual)
-                || (!is_contextual && options.create_non_contextual);
+                || (!is_contextual && options.create_non_contextual)
+                || (renders_to_backbuffer && options.create_backbuffer);
 
             if create {
                 prepare_graphics_pass(device, storages, res_list, res, backbuffer, graph, *pass)?;

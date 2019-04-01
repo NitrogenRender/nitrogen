@@ -40,9 +40,11 @@ pub use self::compilation::CompileError;
 pub mod store;
 pub use self::store::*;
 
+use crate::resources::image::ImageHandle;
 use crate::resources::shader::ShaderStorage;
 use crate::submit_group::{QueueSyncRefs, ResourceList};
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 
 pub(crate) struct Storages<'a> {
     pub shader: &'a RefCell<ShaderStorage>,
@@ -107,6 +109,9 @@ pub struct Graph {
     pub(crate) res_usage: ResourceUsages,
 
     pub(crate) pass_resources: PassResources,
+
+    // TODO generalize when backbuffers have more resource types than images.
+    pub(crate) backbuffer_compat: Option<BTreeMap<ResourceName, ImageHandle>>,
 }
 
 pub(crate) struct GraphStorage {
@@ -175,6 +180,8 @@ impl GraphStorage {
             res_usage,
 
             pass_resources,
+
+            backbuffer_compat: None,
         };
 
         Ok(self.storage.insert(graph))
@@ -211,6 +218,7 @@ impl GraphStorage {
             .get_mut(graph_handle)
             .ok_or(GraphExecError::InvalidGraph)?;
 
+        // graph resources
         match res.exec_context.clone() {
             None => {
                 // create new resources from scratch
@@ -243,6 +251,7 @@ impl GraphStorage {
                     GraphicsPassPrepareOptions {
                         create_non_contextual: true,
                         create_contextual: true,
+                        create_backbuffer: false,
                     },
                 )?;
 
@@ -281,6 +290,7 @@ impl GraphStorage {
                     GraphicsPassPrepareOptions {
                         create_non_contextual: false,
                         create_contextual: true,
+                        create_backbuffer: false,
                     },
                 )?;
 
@@ -288,7 +298,40 @@ impl GraphStorage {
             }
         }
 
-        // TODO check if current backbuffer is compatible.
+        // backbuffer compatibility
+        {
+            let recreate = if let Some(compat) = &graph.backbuffer_compat {
+                !backbuffer.is_compatible(compat)
+            } else {
+                true
+            };
+
+            // create passes and make compat struct.
+            if recreate {
+                prepare_graphics_passes(
+                    device,
+                    storages,
+                    sync.res_list,
+                    res,
+                    backbuffer,
+                    graph,
+                    GraphicsPassPrepareOptions {
+                        create_non_contextual: false,
+                        create_contextual: false,
+                        create_backbuffer: true,
+                    },
+                )?;
+
+                let new_compat = backbuffer
+                    .make_compat(&graph.compiled_graph.passes_that_render_to_the_backbuffer);
+
+                if new_compat.is_none() {
+                    return Err(GraphExecError::IncompatibleBackbuffer);
+                }
+
+                graph.backbuffer_compat = new_compat;
+            }
+        }
 
         execution::execute(
             device,
