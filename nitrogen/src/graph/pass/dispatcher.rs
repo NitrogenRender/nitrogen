@@ -6,14 +6,15 @@
 //! the underlying pipeline objects.
 
 use crate::device::DeviceContext;
+
 use crate::graph::builder::resource_descriptor::ResourceType;
-use crate::graph::compilation::{CompiledGraph, ResourceId};
+use crate::graph::builder::{ComputePassContext, GraphicsPassContext};
 use crate::graph::execution::{
     create_pipeline_compute, GraphResources, PassResources, PipelineResources,
 };
 use crate::graph::pass::command::{ComputeCommandBuffer, ReadStorages};
 use crate::graph::pass::{ComputePass, PassId};
-use crate::graph::{PrepareError, ResourceName, Storages};
+use crate::graph::{CompiledGraph, PrepareError, ResourceId, ResourceName, Storages};
 use crate::resources::buffer::BufferHandle;
 use crate::resources::image::ImageHandle;
 use std::cell::RefCell;
@@ -106,7 +107,7 @@ mod compute {
     impl<'a> RawComputeDispatcher<'a> {
         pub(crate) fn into_typed_dispatcher<T: ComputePass>(
             self,
-            pass_impl: Rc<RefCell<T>>,
+            pass_impl: Rc<RefCell<ComputePassContext<T>>>,
         ) -> ComputeDispatcher<'a, T> {
             ComputeDispatcher {
                 cmd: self.cmd,
@@ -132,7 +133,7 @@ mod compute {
         pub(crate) pass_res: &'a mut PassResources,
         pub(crate) graph_res: &'a GraphResources,
         pub(crate) compiled: &'a CompiledGraph,
-        pub(crate) pass_impl: Rc<RefCell<T>>,
+        pub(crate) pass_impl: Rc<RefCell<ComputePassContext<T>>>,
     }
 
     impl<'a, T: ComputePass> ComputeDispatcher<'a, T> {
@@ -258,8 +259,16 @@ mod compute {
         {
             let material_storage = self.storages.material.borrow();
 
-            // TODO fetch this from a cache rather than calling this every time.
-            let desc = self.pass_impl.borrow().configure(config);
+            let pass_impl = self.pass_impl.borrow();
+
+            let mut pipeline_desc_cache = pass_impl.pipeline_infos.borrow_mut();
+
+            let desc = if let Some(desc) = pipeline_desc_cache.get(&config) {
+                desc
+            } else {
+                let desc = pass_impl.pass.configure(&config);
+                pipeline_desc_cache.entry(config).or_insert(desc)
+            };
 
             // fetch pipeline from cache or create a new one.
             let compute_pipelines = &mut self.pass_res.compute_pipelines;
@@ -355,7 +364,7 @@ mod graphics {
     impl<'a> RawGraphicsDispatcher<'a> {
         pub(crate) fn into_typed_dispatcher<T: GraphicsPass>(
             self,
-            pass_impl: Rc<RefCell<T>>,
+            pass_impl: Rc<RefCell<GraphicsPassContext<T>>>,
         ) -> GraphicsDispatcher<'a, T> {
             GraphicsDispatcher {
                 cmd: self.cmd,
@@ -382,7 +391,7 @@ mod graphics {
         pub(crate) graph_res: &'a GraphResources,
         pub(crate) compiled: &'a CompiledGraph,
 
-        pub(crate) pass_impl: Rc<RefCell<T>>,
+        pub(crate) pass_impl: Rc<RefCell<GraphicsPassContext<T>>>,
     }
 
     impl<'a, T: GraphicsPass> GraphicsDispatcher<'a, T> {
@@ -588,7 +597,16 @@ mod graphics {
 
             let render_pass_handle = self.pass_res.render_passes[&self.pass_id];
 
-            let desc = self.pass_impl.borrow().configure(config);
+            let pass_impl = self.pass_impl.borrow();
+
+            let mut pipeline_desc_cache = pass_impl.pipeline_infos.borrow_mut();
+
+            let desc = if let Some(desc) = pipeline_desc_cache.get(&config) {
+                desc
+            } else {
+                let desc = pass_impl.pass.configure(&config);
+                pipeline_desc_cache.entry(config).or_insert(desc)
+            };
 
             let graphics_pipelines = &mut self.pass_res.graphic_pipelines;
             let pass_materials = &mut self.pass_res.pass_material;
@@ -596,7 +614,7 @@ mod graphics {
             let pass_mat = pass_materials.get(&self.pass_id).cloned();
             let pipelines = graphics_pipelines.entry(self.pass_id).or_default();
 
-            if !pipelines.contains_key(&desc) {
+            if !pipelines.contains_key(desc) {
                 // create new pipeline!!
                 let pipe = create_pipeline_graphics(
                     self.device,

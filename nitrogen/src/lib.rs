@@ -124,7 +124,6 @@ pub struct Context {
     pub(crate) image_storage: RefCell<image::ImageStorage>,
     pub(crate) sampler_storage: RefCell<sampler::SamplerStorage>,
     pub(crate) buffer_storage: RefCell<buffer::BufferStorage>,
-    pub(crate) vertex_attrib_storage: RefCell<vertex_attrib::VertexAttribStorage>,
     pub(crate) material_storage: RefCell<material::MaterialStorage>,
     pub(crate) shader_storage: RefCell<shader::ShaderStorage>,
 
@@ -153,7 +152,6 @@ impl Context {
         let image_storage = image::ImageStorage::new();
         let sampler_storage = sampler::SamplerStorage::new();
         let buffer_storage = buffer::BufferStorage::new(memory_atom_size);
-        let vertex_attrib_storage = vertex_attrib::VertexAttribStorage::new();
         let pipeline_storage = pipeline::PipelineStorage::new();
         let render_pass_storage = render_pass::RenderPassStorage::new();
         let material_storage = material::MaterialStorage::new();
@@ -171,7 +169,6 @@ impl Context {
             image_storage: RefCell::new(image_storage),
             sampler_storage: RefCell::new(sampler_storage),
             buffer_storage: RefCell::new(buffer_storage),
-            vertex_attrib_storage: RefCell::new(vertex_attrib_storage),
             material_storage: RefCell::new(material_storage),
             shader_storage: RefCell::new(shader_storage),
 
@@ -316,26 +313,6 @@ impl Context {
             .device_local_create(&self.device_ctx, create_info)
     }
 
-    // vertex attribs
-
-    /// Create new vertex attribute description objects and retrieve handles for them.
-    ///
-    /// Such handles can be used to specify the vertex input format in a [`GraphicsPassInfo`] for
-    /// creating graphics passes in a graph.
-    ///
-    /// [`GraphicsPassInfo`]: ./graph/pass/struct.GraphicsPassInfo.html
-    pub fn vertex_attribs_create(
-        &mut self,
-        info: vertex_attrib::VertexAttribInfo,
-    ) -> vertex_attrib::VertexAttribHandle {
-        self.vertex_attrib_storage.borrow_mut().create(info)
-    }
-
-    /// Destroy vertex attribute description objects.
-    pub fn vertex_attribs_destroy(&mut self, handles: &[vertex_attrib::VertexAttribHandle]) {
-        self.vertex_attrib_storage.borrow_mut().destroy(handles);
-    }
-
     // material
 
     /// Create material objects and retrieve handles for them.
@@ -398,7 +375,6 @@ impl Context {
             pipeline: &mut self.pipeline_storage,
             image: &mut self.image_storage,
             buffer: &mut self.buffer_storage,
-            vertex_attrib: &self.vertex_attrib_storage,
             sampler: &mut self.sampler_storage,
             material: &mut self.material_storage,
         };

@@ -143,7 +143,7 @@ fn create_graph(ctx: &mut Context) -> graph::GraphHandle {
         impl graph::GraphicsPass for OpaquePass {
             type Config = ();
 
-            fn configure(&self, _config: Self::Config) -> graph::GraphicsPipelineInfo {
+            fn configure(&self, _config: &Self::Config) -> graph::GraphicsPipelineInfo {
                 graph::GraphicsPipelineInfo {
                     vertex_attrib: None,
                     depth_mode: Some(graph::DepthMode {
@@ -254,7 +254,7 @@ fn create_graph(ctx: &mut Context) -> graph::GraphHandle {
         impl graph::GraphicsPass for AlphaPass {
             type Config = ();
 
-            fn configure(&self, _config: Self::Config) -> graph::GraphicsPipelineInfo {
+            fn configure(&self, _config: &Self::Config) -> graph::GraphicsPipelineInfo {
                 graph::GraphicsPipelineInfo {
                     vertex_attrib: None,
                     depth_mode: Some(graph::DepthMode {

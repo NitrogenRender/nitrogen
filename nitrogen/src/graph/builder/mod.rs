@@ -7,16 +7,27 @@
 pub mod resource_descriptor;
 
 pub use self::resource_descriptor::*;
-use crate::graph::pass::{ComputePass, GraphicsPass};
+use crate::graph::pass::{ComputePass, ComputePipelineInfo, GraphicsPass, GraphicsPipelineInfo};
 use crate::graph::{ComputePassAccessor, GraphicPassAccessor, PassName, ResourceName};
 use crate::util::CowString;
 use std::cell::RefCell;
-use std::rc::Rc;
 
+use std::collections::HashMap;
+use std::rc::Rc;
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub(crate) enum PassType {
     Compute,
     Graphics,
+}
+
+pub(crate) struct ComputePassContext<T: ComputePass> {
+    pub(crate) pass: T,
+    pub(crate) pipeline_infos: RefCell<HashMap<T::Config, ComputePipelineInfo>>,
+}
+
+pub(crate) struct GraphicsPassContext<T: GraphicsPass> {
+    pub(crate) pass: T,
+    pub(crate) pipeline_infos: RefCell<HashMap<T::Config, GraphicsPipelineInfo>>,
 }
 
 /// Name of a graph.
@@ -52,16 +63,21 @@ impl GraphBuilder {
         // To get around this, a list of "accessor closures" are provided which hide the concrete
         // type of the pass.
         let accessor = {
+            let pass = ComputePassContext {
+                pass,
+                pipeline_infos: RefCell::new(HashMap::new()),
+            };
+
             let pass_ref_prepare = Rc::new(RefCell::new(pass));
             let pass_ref_describe = pass_ref_prepare.clone();
             let pass_ref_execute = pass_ref_prepare.clone();
 
             ComputePassAccessor {
                 prepare: Box::new(move |store| {
-                    pass_ref_prepare.borrow_mut().prepare(store);
+                    pass_ref_prepare.borrow_mut().pass.prepare(store);
                 }),
                 describe: Box::new(move |res| {
-                    pass_ref_describe.borrow_mut().describe(res);
+                    pass_ref_describe.borrow_mut().pass.describe(res);
                 }),
                 execute: Box::new(move |store, dispatcher| {
                     let pass = pass_ref_execute.borrow();
@@ -69,7 +85,7 @@ impl GraphBuilder {
                         let mut dispatcher =
                             dispatcher.into_typed_dispatcher(pass_ref_execute.clone());
 
-                        unsafe { pass.execute(store, &mut dispatcher) }
+                        unsafe { pass.pass.execute(store, &mut dispatcher) }
                     }
                 }),
             }
@@ -89,16 +105,21 @@ impl GraphBuilder {
         // To get around this, a list of "accessor closures" are provided which hide the concrete
         // type of the pass.
         let accessor = {
+            let pass = GraphicsPassContext {
+                pass,
+                pipeline_infos: RefCell::new(HashMap::new()),
+            };
+
             let pass_ref_prepare = Rc::new(RefCell::new(pass));
             let pass_ref_describe = pass_ref_prepare.clone();
             let pass_ref_execute = pass_ref_prepare.clone();
 
             GraphicPassAccessor {
                 prepare: Box::new(move |store| {
-                    pass_ref_prepare.borrow_mut().prepare(store);
+                    pass_ref_prepare.borrow_mut().pass.prepare(store);
                 }),
                 describe: Box::new(move |res| {
-                    pass_ref_describe.borrow_mut().describe(res);
+                    pass_ref_describe.borrow_mut().pass.describe(res);
                 }),
                 execute: Box::new(move |store, dispatcher| {
                     let pass = pass_ref_execute.borrow();
@@ -106,7 +127,7 @@ impl GraphBuilder {
                         let mut dispatcher =
                             dispatcher.into_typed_dispatcher(pass_ref_execute.clone());
 
-                        unsafe { pass.execute(store, &mut dispatcher) }
+                        unsafe { pass.pass.execute(store, &mut dispatcher) }
                     }
                 }),
             }

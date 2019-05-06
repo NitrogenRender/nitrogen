@@ -154,7 +154,7 @@ fn derive_pass(compiled: &CompiledGraph, pass: PassId, usages: &mut ResourceUsag
             }
             ResourceWriteType::Image(img) => {
                 let (mut usage, format) = match usages.image.get(&origin) {
-                    Some(stuff) => stuff,
+                    Some(stuff) => *stuff,
                     None => continue,
                 };
 
@@ -174,7 +174,7 @@ fn derive_pass(compiled: &CompiledGraph, pass: PassId, usages: &mut ResourceUsag
                     }
                 }
 
-                usages.image.insert(origin, (usage, *format));
+                usages.image.insert(origin, (usage, format));
             }
         }
     }

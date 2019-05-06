@@ -38,7 +38,7 @@ const VERTEX_DATA: [VertexData; 4] = [
     VertexData { pos: [1.0, 1.0] },
 ];
 
-const NUM_THINGS: usize = 1_024;
+const NUM_THINGS: usize = 1_024 * 1_024;
 
 struct Data2dSquares {
     graph: graph::GraphHandle,
@@ -46,8 +46,6 @@ struct Data2dSquares {
     buf_instance: buffer::BufferHandle,
     buf_velocity: buffer::BufferHandle,
     buf_vertex: buffer::BufferHandle,
-
-    vtx_def: vtx::VertexAttribHandle,
 
     mat: material::MaterialHandle,
 }
@@ -78,8 +76,6 @@ impl UserData for Data2dSquares {
         unsafe {
             submit.wait(ctx);
         }
-
-        ctx.vertex_attribs_destroy(&[self.vtx_def]);
     }
 }
 
@@ -90,19 +86,16 @@ fn init(
 ) -> Option<Data2dSquares> {
     // create vertex attribute description
 
-    let vtx_def = {
-        let create_info = vtx::VertexAttribInfo {
-            buffer_infos: &[vtx::VertexAttribBufferInfo {
-                stride: ::std::mem::size_of::<VertexData>(),
-                index: 0,
-                elements: &[vtx::VertexAttribBufferElementInfo {
-                    location: 0,
-                    format: nit::gfx::format::Format::Rg32Float,
-                    offset: 0,
-                }],
+    let vtx_def = vtx::VertexAttrib {
+        buffer_infos: vec![vtx::VertexAttribBufferInfo {
+            stride: ::std::mem::size_of::<VertexData>(),
+            index: 0,
+            elements: vec![vtx::VertexAttribBufferElementInfo {
+                location: 0,
+                format: nit::gfx::format::Format::Rg32Float,
+                offset: 0,
             }],
-        };
-        ctx.vertex_attribs_create(create_info)
+        }],
     };
 
     // create a bunch of buffers
@@ -191,8 +184,6 @@ fn init(
         buf_velocity: velocity_buffer,
         buf_vertex: vertex_buffer,
 
-        vtx_def,
-
         mat: material,
     })
 }
@@ -219,7 +210,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 unsafe fn create_graph(
     ctx: &mut nit::Context,
-    vertex_attrib: vtx::VertexAttribHandle,
+    vertex_attrib: vtx::VertexAttrib,
     mat_instance: material::MaterialInstanceHandle,
     buffer: buffer::BufferHandle,
 ) -> graph::GraphHandle {
@@ -246,7 +237,7 @@ unsafe fn create_graph(
         impl graph::ComputePass for MovePass {
             type Config = ();
 
-            fn configure(&self, _config: Self::Config) -> graph::ComputePipelineInfo {
+            fn configure(&self, _config: &Self::Config) -> graph::ComputePipelineInfo {
                 graph::ComputePipelineInfo {
                     materials: vec![(0, self.mat_instance.material())],
                     push_constant_range: Some(0..16),
@@ -330,7 +321,7 @@ unsafe fn create_graph(
         struct Pass2D {
             buffer: buffer::BufferHandle,
             mat_instance: material::MaterialInstanceHandle,
-            vertex: vtx::VertexAttribHandle,
+            vertex: vtx::VertexAttrib,
             vertex_shader: VertexShaderHandle,
             fragment_shader: FragmentShaderHandle,
         }
@@ -338,9 +329,9 @@ unsafe fn create_graph(
         impl graph::GraphicsPass for Pass2D {
             type Config = ();
 
-            fn configure(&self, _config: Self::Config) -> graph::GraphicsPipelineInfo {
+            fn configure(&self, _config: &Self::Config) -> graph::GraphicsPipelineInfo {
                 graph::GraphicsPipelineInfo {
-                    vertex_attrib: Some(self.vertex),
+                    vertex_attrib: Some(self.vertex.clone()),
                     depth_mode: None,
                     stencil_mode: None,
                     shaders: graph::GraphicShaders {

@@ -215,11 +215,15 @@ impl<U: UserData> MainLoop<U> {
     }
 
     pub unsafe fn release(mut self) {
-        println!("frame time: {}", self.total_frame_time);
-        println!("num frames: {}", self.total_frame_count);
+        println!("total run time: {}", self.total_frame_time);
+        println!("num frames:     {}", self.total_frame_count);
         println!(
-            "average FPS: {}",
+            "average FPS:    {}",
             1.0 / (self.total_frame_time / (self.total_frame_count as f64))
+        );
+        println!(
+            "average ms/f:   {}",
+            (self.total_frame_time / (self.total_frame_count as f64)) * 1000.0
         );
 
         for submit_group in &mut self.submits {

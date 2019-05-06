@@ -146,13 +146,13 @@ unsafe fn create_graph(
         }
 
         impl ComputePass for Adder {
-            type Config = f32;
+            type Config = i32;
 
-            fn configure(&self, config: Self::Config) -> ComputePipelineInfo {
+            fn configure(&self, config: &Self::Config) -> ComputePipelineInfo {
                 ComputePipelineInfo {
                     shader: Shader {
                         handle: self.shader,
-                        specialization: vec![Specialization::new(0, config)],
+                        specialization: vec![Specialization::new(0, *config as f32)],
                     },
                     materials: vec![(0, self.mat.material())],
                     push_constant_range: Some(0..4),
@@ -168,12 +168,12 @@ unsafe fn create_graph(
                 _: &Store,
                 dispatcher: &mut ComputeDispatcher<Self>,
             ) -> Result<(), graph::GraphExecError> {
-                dispatcher.with_config(1.0, |cmd| {
+                dispatcher.with_config(1, |cmd| {
                     cmd.bind_material(0, self.mat);
                     cmd.dispatch([NUM_ELEMS as _, 1, 1]);
                 })?;
 
-                dispatcher.with_config(9.0, |cmd| {
+                dispatcher.with_config(9, |cmd| {
                     cmd.bind_material(0, self.mat);
                     cmd.dispatch([NUM_ELEMS as _, 1, 1]);
                 })?;
