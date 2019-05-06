@@ -13,12 +13,14 @@ pub use self::dispatcher::*;
 use crate::graph::{builder, GraphExecError};
 
 use crate::material::MaterialHandle;
-use crate::vertex_attrib::VertexAttribHandle;
+use crate::vertex_attrib::VertexAttrib;
 
 use crate::resources::shader::{
     ComputeShaderHandle, FragmentShaderHandle, GeometryShaderHandle, VertexShaderHandle,
 };
 use smallvec::SmallVec;
+
+use std::hash::Hash;
 
 /// Numerical identifier for a pass.
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, Debug)]
@@ -119,7 +121,7 @@ pub struct GraphicShaders {
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct GraphicsPipelineInfo {
     /// Vertex-attribute layout used in the pipeline (if any).
-    pub vertex_attrib: Option<VertexAttribHandle>,
+    pub vertex_attrib: Option<VertexAttrib>,
     /// Depth mode used for a possible depth attachment.
     pub depth_mode: Option<DepthMode>,
     /// Stencil mode used for a possible stencil attachment.
@@ -134,8 +136,6 @@ pub struct GraphicsPipelineInfo {
     /// Materials used in the pass with their associated set-bindings.
     pub materials: Vec<(usize, MaterialHandle)>,
     /// Range of push constants used.
-    ///
-    /// **NOTE**: in 4-bytes, not bytes!!! e.g. 0..4 states bytes 0..16
     pub push_constants: Option<std::ops::Range<u32>>,
 }
 
@@ -144,14 +144,14 @@ pub trait GraphicsPass: Sized {
     /// Configuration type of the pass.
     ///
     /// The configuration is used to dispatch work on potentially different pipelines.
-    type Config: Sized;
+    type Config: Hash + Eq;
 
     /// The `prepare` function is called before every execution and can be used to change
     /// pass-internal state.
     fn prepare(&mut self, _store: &mut super::Store) {}
 
     /// Create a graphics-pipeline info from a given configuration.
-    fn configure(&self, config: Self::Config) -> GraphicsPipelineInfo;
+    fn configure(&self, config: &Self::Config) -> GraphicsPipelineInfo;
 
     /// The `describe` function is called during graph compilation and records all resource
     /// creations and dependencies in the graph-`builder`.
@@ -225,14 +225,14 @@ pub trait ComputePass: Sized {
     /// Configuration type of the pass.
     ///
     /// The configuration is used to dispatch work on potentially different pipelines.
-    type Config: Sized;
+    type Config: Hash + Eq;
 
     /// The `prepare` function is called before every execution and can be used to change
     /// pass-internal state.
     fn prepare(&mut self, _store: &mut super::Store) {}
 
     /// Create a compute-pipeline info from a given configuration.
-    fn configure(&self, config: Self::Config) -> ComputePipelineInfo;
+    fn configure(&self, config: &Self::Config) -> ComputePipelineInfo;
 
     /// The `describe` function is called during graph compilation and records all resource
     /// creations and dependencies in the graph-`builder`.

@@ -123,7 +123,6 @@ impl ExecutionGraph {
         // We can determine at which point the resources have to be created and are free to be
         // destroyed.
         let exec_list = {
-            use std::collections::HashMap;
             let mut last_use = HashMap::new();
 
             for batch in &pass_execs {

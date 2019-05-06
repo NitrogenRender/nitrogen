@@ -332,7 +332,6 @@ impl SubmitGroup {
             pipeline: &mut ctx.pipeline_storage,
             image: &mut ctx.image_storage,
             buffer: &mut ctx.buffer_storage,
-            vertex_attrib: &ctx.vertex_attrib_storage,
             sampler: &mut ctx.sampler_storage,
             material: &mut ctx.material_storage,
         };
@@ -382,7 +381,6 @@ impl SubmitGroup {
             pipeline: &mut ctx.pipeline_storage,
             image: &mut ctx.image_storage,
             buffer: &mut ctx.buffer_storage,
-            vertex_attrib: &ctx.vertex_attrib_storage,
             sampler: &mut ctx.sampler_storage,
             material: &mut ctx.material_storage,
         };
@@ -551,7 +549,6 @@ impl SubmitGroup {
             pipeline: &mut ctx.pipeline_storage,
             image: &mut ctx.image_storage,
             buffer: &mut ctx.buffer_storage,
-            vertex_attrib: &ctx.vertex_attrib_storage,
             sampler: &mut ctx.sampler_storage,
             material: &mut ctx.material_storage,
         };

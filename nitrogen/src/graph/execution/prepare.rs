@@ -650,8 +650,13 @@ pub(crate) unsafe fn create_pipeline_graphics(
         None
     };
 
+    let vertex_attrib_res = info
+        .vertex_attrib
+        .as_ref()
+        .map(|v| crate::vertex_attrib::crate_resource(v));
+
     let create_info = pipeline::GraphicsPipelineCreateInfo {
-        vertex_attribs: info.vertex_attrib,
+        vertex_attribs: vertex_attrib_res,
         primitive: info.primitive,
         shader_vertex: vertex_shader,
         shader_fragment: fragment_shader,
@@ -665,7 +670,6 @@ pub(crate) unsafe fn create_pipeline_graphics(
     let pipeline_handle = pipeline_storage.create_graphics_pipeline(
         device,
         &*storages.render_pass.borrow(),
-        &*storages.vertex_attrib.borrow(),
         render_pass,
         create_info,
     )?;

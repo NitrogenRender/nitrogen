@@ -7,7 +7,7 @@ use crate::storage::{Handle, Storage};
 
 use crate::graph::{BlendMode, DepthMode};
 use crate::render_pass::{RenderPassHandle, RenderPassStorage};
-use crate::vertex_attrib::{VertexAttribHandle, VertexAttribStorage};
+use crate::vertex_attrib::VertexAttribResource;
 
 use crate::types;
 use crate::types::*;
@@ -67,7 +67,7 @@ pub(crate) struct ShaderInfo<'a> {
 pub(crate) struct GraphicsPipelineCreateInfo<'a> {
     pub(crate) primitive: crate::graph::Primitive,
 
-    pub(crate) vertex_attribs: Option<VertexAttribHandle>,
+    pub(crate) vertex_attribs: Option<VertexAttribResource>,
 
     pub(crate) descriptor_set_layout: &'a [&'a types::DescriptorSetLayout],
     // TODO shader stage flags
@@ -107,7 +107,6 @@ impl PipelineStorage {
         &mut self,
         device: &DeviceContext,
         render_pass_storage: &RenderPassStorage,
-        vertex_attrib_storage: &VertexAttribStorage,
         render_pass_handle: RenderPassHandle,
         create_info: GraphicsPipelineCreateInfo,
     ) -> Result<PipelineHandle> {
@@ -208,18 +207,16 @@ impl PipelineStorage {
             let mut desc =
                 pso::GraphicsPipelineDesc::new(shaders, primitive, rasterizer, &layout, subpass);
 
-            if let Some(attrib) = &create_info.vertex_attribs {
-                if let Some(data) = vertex_attrib_storage.raw(*attrib) {
-                    for buffer in &data.buffers {
-                        desc.vertex_buffers.push(pso::VertexBufferDesc {
-                            binding: buffer.binding as _,
-                            stride: buffer.stride as _,
-                            rate: 0,
-                        });
-                    }
-
-                    desc.attributes.extend_from_slice(&data.attribs[..]);
+            if let Some(data) = &create_info.vertex_attribs {
+                for buffer in &data.buffers {
+                    desc.vertex_buffers.push(pso::VertexBufferDesc {
+                        binding: buffer.binding as _,
+                        stride: buffer.stride as _,
+                        rate: 0,
+                    });
                 }
+
+                desc.attributes.extend_from_slice(&data.attribs[..]);
             }
 
             // TODO allow for finer control over blend modes?

@@ -16,7 +16,6 @@ use crate::resources::{
     pipeline::PipelineStorage,
     render_pass::RenderPassStorage,
     sampler::SamplerStorage,
-    vertex_attrib::VertexAttribStorage,
 };
 
 pub mod builder;
@@ -52,7 +51,6 @@ pub(crate) struct Storages<'a> {
     pub pipeline: &'a RefCell<PipelineStorage>,
     pub image: &'a RefCell<ImageStorage>,
     pub buffer: &'a RefCell<BufferStorage>,
-    pub vertex_attrib: &'a RefCell<VertexAttribStorage>,
     pub sampler: &'a RefCell<SamplerStorage>,
     pub material: &'a RefCell<MaterialStorage>,
 }

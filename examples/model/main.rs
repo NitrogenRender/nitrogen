@@ -11,7 +11,7 @@ use cgmath::*;
 use nitrogen::graph::builder::resource_descriptor::ImageClearValue;
 use nitrogen::graph::builder::GraphBuilder;
 use nitrogen::resources::shader::{FragmentShaderHandle, ShaderInfo, VertexShaderHandle};
-use nitrogen::resources::vertex_attrib::VertexAttribHandle;
+use nitrogen::resources::vertex_attrib as vtx;
 
 static MODEL_DATA: &[u8] = include_bytes!("assets/bunny.obj");
 
@@ -37,8 +37,6 @@ struct Data {
     buf_position: buffer::BufferHandle,
     buf_normal: buffer::BufferHandle,
     buf_index: buffer::BufferHandle,
-
-    vtx_def: vertex_attrib::VertexAttribHandle,
 
     graph: graph::GraphHandle,
 }
@@ -68,8 +66,6 @@ impl main_loop::UserData for Data {
         unsafe {
             submit.wait(ctx);
         }
-
-        ctx.vertex_attribs_destroy(&[self.vtx_def]);
     }
 }
 
@@ -95,30 +91,27 @@ fn init_resources(
 
     let b_index = unsafe { buffer_device_local_index(ctx, submit, &mesh.indices[..]).unwrap() };
 
-    let vertex_def = {
-        let create_info = vertex_attrib::VertexAttribInfo {
-            buffer_infos: &[
-                vertex_attrib::VertexAttribBufferInfo {
-                    index: 0,
-                    stride: std::mem::size_of::<[f32; 3]>(),
-                    elements: &[vertex_attrib::VertexAttribBufferElementInfo {
-                        location: 0,
-                        offset: 0,
-                        format: gfx::format::Format::Rgb32Float,
-                    }],
-                },
-                vertex_attrib::VertexAttribBufferInfo {
-                    index: 1,
-                    stride: std::mem::size_of::<[f32; 3]>(),
-                    elements: &[vertex_attrib::VertexAttribBufferElementInfo {
-                        location: 1,
-                        offset: 0,
-                        format: gfx::format::Format::Rgb32Float,
-                    }],
-                },
-            ],
-        };
-        ctx.vertex_attribs_create(create_info)
+    let vertex_def = vertex_attrib::VertexAttrib {
+        buffer_infos: vec![
+            vertex_attrib::VertexAttribBufferInfo {
+                index: 0,
+                stride: std::mem::size_of::<[f32; 3]>(),
+                elements: vec![vertex_attrib::VertexAttribBufferElementInfo {
+                    location: 0,
+                    offset: 0,
+                    format: gfx::format::Format::Rgb32Float,
+                }],
+            },
+            vertex_attrib::VertexAttribBufferInfo {
+                index: 1,
+                stride: std::mem::size_of::<[f32; 3]>(),
+                elements: vec![vertex_attrib::VertexAttribBufferElementInfo {
+                    location: 1,
+                    offset: 0,
+                    format: gfx::format::Format::Rgb32Float,
+                }],
+            },
+        ],
     };
 
     let graph = unsafe {
@@ -137,15 +130,13 @@ fn init_resources(
         buf_normal: b_normal,
         buf_index: b_index,
 
-        vtx_def: vertex_def,
-
         graph,
     })
 }
 
 unsafe fn create_graph(
     ctx: &mut Context,
-    vert: vertex_attrib::VertexAttribHandle,
+    vtx: vtx::VertexAttrib,
     position: buffer::BufferHandle,
     normal: buffer::BufferHandle,
     index: buffer::BufferHandle,
@@ -184,7 +175,7 @@ unsafe fn create_graph(
             normal: buffer::BufferHandle,
             index: buffer::BufferHandle,
             vertices: usize,
-            vertex_attr: VertexAttribHandle,
+            vertex_attr: vtx::VertexAttrib,
             vertex_shader: VertexShaderHandle,
             fragment_shader: FragmentShaderHandle,
 
@@ -192,7 +183,7 @@ unsafe fn create_graph(
             draw_lines: bool,
         };
 
-        #[derive(Copy, Clone)]
+        #[derive(Copy, Clone, Hash, Eq, PartialEq)]
         struct PassConfig {
             primitive: graph::Primitive,
             blend_mode: graph::BlendMode,
@@ -217,7 +208,7 @@ unsafe fn create_graph(
                 }
             }
 
-            fn configure(&self, config: Self::Config) -> graph::GraphicsPipelineInfo {
+            fn configure(&self, config: &Self::Config) -> graph::GraphicsPipelineInfo {
                 let depth = if config.use_depth {
                     Some(graph::DepthMode {
                         write: true,
@@ -228,7 +219,7 @@ unsafe fn create_graph(
                 };
 
                 graph::GraphicsPipelineInfo {
-                    vertex_attrib: Some(self.vertex_attr),
+                    vertex_attrib: Some(self.vertex_attr.clone()),
                     depth_mode: depth,
                     stencil_mode: None,
                     shaders: graph::GraphicShaders {
@@ -373,7 +364,7 @@ unsafe fn create_graph(
             index,
             vertices: num_vertices,
 
-            vertex_attr: vert,
+            vertex_attr: vtx,
 
             vertex_shader,
             fragment_shader,
