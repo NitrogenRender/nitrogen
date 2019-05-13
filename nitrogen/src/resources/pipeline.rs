@@ -19,6 +19,7 @@ use gfx::Device;
 
 use crate::graph::pass::Specialization;
 use smallvec::SmallVec;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::error::Error;
 
@@ -156,8 +157,8 @@ impl PipelineStorage {
                         entry: create_info.shader_vertex.entry,
                         module: &module.vertex,
                         specialization: pso::Specialization {
-                            constants: &[],
-                            data: &[],
+                            constants: Cow::Borrowed(&[]),
+                            data: Cow::Borrowed(&[]),
                         },
                     },
                     fragment: create_info
@@ -167,8 +168,8 @@ impl PipelineStorage {
                             entry: s.entry,
                             module: module.fragment.as_ref().unwrap(),
                             specialization: pso::Specialization {
-                                constants: &[],
-                                data: &[],
+                                constants: Cow::Borrowed(&[]),
+                                data: Cow::Borrowed(&[]),
                             },
                         }),
                     geometry: create_info
@@ -178,8 +179,8 @@ impl PipelineStorage {
                             entry: s.entry,
                             module: module.geometry.as_ref().unwrap(),
                             specialization: pso::Specialization {
-                                constants: &[],
-                                data: &[],
+                                constants: Cow::Borrowed(&[]),
+                                data: Cow::Borrowed(&[]),
                             },
                         }),
                 }
@@ -212,7 +213,7 @@ impl PipelineStorage {
                     desc.vertex_buffers.push(pso::VertexBufferDesc {
                         binding: buffer.binding as _,
                         stride: buffer.stride as _,
-                        rate: 0,
+                        rate: gfx::pso::VertexInputRate::Vertex,
                     });
                 }
 
@@ -321,8 +322,8 @@ impl PipelineStorage {
                 entry: create_info.shader.entry,
                 module: &shader_module,
                 specialization: pso::Specialization {
-                    constants: spec_const.as_slice(),
-                    data: spec_data.as_slice(),
+                    constants: Cow::Borrowed(spec_const.as_slice()),
+                    data: Cow::Borrowed(spec_data.as_slice()),
                 },
             };
 

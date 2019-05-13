@@ -35,7 +35,7 @@ impl Display {
         use gfx::format::Format;
         use gfx::Surface;
 
-        let (_, formats, _, _) = surface.compatibility(&device.adapter.physical_device);
+        let (_, formats, _) = surface.compatibility(&device.adapter.physical_device);
 
         let formats = formats.unwrap();
 
@@ -84,7 +84,7 @@ impl Display {
             }
         }
 
-        let (surface_capability, _, _, _) =
+        let (surface_capability, _, _) =
             self.surface.compatibility(&device.adapter.physical_device);
 
         let format = self.display_format;
@@ -110,7 +110,7 @@ impl Display {
 
         let old_swapchain = self.swapchain.take();
 
-        let (swapchain, backbuffer) = device
+        let (swapchain, images) = device
             .device
             .create_swapchain(&mut self.surface, config, old_swapchain)
             .expect("Can't create swapchain");
@@ -121,29 +121,26 @@ impl Display {
         // framebuffer.
         // Since we directly blit, we don't need any framebuffers. This also means we ignore the
         // case where a framebuffer is handed to us.
-        let images = match backbuffer {
-            gfx::Backbuffer::Images(images) => images
-                .into_iter()
-                .map(|img| {
-                    let view = device
-                        .device
-                        .create_image_view(
-                            &img,
-                            gfx::image::ViewKind::D2,
-                            format,
-                            gfx::format::Swizzle::NO,
-                            gfx::image::SubresourceRange {
-                                aspects: gfx::format::Aspects::COLOR,
-                                levels: 0..1,
-                                layers: 0..1,
-                            },
-                        )
-                        .unwrap();
-                    (img, view)
-                })
-                .collect::<Vec<_>>(),
-            gfx::Backbuffer::Framebuffer(_framebuffer) => unimplemented!(),
-        };
+        let images = images
+            .into_iter()
+            .map(|img| {
+                let view = device
+                    .device
+                    .create_image_view(
+                        &img,
+                        gfx::image::ViewKind::D2,
+                        format,
+                        gfx::format::Swizzle::NO,
+                        gfx::image::SubresourceRange {
+                            aspects: gfx::format::Aspects::COLOR,
+                            levels: 0..1,
+                            layers: 0..1,
+                        },
+                    )
+                    .unwrap();
+                (img, view)
+            })
+            .collect::<Vec<_>>();
 
         self.images = images;
     }
@@ -174,7 +171,7 @@ impl Display {
         if let Some(ref mut swapchain) = self.swapchain {
             let sem_acquire = sem_pool.alloc();
 
-            let index = match swapchain.acquire_image(!0, gfx::FrameSync::Semaphore(&*sem_acquire))
+            let (index, _suboptimal) = match swapchain.acquire_image(!0, Some(&*sem_acquire), None)
             {
                 Err(_) => return false,
                 Ok(image) => image,

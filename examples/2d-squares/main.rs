@@ -92,7 +92,7 @@ fn init(
             index: 0,
             elements: vec![vtx::VertexAttribBufferElementInfo {
                 location: 0,
-                format: nit::gfx::format::Format::Rg32Float,
+                format: nit::gfx::format::Format::Rg32Sfloat,
                 offset: 0,
             }],
         }],

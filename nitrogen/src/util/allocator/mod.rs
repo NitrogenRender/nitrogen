@@ -2,6 +2,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#[cfg(not(any(feature = "alloc_rendy", feature = "alloc_gfxm")))]
+mod empty;
+#[cfg(not(any(feature = "alloc_rendy", feature = "alloc_gfxm")))]
+pub(crate) use self::empty::export::*;
+
+#[cfg(feature = "alloc_rendy")]
+mod rendy;
+#[cfg(feature = "alloc_rendy")]
+pub(crate) use self::rendy::export::*;
+
+#[cfg(feature = "alloc_gfxm")]
+mod gfxm;
+#[cfg(feature = "alloc_gfxm")]
+pub(crate) use self::gfxm::export::*;
+
 /// The returned object representing a memory allocation
 pub(crate) trait Block: Sized {
     fn range(&self) -> std::ops::Range<u64>;
@@ -192,184 +207,4 @@ pub(crate) trait Allocator: std::fmt::Debug + Sized {
     unsafe fn dispose(self, device: &back::Device) -> Result<(), Self>
     where
         Self: Sized;
-}
-
-#[cfg(feature = "alloc_gfxm")]
-pub(crate) use self::alloc_gfxm::reexport::*;
-
-#[cfg(not(feature = "alloc_gfxm"))]
-pub(crate) use self::alloc_empty::reexport::*;
-
-#[cfg(feature = "alloc_gfxm")]
-mod alloc_gfxm {
-
-    use super::*;
-
-    use gfx_memory::{Block as GfxmBlock, MemoryAllocator, SmartAllocator, SmartBlock};
-
-    pub(crate) mod reexport {
-        use super::*;
-
-        pub(crate) type DefaultAlloc = AllocatorGfxm;
-        pub(crate) type Buffer = BufferType<AllocatorGfxm>;
-        pub(crate) type Image = ImageType<AllocatorGfxm>;
-    }
-
-    #[derive(Debug)]
-    pub struct BlockGfxm {
-        block: SmartBlock<crate::types::Memory>,
-    }
-
-    impl Block for BlockGfxm {
-        fn range(&self) -> std::ops::Range<u64> {
-            self.block.range()
-        }
-
-        fn memory(&self) -> &crate::types::Memory {
-            self.block.memory()
-        }
-    }
-
-    #[derive(Debug)]
-    pub(crate) struct AllocatorGfxm {
-        alloc: SmartAllocator<back::Backend>,
-        atom_size: usize,
-    }
-
-    fn gfxm_err_to_alloc_err(err: gfx_memory::MemoryError) -> AllocationError {
-        eprintln!("Encountered an error! {:?}", err);
-
-        use gfx_memory::MemoryError;
-        match err {
-            MemoryError::NoCompatibleMemoryType => AllocationError::NoSuitableMemoryType,
-            MemoryError::OutOfMemory => AllocationError::OutOfMemory,
-            MemoryError::TooManyObjects => AllocationError::TooManyObjects,
-        }
-    }
-
-    impl AllocatorGfxm {
-        pub(crate) unsafe fn new(
-            _device: &back::Device,
-            props: gfx::adapter::MemoryProperties,
-            non_coherent_atom_size: usize,
-        ) -> Self {
-            let alloc = SmartAllocator::new(props, 256, 64, 1024, 256 * 1024 * 1024);
-            Self {
-                alloc,
-                atom_size: non_coherent_atom_size,
-            }
-        }
-    }
-
-    impl Allocator for AllocatorGfxm {
-        type Block = BlockGfxm;
-
-        unsafe fn alloc(
-            &mut self,
-            device: &back::Device,
-            request: Request,
-        ) -> Result<BlockGfxm, AllocationError> {
-            let ty = if request.transient {
-                gfx_memory::Type::ShortLived
-            } else {
-                gfx_memory::Type::General
-            };
-
-            let prop = request.properties;
-
-            let padding = {
-                let modulus = request.size % (self.atom_size as u64);
-                if modulus != 0 {
-                    (self.atom_size as u64) - modulus
-                } else {
-                    0
-                }
-            };
-
-            let size = request.size + padding;
-
-            let reqs = gfx::memory::Requirements {
-                size,
-                alignment: request.alignment.max(self.atom_size as u64),
-                type_mask: request.type_mask,
-            };
-
-            let block = self
-                .alloc
-                .alloc(device, (ty, prop), reqs)
-                .map_err(gfxm_err_to_alloc_err)?;
-
-            Ok(BlockGfxm { block })
-        }
-
-        unsafe fn free(&mut self, device: &back::Device, block: BlockGfxm) {
-            self.alloc.free(device, block.block)
-        }
-
-        unsafe fn dispose(self, device: &back::Device) -> Result<(), Self> {
-            let atom_size = self.atom_size;
-            self.alloc
-                .dispose(device)
-                .map_err(|alloc| Self { alloc, atom_size })
-        }
-    }
-
-}
-
-#[cfg(not(feature = "alloc_gfxm"))]
-mod alloc_empty {
-    use super::*;
-
-    pub(crate) mod reexport {
-        use super::*;
-
-        pub(crate) type DefaultAlloc = AllocatorEmpty;
-        pub(crate) type Buffer = BufferType<AllocatorEmpty>;
-        pub(crate) type Image = ImageType<AllocatorEmpty>;
-    }
-
-    struct BlockEmpty;
-
-    impl Block for BlockEmpty {
-        fn range(&self) -> std::ops::Range<u64> {
-            unimplemented!()
-        }
-
-        fn memory(&self) -> &crate::types::Memory {
-            unimplemented!()
-        }
-    }
-
-    #[derive(Debug)]
-    pub(crate) struct AllocatorEmpty;
-
-    impl AllocatorEmpty {
-        pub(crate) unsafe fn new(
-            _device: &back::Device,
-            _props: gfx::adapter::MemoryProperties,
-            _non_coherent_atom_size: usize,
-        ) -> Self {
-            AllocatorEmpty
-        }
-    }
-
-    impl Allocator for AllocatorEmpty {
-        type Block = BlockEmpty;
-
-        unsafe fn alloc(
-            &mut self,
-            _: &back::Device,
-            _: Request,
-        ) -> Result<BlockEmpty, AllocationError> {
-            unimplemented!("empty memory allocator used")
-        }
-
-        unsafe fn free(&mut self, _: &back::Device, _: BlockEmpty) {
-            unimplemented!("empty memory allocator used")
-        }
-
-        unsafe fn dispose(self, _: &back::Device) -> Result<(), Self> {
-            Ok(())
-        }
-    }
 }

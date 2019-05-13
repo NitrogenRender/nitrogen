@@ -402,7 +402,11 @@ impl Material {
 
         let pool = device
             .device
-            .create_descriptor_pool(self.sets_per_pool as usize, descriptors.as_slice())
+            .create_descriptor_pool(
+                self.sets_per_pool as usize,
+                descriptors.as_slice(),
+                gfx::pso::DescriptorPoolCreateFlags::empty(),
+            )
             .expect("Can't allocate new descriptor pool, out of memory");
 
         let new_pool_idx = self.pools.len();

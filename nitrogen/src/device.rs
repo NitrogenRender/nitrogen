@@ -67,9 +67,15 @@ impl DeviceContext {
                 2
             };
 
+            let features = {
+                use gfx::Features;
+
+                Features::empty()
+            };
+
             let mut gpu = adapter
                 .physical_device
-                .open(&queues[0..end])
+                .open(&queues[0..end], features)
                 .expect("Can't create logical device");
 
             let mut queues = SmallVec::new();
