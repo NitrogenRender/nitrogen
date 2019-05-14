@@ -153,7 +153,7 @@ impl<'a> GraphicsCommandBuffer<'a> {
 
         {
             let u32_slice = data_to_u32_slice(data, &mut buf[..]);
-            self.push_constant_raw(offset / 4, u32_slice);
+            self.push_constant_raw(offset, u32_slice);
         }
     }
 
@@ -223,7 +223,7 @@ impl<'a> ComputeCommandBuffer<'a> {
 
         {
             let u32_slice = data_to_u32_slice(data, &mut buf[..]);
-            self.push_constant_raw(offset / 4, u32_slice);
+            self.push_constant_raw(offset, u32_slice);
         }
     }
 }

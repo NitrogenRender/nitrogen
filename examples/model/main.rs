@@ -16,7 +16,7 @@ use nitrogen::resources::vertex_attrib as vtx;
 static MODEL_DATA: &[u8] = include_bytes!("assets/bunny.obj");
 
 fn main() {
-    std::env::set_var("RUST_LOG", "debug");
+    std::env::set_var("RUST_LOG", "warn");
     env_logger::init();
 
     let mut ml =
@@ -99,7 +99,7 @@ fn init_resources(
                 elements: vec![vertex_attrib::VertexAttribBufferElementInfo {
                     location: 0,
                     offset: 0,
-                    format: gfx::format::Format::Rgb32Float,
+                    format: gfx::format::Format::Rgb32Sfloat,
                 }],
             },
             vertex_attrib::VertexAttribBufferInfo {
@@ -108,7 +108,7 @@ fn init_resources(
                 elements: vec![vertex_attrib::VertexAttribBufferElementInfo {
                     location: 1,
                     offset: 0,
-                    format: gfx::format::Format::Rgb32Float,
+                    format: gfx::format::Format::Rgb32Sfloat,
                 }],
             },
         ],

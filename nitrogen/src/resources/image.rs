@@ -280,12 +280,12 @@ impl From<ImageFormat> for gfx::format::Format {
             ImageFormat::RgbUnorm => Format::Rgb8Unorm,
             ImageFormat::RgbaUnorm => Format::Rgba8Unorm,
 
-            ImageFormat::Rgba32Float => Format::Rgba32Float,
+            ImageFormat::Rgba32Float => Format::Rgba32Sfloat,
 
             ImageFormat::E5b9g9r9Float => Format::E5b9g9r9Ufloat,
 
-            ImageFormat::D32Float => Format::D32Float,
-            ImageFormat::D32FloatS8Uint => Format::D32FloatS8Uint,
+            ImageFormat::D32Float => Format::D32Sfloat,
+            ImageFormat::D32FloatS8Uint => Format::D32SfloatS8Uint,
         }
     }
 }
@@ -300,12 +300,12 @@ impl Into<ImageFormat> for gfx::format::Format {
             Format::Rgb8Unorm => ImageFormat::RgbUnorm,
             Format::Rgba8Unorm => ImageFormat::RgbaUnorm,
 
-            Format::Rgba32Float => ImageFormat::Rgba32Float,
+            Format::Rgba32Sfloat => ImageFormat::Rgba32Float,
 
             Format::E5b9g9r9Ufloat => ImageFormat::E5b9g9r9Float,
 
-            Format::D32Float => ImageFormat::D32Float,
-            Format::D32FloatS8Uint => ImageFormat::D32FloatS8Uint,
+            Format::D32Sfloat => ImageFormat::D32Float,
+            Format::D32SfloatS8Uint => ImageFormat::D32FloatS8Uint,
 
             _ => unimplemented!(),
         }
@@ -605,7 +605,7 @@ impl ImageStorage {
         };
 
         let upload_nums = {
-            let row_align = limits.min_buffer_copy_pitch_alignment as u32;
+            let row_align = limits.optimal_buffer_copy_pitch_alignment as u32;
             image_copy_buffer_size(row_align, &data, (upload_width, upload_height))
         };
         let (upload_size, row_pitch, texel_size) = upload_nums;

@@ -7,4 +7,4 @@ edition = "2018"
 
 [dependencies]
 nitrogen = { path = "../../nitrogen" }
-winit = "0.18"
+winit = "0.19"
