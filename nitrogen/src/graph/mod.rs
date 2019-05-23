@@ -85,7 +85,7 @@ pub(crate) struct GraphicPassAccessor {
 }
 
 /// Errors that can occur when dealing with graph preparation/execution.
-#[derive(Clone, Debug, From)]
+#[derive(Debug, From)]
 pub enum GraphError {
     /// A set of graph-compilation errors.
     CompilationErrors(Vec<String>),

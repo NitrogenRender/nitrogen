@@ -24,9 +24,9 @@ shaderc = "0.3.12"
 name = "triangle"
 path = "triangle/main.rs"
 
-# [[example]]
-# name = "two-pass"
-# path = "two-pass/main.rs"
+[[example]]
+name = "two-pass"
+path = "two-pass/main.rs"
 
 [[example]]
 name = "2d-squares"

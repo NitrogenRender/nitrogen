@@ -12,9 +12,7 @@ use std::borrow::Borrow;
 use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 
-use crate::util::allocator::{
-    Allocator, AllocatorError, BufferRequest, Image as AllocImage, ImageRequest,
-};
+use crate::util::allocator::{AllocatorError, BufferRequest, Image as AllocImage, ImageRequest};
 use crate::util::storage::{Handle, Storage};
 use crate::util::transfer;
 
@@ -399,7 +397,7 @@ pub struct Image {
 
 /// Errors that can occur while operating on image resources.
 #[allow(missing_docs)]
-#[derive(Debug, Display, From, Clone)]
+#[derive(Debug, Display, From)]
 pub enum ImageError {
     #[display(fmt = "The specified image handle was invalid")]
     HandleInvalid,
@@ -616,40 +614,47 @@ impl ImageStorage {
 
         let buf_req = BufferRequest {
             transient: true,
-            persistently_mappable: false,
             properties: Properties::CPU_VISIBLE | Properties::COHERENT,
             usage: gfx::buffer::Usage::TRANSFER_SRC | gfx::buffer::Usage::TRANSFER_DST,
             size: upload_size,
         };
 
-        let staging = allocator.create_buffer(&device.device, buf_req)?;
+        let mut staging = allocator.create_buffer(&device.device, buf_req)?;
 
         // write to staging buffer
         {
-            use crate::util::allocator::Block;
+            use rendy_memory::Block;
 
-            let range = staging.block().range();
+            let block = staging.block_mut();
 
-            let mut writer = device
-                .device
-                .acquire_mapping_writer(staging.block().memory(), range)?;
+            let range = 0..block.size();
 
-            // Alignment strikes back again! We do copy all the rows, but the row length in the
-            // staging buffer might be bigger than in the upload data, so we need to construct
-            // a slice for each row instead of just copying *everything*
-            for y in 0..upload_height as usize {
-                let src_start = y * (upload_width as usize) * texel_size;
-                let src_end = (y + 1) * (upload_width as usize) * texel_size;
+            let mut map = block.map(&device.device, range.clone())?;
 
-                let row = &data.data[src_start..src_end];
+            {
+                use rendy_memory::Write;
 
-                let dst_start = y * row_pitch as usize;
-                let dst_end = dst_start + row.len();
+                let mut writer = map.write(&device.device, range)?;
 
-                writer[dst_start..dst_end].copy_from_slice(row);
+                let slice = writer.slice();
+
+                // Alignment strikes back again! We do copy all the rows, but the row length in the
+                // staging buffer might be bigger than in the upload data, so we need to construct
+                // a slice for each row instead of just copying *everything*
+                for y in 0..upload_height as usize {
+                    let src_start = y * (upload_width as usize) * texel_size;
+                    let src_end = (y + 1) * (upload_width as usize) * texel_size;
+
+                    let row = &data.data[src_start..src_end];
+
+                    let dst_start = y * row_pitch as usize;
+                    let dst_end = dst_start + row.len();
+
+                    slice[dst_start..dst_end].copy_from_slice(row);
+                }
             }
 
-            device.device.release_mapping_writer(writer).unwrap();
+            block.unmap(&device.device);
         }
 
         // create image upload data

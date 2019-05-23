@@ -19,5 +19,4 @@ pub(crate) type ShaderModule = <back::Backend as gfx::Backend>::ShaderModule;
 pub(crate) type Semaphore = <back::Backend as gfx::Backend>::Semaphore;
 pub(crate) type QueueGroup<T> = gfx::QueueGroup<back::Backend, T>;
 pub(crate) type CommandQueue<T> = gfx::CommandQueue<back::Backend, T>;
-pub(crate) type Memory = <back::Backend as gfx::Backend>::Memory;
 pub(crate) type Buffer = <back::Backend as gfx::Backend>::Buffer;

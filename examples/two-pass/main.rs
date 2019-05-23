@@ -4,22 +4,24 @@
 
 extern crate image as img;
 
-use nitrogen::graph;
-use nitrogen::graph::GraphicsPassImpl;
-use nitrogen::image;
+use nitrogen::{buffer, graph, image, material, shader, submit_group, vertex_attrib, Context};
 
 use log::debug;
 
-use std::borrow::Cow;
+use nitrogen::graph::{
+    GraphExecError, GraphicsDispatcher, GraphicsPass, GraphicsPipelineInfo, ImageClearValue,
+    ResourceDescriptor, Store,
+};
+use nitrogen_examples_common::main_loop;
 
-const TRIANGLE_POS: [[f32; 2]; 4] = [
+const QUAD_POS: [[f32; 2]; 4] = [
     [-1.0, -1.0], // LEFT TOP
     [-1.0, 1.0],  // LEFT BOTTOM
     [1.0, -1.0],  // RIGHT TOP
     [1.0, 1.0],   // RIGHT BOTTOM
 ];
 
-const TRIANGLE_UV: [[f32; 2]; 4] = [
+const QUAD_UV: [[f32; 2]; 4] = [
     [0.0, 0.0], // LEFT TOP
     [0.0, 1.0], // LEFT BOTTOM
     [1.0, 0.0], // RIGHT TOP
@@ -27,18 +29,50 @@ const TRIANGLE_UV: [[f32; 2]; 4] = [
 ];
 
 fn main() {
-    std::env::set_var("RUST_LOG", "debug");
+    std::env::set_var("RUST_LOG", "warn");
     env_logger::init();
 
-    let mut events = winit::EventsLoop::new();
-    let window = winit::Window::new(&events).unwrap();
+    let mut ml =
+        unsafe { main_loop::MainLoop::new("Nitrogen - Opaque-Alpha example", init_resources) }
+            .unwrap();
 
-    let mut ntg = unsafe { nitrogen::Context::new("nitrogen test", 1) };
+    while ml.running() {
+        unsafe {
+            ml.iterate();
+        }
+    }
 
-    let mut submit = unsafe { ntg.create_submit_group() };
+    unsafe {
+        ml.release();
+    }
+}
 
-    let display = ntg.display_add(&window);
+struct Resources {
+    graph: graph::GraphHandle,
+}
 
+impl main_loop::UserData for Resources {
+    fn graph(&self) -> Option<graph::GraphHandle> {
+        Some(self.graph)
+    }
+
+    fn output_image(&self) -> Option<graph::ResourceName> {
+        Some("IOutput".into())
+    }
+}
+
+struct QuadData {
+    vtx_pos: buffer::BufferHandle,
+    vtx_uv: buffer::BufferHandle,
+
+    mat_instance: material::MaterialInstanceHandle,
+}
+
+fn init_resources(
+    store: &mut graph::Store,
+    ctx: &mut Context,
+    group: &mut submit_group::SubmitGroup,
+) -> Option<Resources> {
     let material = unsafe {
         let create_info = nitrogen::material::MaterialCreateInfo {
             parameters: &[
@@ -48,10 +82,10 @@ fn main() {
             ],
         };
 
-        ntg.material_create(create_info).unwrap()
+        ctx.material_create(create_info).unwrap()
     };
 
-    let mat_example_instance = unsafe { ntg.material_create_instance(material).unwrap() };
+    let mat_example_instance = unsafe { ctx.material_create_instance(material).unwrap() };
 
     let (image, sampler) = {
         let image_data = include_bytes!("assets/test.png");
@@ -81,7 +115,7 @@ fn main() {
             ..Default::default()
         };
 
-        let img = unsafe { ntg.image_create(create_info).unwrap() };
+        let img = unsafe { ctx.image_create(create_info).unwrap() };
 
         debug!("width {}, height {}", width, height);
 
@@ -93,7 +127,8 @@ fn main() {
                 target_offset: (0, 0, 0),
             };
 
-            submit.image_upload_data(&mut ntg, img, data).unwrap()
+            group.image_upload_data(ctx, img, data).unwrap();
+            group.wait(ctx);
         }
 
         drop(image);
@@ -108,32 +143,28 @@ fn main() {
                 wrap_mode: (WrapMode::Clamp, WrapMode::Clamp, WrapMode::Clamp),
             };
 
-            ntg.sampler_create(sampler_create)
+            ctx.sampler_create(sampler_create)
         };
 
         (img, sampler)
     };
 
-    unsafe {
-        submit.display_setup_swapchain(&mut ntg, display);
-    }
-
     let buffer_pos = unsafe {
         let create_info = nitrogen::buffer::CpuVisibleCreateInfo {
-            size: std::mem::size_of_val(&TRIANGLE_POS) as u64,
+            size: std::mem::size_of_val(&QUAD_POS) as u64,
             is_transient: false,
             usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC
                 | nitrogen::buffer::BufferUsage::VERTEX,
         };
-        let buffer = ntg.buffer_cpu_visible_create(create_info).unwrap();
+        let buffer = ctx.buffer_cpu_visible_create(create_info).unwrap();
 
         let upload_data = nitrogen::buffer::BufferUploadInfo {
             offset: 0,
-            data: &TRIANGLE_POS,
+            data: &QUAD_POS,
         };
 
-        submit
-            .buffer_cpu_visible_upload(&mut ntg, buffer, upload_data)
+        group
+            .buffer_cpu_visible_upload(ctx, buffer, upload_data)
             .unwrap();
 
         buffer
@@ -141,98 +172,29 @@ fn main() {
 
     let buffer_uv = unsafe {
         let create_info = nitrogen::buffer::CpuVisibleCreateInfo {
-            size: std::mem::size_of_val(&TRIANGLE_UV) as u64,
+            size: std::mem::size_of_val(&QUAD_UV) as u64,
             is_transient: false,
             usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC
                 | nitrogen::buffer::BufferUsage::VERTEX,
         };
-        let buffer = ntg.buffer_cpu_visible_create(create_info).unwrap();
+        let buffer = ctx.buffer_cpu_visible_create(create_info).unwrap();
 
         let upload_data = nitrogen::buffer::BufferUploadInfo {
             offset: 0,
-            data: &TRIANGLE_UV,
+            data: &QUAD_UV,
         };
 
-        submit
-            .buffer_cpu_visible_upload(&mut ntg, buffer, upload_data)
-            .unwrap();
-
-        buffer
-    };
-
-    let vertex_attrib = {
-        let info = nitrogen::vertex_attrib::VertexAttribInfo {
-            buffer_infos: &[
-                // pos
-                nitrogen::vertex_attrib::VertexAttribBufferInfo {
-                    stride: std::mem::size_of::<[f32; 2]>(),
-                    index: 0,
-                    elements: &[nitrogen::vertex_attrib::VertexAttribBufferElementInfo {
-                        location: 0,
-                        format: nitrogen::gfx::format::Format::Rg32Float,
-                        offset: 0,
-                    }],
-                },
-                // uv
-                nitrogen::vertex_attrib::VertexAttribBufferInfo {
-                    stride: std::mem::size_of::<[f32; 2]>(),
-                    index: 1,
-                    elements: &[nitrogen::vertex_attrib::VertexAttribBufferElementInfo {
-                        location: 1,
-                        format: nitrogen::gfx::format::Format::Rg32Float,
-                        offset: 0,
-                    }],
-                },
-            ],
-        };
-
-        ntg.vertex_attribs_create(info)
-    };
-
-    let graph = setup_graphs(
-        &mut ntg,
-        Some(vertex_attrib),
-        buffer_pos,
-        buffer_uv,
-        material,
-        mat_example_instance,
-    );
-
-    let mut running = true;
-    let mut resized = true;
-
-    #[derive(Copy, Clone)]
-    struct UniformData {
-        _color: [f32; 4],
-    }
-
-    let uniform_data = UniformData {
-        _color: [0.3, 0.5, 1.0, 1.0],
-    };
-
-    let uniform_buffer = unsafe {
-        let create_info = nitrogen::buffer::CpuVisibleCreateInfo {
-            size: std::mem::size_of::<UniformData>() as u64,
-            is_transient: false,
-            usage: nitrogen::buffer::BufferUsage::TRANSFER_SRC
-                | nitrogen::buffer::BufferUsage::UNIFORM,
-        };
-        let buffer = ntg.buffer_cpu_visible_create(create_info).unwrap();
-
-        let upload_data = nitrogen::buffer::BufferUploadInfo {
-            offset: 0,
-            data: &[uniform_data],
-        };
-
-        submit
-            .buffer_cpu_visible_upload(&mut ntg, buffer, upload_data)
+        group
+            .buffer_cpu_visible_upload(ctx, buffer, upload_data)
             .unwrap();
 
         buffer
     };
 
     unsafe {
-        ntg.material_write_instance(
+        group.wait(ctx);
+
+        ctx.material_write_instance(
             mat_example_instance,
             &[
                 nitrogen::material::InstanceWrite {
@@ -243,118 +205,27 @@ fn main() {
                     binding: 1,
                     data: nitrogen::material::InstanceWriteData::Sampler { sampler },
                 },
-                nitrogen::material::InstanceWrite {
-                    binding: 2,
-                    data: nitrogen::material::InstanceWriteData::Buffer {
-                        buffer: uniform_buffer,
-                        region: None..None,
-                    },
-                },
             ],
         );
     }
 
-    let mut submits = vec![submit, unsafe { ntg.create_submit_group() }];
-
-    let mut frame_num = 0;
-    let mut frame_idx = 0;
-
-    let exec_context = nitrogen::graph::ExecutionContext {
-        reference_size: (1920, 1080),
+    let quad_data = QuadData {
+        vtx_pos: buffer_pos,
+        vtx_uv: buffer_uv,
+        mat_instance: mat_example_instance,
     };
 
-    let mut store = graph::Store::new();
+    store.insert(quad_data);
 
-    let mut backbuffer = graph::Backbuffer::new();
+    let builder = create_graph(ctx, material);
 
-    while running {
-        events.poll_events(|event| match event {
-            winit::Event::WindowEvent { event, .. } => match event {
-                winit::WindowEvent::CloseRequested => {
-                    running = false;
-                }
-                winit::WindowEvent::Resized(_size) => {
-                    resized = true;
-                }
-                _ => {}
-            },
-            _ => {}
-        });
+    let graph = unsafe { ctx.graph_create(builder).unwrap() };
 
-        // ntg.graph_compile(graph);
-        if let Err(errs) = ntg.graph_compile(graph, &mut store) {
-            println!("Errors occured while compiling the graph");
-            println!("{:?}", errs);
-        }
-
-        // wait for previous frame
-        {
-            let last_idx = (frame_num + (submits.len() - 1)) % submits.len();
-
-            unsafe {
-                submits[last_idx].wait(&mut ntg);
-            }
-        }
-
-        unsafe {
-            if resized {
-                submits[frame_idx].display_setup_swapchain(&mut ntg, display);
-                resized = false;
-            }
-
-            if let Err(err) = submits[frame_idx].graph_execute(
-                &mut ntg,
-                &mut backbuffer,
-                graph,
-                &store,
-                &exec_context,
-            ) {
-                println!("graph exec error: {}", err);
-            }
-
-            let img = submits[frame_idx]
-                .graph_get_image(&ntg, graph, "IOutput")
-                .unwrap();
-
-            submits[frame_idx].display_present(&mut ntg, display, img);
-        }
-
-        frame_num += 1;
-        frame_idx = frame_num % submits.len();
-    }
-
-    unsafe {
-        ntg.wait_idle();
-    }
-
-    submits[0].backbuffer_destroy(&mut ntg, backbuffer);
-    submits[0].buffer_destroy(&mut ntg, &[buffer_pos, buffer_uv, uniform_buffer]);
-    submits[0].image_destroy(&mut ntg, &[image]);
-    submits[0].sampler_destroy(&mut ntg, &[sampler]);
-    submits[0].graph_destroy(&mut ntg, &[graph]);
-    submits[0].material_destroy(&[material]);
-
-    for mut submit in submits {
-        unsafe {
-            submit.wait(&mut ntg);
-            submit.release(&mut ntg);
-        }
-    }
-
-    unsafe {
-        ntg.release();
-    }
+    Some(Resources { graph })
 }
 
-fn setup_graphs(
-    ntg: &mut nitrogen::Context,
-    vertex_attrib: Option<nitrogen::vertex_attrib::VertexAttribHandle>,
-    buffer_pos: nitrogen::buffer::BufferHandle,
-    buffer_uv: nitrogen::buffer::BufferHandle,
-    material: nitrogen::material::MaterialHandle,
-    material_instance: nitrogen::material::MaterialInstanceHandle,
-) -> graph::GraphHandle {
-    let graph = ntg.graph_create();
+fn create_graph(ctx: &mut Context, mat: material::MaterialHandle) -> graph::GraphBuilder {
+    let mut builder = graph::GraphBuilder::new("TwoPass");
 
     fn image_create_info() -> graph::ImageCreateInfo {
         graph::ImageCreateInfo {
@@ -365,149 +236,245 @@ fn setup_graphs(
             },
         }
     }
-
+    // test pass
     {
-        let shaders = nitrogen::graph::Shaders {
-            vertex: nitrogen::graph::ShaderInfo {
-                content: Cow::Borrowed(include_bytes!(concat!(
+        let vertex = {
+            let info = shader::ShaderInfo {
+                entry_point: "VertexMain".into(),
+                spirv_content: include_bytes!(concat!(
                     env!("OUT_DIR"),
                     "/two-pass/test.hlsl.vert.spirv"
-                ))),
-                entry: "VertexMain".into(),
-            },
-            fragment: Some(nitrogen::graph::ShaderInfo {
-                content: Cow::Borrowed(include_bytes!(concat!(
+                )),
+            };
+
+            ctx.vertex_shader_create(info)
+        };
+
+        let fragment = {
+            let info = shader::ShaderInfo {
+                entry_point: "FragmentMain".into(),
+                spirv_content: include_bytes!(concat!(
                     env!("OUT_DIR"),
                     "/two-pass/test.hlsl.frag.spirv"
-                ))),
-                entry: "FragmentMain".into(),
-            }),
-            geometry: None,
+                )),
+            };
+
+            ctx.fragment_shader_create(info)
         };
 
-        let (pass_impl, info) = create_test_pass(
-            shaders,
-            |builder| {
-                builder.image_create("ITest", image_create_info());
+        struct TestPass {
+            shader_vertex: shader::VertexShaderHandle,
+            shader_fragment: shader::FragmentShaderHandle,
+            mat: material::MaterialHandle,
+        }
 
-                builder.image_write_color("ITest", 0);
+        impl GraphicsPass for TestPass {
+            type Config = ();
 
-                builder.enable();
-            },
-            move |cmd| unsafe {
-                cmd.bind_vertex_buffers(&[(buffer_pos, 0), (buffer_uv, 0)]);
+            fn configure(&self, (): &()) -> GraphicsPipelineInfo {
+                GraphicsPipelineInfo {
+                    vertex_attrib: Some(vertex_attrib::VertexAttrib {
+                        buffer_infos: vec![
+                            vertex_attrib::VertexAttribBufferInfo {
+                                stride: std::mem::size_of::<[f32; 2]>(),
+                                index: 0,
+                                elements: vec![
+                                    nitrogen::vertex_attrib::VertexAttribBufferElementInfo {
+                                        location: 0,
+                                        format: nitrogen::gfx::format::Format::Rg32Sfloat,
+                                        offset: 0,
+                                    },
+                                ],
+                            },
+                            // uv
+                            vertex_attrib::VertexAttribBufferInfo {
+                                stride: std::mem::size_of::<[f32; 2]>(),
+                                index: 1,
+                                elements: vec![
+                                    nitrogen::vertex_attrib::VertexAttribBufferElementInfo {
+                                        location: 1,
+                                        format: nitrogen::gfx::format::Format::Rg32Sfloat,
+                                        offset: 0,
+                                    },
+                                ],
+                            },
+                        ],
+                    }),
+                    depth_mode: None,
+                    stencil_mode: None,
+                    shaders: graph::GraphicShaders {
+                        vertex: graph::Shader {
+                            handle: self.shader_vertex,
+                            specialization: vec![],
+                        },
+                        fragment: Some(graph::Shader {
+                            handle: self.shader_fragment,
+                            specialization: vec![],
+                        }),
+                        geometry: None,
+                    },
+                    primitive: graph::Primitive::TriangleStrip,
+                    blend_modes: vec![graph::BlendMode::Alpha],
+                    materials: vec![(0, self.mat)],
+                    push_constants: None,
+                }
+            }
 
-                cmd.bind_material(0, material_instance);
+            fn describe(&mut self, res: &mut ResourceDescriptor) {
+                res.image_create("ITest", image_create_info());
 
-                cmd.draw(0..4, 0..1);
-            },
-            vertex_attrib.clone(),
-            vec![(0, material)],
-        );
+                res.image_write_color("ITest", 0);
+            }
 
-        ntg.graph_add_graphics_pass(graph, "TestPass", info, pass_impl);
+            unsafe fn execute(
+                &self,
+                store: &Store,
+                dispatcher: &mut GraphicsDispatcher<Self>,
+            ) -> Result<(), GraphExecError> {
+                let quad = store.get::<QuadData>().unwrap();
+
+                let canvas = dispatcher.image_write_ref("ITest")?;
+
+                dispatcher.clear_image(canvas, ImageClearValue::Color([0.0, 0.0, 0.0, 0.0]));
+
+                dispatcher.with_config((), |cmd| {
+                    cmd.bind_vertex_buffers(&[(quad.vtx_pos, 0), (quad.vtx_uv, 0)]);
+                    cmd.bind_material(0, quad.mat_instance);
+                    cmd.draw(0..4, 0..1);
+                })?;
+
+                Ok(())
+            }
+        }
+
+        let pass = TestPass {
+            shader_vertex: vertex,
+            shader_fragment: fragment,
+            mat,
+        };
+
+        builder.add_graphics_pass("Test", pass);
     }
 
+    // read pass
     {
-        let shaders = nitrogen::graph::Shaders {
-            vertex: nitrogen::graph::ShaderInfo {
-                content: Cow::Borrowed(include_bytes!(concat!(
+        let vertex = {
+            let info = shader::ShaderInfo {
+                entry_point: "VertexMain".into(),
+                spirv_content: include_bytes!(concat!(
                     env!("OUT_DIR"),
                     "/two-pass/read.hlsl.vert.spirv"
-                ))),
-                entry: "VertexMain".into(),
-            },
-            fragment: Some(nitrogen::graph::ShaderInfo {
-                content: Cow::Borrowed(include_bytes!(concat!(
-                    env!("OUT_DIR"),
-                    "/two-pass/read.hlsl.frag.spirv"
-                ))),
-                entry: "FragmentMain".into(),
-            }),
-            geometry: None,
+                )),
+            };
+
+            ctx.vertex_shader_create(info)
         };
 
-        let (pass_impl, info) = create_test_pass(
-            shaders,
-            |builder| {
-                builder.image_create("IOutput", image_create_info());
+        let fragment = {
+            let info = shader::ShaderInfo {
+                entry_point: "FragmentMain".into(),
+                spirv_content: include_bytes!(concat!(
+                    env!("OUT_DIR"),
+                    "/two-pass/read.hlsl.frag.spirv"
+                )),
+            };
 
-                builder.image_write_color("IOutput", 0);
+            ctx.fragment_shader_create(info)
+        };
 
-                builder.image_read_color("ITest", 0, Some(1));
-
-                builder.enable();
-            },
-            move |cmd| unsafe {
-                cmd.bind_vertex_buffers(&[(buffer_pos, 0), (buffer_uv, 0)]);
-
-                cmd.draw(0..4, 0..1);
-            },
-            vertex_attrib,
-            vec![],
-        );
-
-        ntg.graph_add_graphics_pass(graph, "ReadPass", info, pass_impl);
-    }
-
-    ntg.graph_add_output(graph, "IOutput");
-
-    graph
-}
-
-fn create_test_pass<FSetUp, FExec>(
-    shaders: nitrogen::graph::Shaders,
-    setup: FSetUp,
-    execute: FExec,
-    vert: Option<nitrogen::vertex_attrib::VertexAttribHandle>,
-    materials: Vec<(usize, nitrogen::material::MaterialHandle)>,
-) -> (impl GraphicsPassImpl, graph::GraphicsPassInfo)
-where
-    FSetUp: FnMut(&mut graph::GraphBuilder),
-    FExec: Fn(&mut graph::RenderPassEncoder),
-{
-    let pass_info = nitrogen::graph::GraphicsPassInfo {
-        vertex_attrib: vert,
-        depth_mode: None,
-        stencil_mode: None,
-        shaders,
-        primitive: nitrogen::graph::Primitive::TriangleStrip,
-        blend_modes: vec![nitrogen::graph::BlendMode::Alpha],
-        materials,
-        push_constants: vec![],
-    };
-
-    struct TestPass<FSetUp, FExec> {
-        setup: FSetUp,
-        exec: FExec,
-    }
-
-    impl<FSetUp, FExec> GraphicsPassImpl for TestPass<FSetUp, FExec>
-    where
-        FSetUp: FnMut(&mut graph::GraphBuilder),
-        FExec: Fn(&mut graph::RenderPassEncoder),
-    {
-        fn setup(&mut self, _: &mut graph::Store, builder: &mut graph::GraphBuilder) {
-            (self.setup)(builder);
+        struct ReadPass {
+            shader_vertex: shader::VertexShaderHandle,
+            shader_fragment: shader::FragmentShaderHandle,
         }
 
-        unsafe fn execute(
-            &self,
-            _: &graph::Store,
-            command_buffer: &mut graph::GraphicsCommandBuffer,
-        ) {
-            let mut cmd = command_buffer
-                .begin_render_pass(&[graph::ImageClearValue::Color([0.0, 0.0, 0.0, 1.0])])
-                .unwrap();
+        impl GraphicsPass for ReadPass {
+            type Config = ();
 
-            (self.exec)(&mut cmd);
+            fn configure(&self, (): &()) -> GraphicsPipelineInfo {
+                GraphicsPipelineInfo {
+                    vertex_attrib: Some(vertex_attrib::VertexAttrib {
+                        buffer_infos: vec![
+                            vertex_attrib::VertexAttribBufferInfo {
+                                stride: std::mem::size_of::<[f32; 2]>(),
+                                index: 0,
+                                elements: vec![
+                                    nitrogen::vertex_attrib::VertexAttribBufferElementInfo {
+                                        location: 0,
+                                        format: nitrogen::gfx::format::Format::Rg32Sfloat,
+                                        offset: 0,
+                                    },
+                                ],
+                            },
+                            // uv
+                            vertex_attrib::VertexAttribBufferInfo {
+                                stride: std::mem::size_of::<[f32; 2]>(),
+                                index: 1,
+                                elements: vec![
+                                    nitrogen::vertex_attrib::VertexAttribBufferElementInfo {
+                                        location: 1,
+                                        format: nitrogen::gfx::format::Format::Rg32Sfloat,
+                                        offset: 0,
+                                    },
+                                ],
+                            },
+                        ],
+                    }),
+                    depth_mode: None,
+                    stencil_mode: None,
+                    shaders: graph::GraphicShaders {
+                        vertex: graph::Shader {
+                            handle: self.shader_vertex,
+                            specialization: vec![],
+                        },
+                        fragment: Some(graph::Shader {
+                            handle: self.shader_fragment,
+                            specialization: vec![],
+                        }),
+                        geometry: None,
+                    },
+                    primitive: graph::Primitive::TriangleStrip,
+                    blend_modes: vec![graph::BlendMode::Alpha],
+                    materials: vec![],
+                    push_constants: None,
+                }
+            }
+
+            fn describe(&mut self, res: &mut ResourceDescriptor) {
+                res.image_create("IOutput", image_create_info());
+
+                res.image_write_color("IOutput", 0);
+
+                res.image_read_color("ITest", 0, Some(1));
+            }
+
+            unsafe fn execute(
+                &self,
+                store: &Store,
+                dispatcher: &mut GraphicsDispatcher<Self>,
+            ) -> Result<(), GraphExecError> {
+                let quad = store.get::<QuadData>().unwrap();
+
+                let canvas = dispatcher.image_write_ref("IOutput")?;
+
+                dispatcher.clear_image(canvas, ImageClearValue::Color([0.0, 0.0, 0.0, 0.0]));
+
+                dispatcher.with_config((), |cmd| {
+                    cmd.bind_vertex_buffers(&[(quad.vtx_pos, 0), (quad.vtx_uv, 0)]);
+                    cmd.draw(0..4, 0..1);
+                })?;
+
+                Ok(())
+            }
         }
+
+        let pass = ReadPass {
+            shader_vertex: vertex,
+            shader_fragment: fragment,
+        };
+
+        builder.add_graphics_pass("Read", pass);
     }
 
-    let pass = TestPass {
-        setup,
-        exec: execute,
-    };
-
-    (pass, pass_info)
+    builder.add_target("IOutput");
+    builder
 }
