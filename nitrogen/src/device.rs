@@ -6,7 +6,7 @@ use gfx::Device;
 use gfx::Instance;
 
 use crate::types;
-use crate::util::allocator::{Allocator, DefaultAlloc};
+use crate::util::allocator::Allocator;
 
 use smallvec::SmallVec;
 
@@ -14,7 +14,7 @@ use std::cell::{RefCell, RefMut};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 pub(crate) struct DeviceContext {
-    pub(crate) memory_allocator: RefCell<DefaultAlloc>,
+    pub(crate) memory_allocator: RefCell<Allocator>,
 
     pub(crate) graphics_queue_idx: usize,
     pub(crate) compute_queue_idx: usize,
@@ -108,7 +108,7 @@ impl DeviceContext {
 
         let coherent_atom_size = adapter.physical_device.limits().non_coherent_atom_size;
 
-        let memory_allocator = DefaultAlloc::new(&device, memory_properties, coherent_atom_size);
+        let memory_allocator = Allocator::new(&device, memory_properties, coherent_atom_size);
 
         DeviceContext {
             memory_allocator: RefCell::new(memory_allocator),
@@ -123,7 +123,7 @@ impl DeviceContext {
         }
     }
 
-    pub(crate) fn allocator(&self) -> RefMut<DefaultAlloc> {
+    pub(crate) fn allocator(&self) -> RefMut<Allocator> {
         self.memory_allocator.borrow_mut()
     }
 
@@ -170,10 +170,7 @@ impl DeviceContext {
     }
 
     pub(crate) unsafe fn release(self) {
-        self.memory_allocator
-            .into_inner()
-            .dispose(&self.device)
-            .unwrap();
+        self.memory_allocator.into_inner().dispose(&self.device);
         self.device.wait_idle().unwrap();
     }
 }

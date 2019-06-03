@@ -189,7 +189,7 @@ fn init(
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    std::env::set_var("RUST_LOG", "debug");
+    std::env::set_var("RUST_LOG", "warn");
     env_logger::init();
 
     // boring window stuff

@@ -4,27 +4,29 @@
 
 struct VertexIn {
     [[vk::location(0)]]
-    float2 position;
+    float2 Position;
     [[vk::location(1)]]
-    float2 uv;
+    float2 Uv;
 };
 
 struct VertexOut {
-    float2 uv;
-    float4 position : SV_Position;
+    float2 Uv;
+    float4 Position : SV_Position;
+    float2 PositionNormalized;
 };
 
 struct FragmentOut {
     [[vk::location(0)]]
-    float4 color;
+    float4 Color;
 };
 
 VertexOut VertexMain(VertexIn input)
 {
     VertexOut output;
 
-    output.position = float4(input.position, 0.0, 1.0);
-    output.uv = input.uv;
+    output.PositionNormalized = input.Position;
+    output.Position = float4(input.Position, 0.0, 1.0);
+    output.Uv = input.Uv;
 
     return output;
 }
@@ -38,9 +40,11 @@ FragmentOut FragmentMain(VertexOut input)
 {
     FragmentOut output;
 
-    float2 uv = input.uv;
+    float2 uv = input.Uv;
 
-    output.color = t.Sample(s, uv);
+    float fac = 1.0 - step(1.0, length(input.PositionNormalized));
+
+    output.Color = t.Sample(s, uv) * fac;
 
     return output;
 }

@@ -7,11 +7,10 @@ license = "MPL-2.0"
 
 
 [features]
-default = ["winit_support", "alloc_gfxm"]
+default = ["winit_support", "alloc_rendy"]
 winit_support = ["back/winit", "winit"]
 x11 = []
 alloc_rendy = ["rendy-memory"]
-alloc_gfxm = ["gfx-memory"]
 
 
 [dependencies]
@@ -24,9 +23,4 @@ winit = { version = "0.19", optional = true }
 gfx = { version = "0.2.0", package = "gfx-hal", default-features = false }
 back = { version = "0.2.0", package = "gfx-backend-vulkan", default-features = false }
 
-rendy-memory = { version = "0.1.0", optional = true }
-
-[dependencies.gfx-memory]
-git = "https://github.com/gfx-rs/gfx-memory"
-rev = "721337be755f8219c6cae48abb7e85364b2e4b4c"
-optional = true
+rendy-memory = { version = "0.2.0", optional = true }

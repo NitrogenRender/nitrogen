@@ -40,7 +40,7 @@ fn main() {
             is_transient: false,
             usage: buffer::BufferUsage::TRANSFER_SRC
                 | buffer::BufferUsage::TRANSFER_DST
-                | buffer::BufferUsage::UNIFORM,
+                | buffer::BufferUsage::STORAGE,
         };
 
         let buffer = unsafe { ctx.buffer_cpu_visible_create(create_info).unwrap() };

@@ -33,7 +33,7 @@ use gfx;
 
 /// Errors that can occur when executing a graph.
 #[allow(missing_docs)]
-#[derive(Clone, Debug, From, Display)]
+#[derive(Debug, From, Display)]
 pub enum GraphExecError {
     #[display(fmt = "Invalid graph handle")]
     InvalidGraph,

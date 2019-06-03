@@ -463,7 +463,7 @@ impl SubmitGroup {
         info: buffer::BufferUploadInfo<T>,
     ) -> Result<(), buffer::BufferError> {
         ctx.buffer_storage
-            .borrow()
+            .borrow_mut()
             .cpu_visible_upload(&ctx.device_ctx, buffer, info)
     }
 
@@ -477,7 +477,7 @@ impl SubmitGroup {
         data: &mut [T],
     ) {
         ctx.buffer_storage
-            .borrow()
+            .borrow_mut()
             .cpu_visible_read(&ctx.device_ctx, buffer, data);
     }
 
@@ -670,7 +670,6 @@ impl ResourceList {
     }
 
     unsafe fn free_resources(&mut self, ctx: &mut Context) {
-        use crate::util::allocator::Allocator;
         let mut alloc = self.device.allocator();
 
         let device = &self.device.device;

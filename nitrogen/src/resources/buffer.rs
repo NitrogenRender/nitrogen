@@ -12,7 +12,7 @@ use std::collections::BTreeSet;
 
 use crate::device::DeviceContext;
 
-use crate::util::allocator::{Allocator, AllocatorError, Buffer as AllocBuffer, BufferRequest};
+use crate::util::allocator::{AllocatorError, Buffer as AllocBuffer, BufferRequest};
 use crate::util::storage::{Handle, Storage};
 
 use crate::resources::command_pool::CommandPoolTransfer;
@@ -38,7 +38,7 @@ pub struct Buffer {
 pub type BufferHandle = Handle<Buffer>;
 
 /// Errors that can occur when operating on buffer objects.
-#[derive(Debug, Display, From, Clone)]
+#[derive(Debug, Display, From)]
 #[allow(missing_docs)]
 pub enum BufferError {
     #[display(fmt = "The specified buffer handle was invalid")]
@@ -191,6 +191,10 @@ impl BufferStorage {
         self.buffers.get(handle)
     }
 
+    pub(crate) fn raw_mut(&mut self, handle: BufferHandle) -> Option<&mut Buffer> {
+        self.buffers.get_mut(handle)
+    }
+
     pub(crate) unsafe fn cpu_visible_create<U>(
         &mut self,
         device: &DeviceContext,
@@ -219,8 +223,6 @@ impl BufferStorage {
 
         let req = BufferRequest {
             transient: create_info.is_transient,
-            // TODO handle mapping??
-            persistently_mappable: false,
             properties: props,
             usage,
             size,
@@ -241,7 +243,7 @@ impl BufferStorage {
     }
 
     pub(crate) unsafe fn cpu_visible_upload<'a, T>(
-        &self,
+        &mut self,
         device: &DeviceContext,
         buffer: BufferHandle,
         info: BufferUploadInfo<'a, T>,
@@ -250,21 +252,21 @@ impl BufferStorage {
             return Err(BufferError::HandleInvalid);
         }
 
-        let buffer = self.raw(buffer).ok_or(BufferError::HandleInvalid)?;
+        let buffer = self.raw_mut(buffer).ok_or(BufferError::HandleInvalid)?;
 
         let u8_data = to_u8_slice(info.data);
 
         let upload_fits = info.offset + u8_data.len() as u64 <= buffer.size;
 
         if upload_fits {
-            write_data_to_buffer(device, &buffer.buffer, info.offset, u8_data)
+            write_data_to_buffer(device, &mut buffer.buffer, info.offset, u8_data)
         } else {
             Err(BufferError::UploadOutOfBounds)
         }
     }
 
     pub(crate) unsafe fn cpu_visible_read<T: Sized>(
-        &self,
+        &mut self,
         device: &DeviceContext,
         buffer: BufferHandle,
         out: &mut [T],
@@ -273,9 +275,9 @@ impl BufferStorage {
             return None;
         }
 
-        let buffer = self.buffers.get(buffer)?;
+        let buffer = self.buffers.get_mut(buffer)?;
 
-        read_data_from_buffer(device, &buffer.buffer, 0, to_u8_mut_slice(out)).ok()?;
+        read_data_from_buffer(device, &mut buffer.buffer, 0, to_u8_mut_slice(out)).ok()?;
 
         Some(())
     }
@@ -308,8 +310,6 @@ impl BufferStorage {
 
         let req = BufferRequest {
             transient: create_info.is_transient,
-            // TODO handle mapping
-            persistently_mappable: false,
             properties: props,
             usage,
             size,
@@ -359,18 +359,19 @@ impl BufferStorage {
 
         let req = BufferRequest {
             transient: true,
-            // TODO handle mapping
-            persistently_mappable: false,
             properties: Properties::CPU_VISIBLE | Properties::COHERENT,
             usage: Usage::TRANSFER_SRC | Usage::TRANSFER_DST,
             size: u8_slice.len() as u64,
         };
 
-        let staging_buffer = alloc.create_buffer(&device.device, req)?;
+        let mut staging_buffer = alloc.create_buffer(&device.device, req)?;
 
         // write to staging buffer
 
-        write_data_to_buffer(device, &staging_buffer, 0, u8_slice)?;
+        if let Err(err) = write_data_to_buffer(device, &mut staging_buffer, 0, u8_slice) {
+            alloc.destroy_buffer(&device.device, staging_buffer);
+            return Err(dbg!(err))?;
+        }
 
         crate::transfer::copy_buffers(
             device,
@@ -434,49 +435,52 @@ unsafe fn to_u8_mut_slice<T>(slice: &mut [T]) -> &mut [u8] {
 
 unsafe fn write_data_to_buffer(
     device: &DeviceContext,
-    buffer: &BufferTypeInternal,
+    buffer: &mut BufferTypeInternal,
     offset: u64,
     data: &[u8],
 ) -> Result<(), BufferError> {
-    use gfx::Device;
+    use rendy_memory::Block;
 
-    use crate::util::allocator::Block;
+    let block = buffer.block_mut();
 
-    let offset = offset as usize;
+    let range = offset..(offset + data.len() as u64);
 
-    let range = buffer.block().range();
+    let mut map = block.map(&device.device, range.clone())?;
 
-    let mut writer = device
-        .device
-        .acquire_mapping_writer(buffer.block().memory(), range)?;
+    {
+        use rendy_memory::Write;
 
-    writer[offset..offset + data.len()].copy_from_slice(data);
+        let mut writer = map.write::<u8>(&device.device, 0..data.len() as u64)?;
 
-    device.device.release_mapping_writer(writer).unwrap();
+        writer.write(data);
+    }
+
+    block.unmap(&device.device);
 
     Ok(())
 }
 
 unsafe fn read_data_from_buffer(
     device: &DeviceContext,
-    buffer: &BufferTypeInternal,
+    buffer: &mut BufferTypeInternal,
     offset: u64,
     data: &mut [u8],
 ) -> Result<(), BufferError> {
-    use crate::util::allocator::Block;
-    use gfx::Device;
+    use rendy_memory::Block;
 
-    let offset = offset as usize;
+    let block = buffer.block_mut();
 
-    let range = buffer.block().range();
+    let range = offset..(offset + data.len() as u64);
 
-    let reader = device
-        .device
-        .acquire_mapping_reader(buffer.block().memory(), range)?;
+    let mut map = block.map(&device.device, range.clone())?;
 
-    data.copy_from_slice(&reader[offset..offset + data.len()]);
+    {
+        let slice = map.read(&device.device, 0..data.len() as u64)?;
 
-    device.device.release_mapping_reader(reader);
+        data.copy_from_slice(slice);
+    }
+
+    block.unmap(&device.device);
 
     Ok(())
 }

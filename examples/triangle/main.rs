@@ -90,10 +90,13 @@ fn main() {
     }
 
     unsafe {
+        for group in &mut appstate.groups {
+            group.wait(&mut ctx);
+        }
+
         appstate.groups[0].graph_destroy(&mut ctx, &[appstate.graph]);
 
-        for mut group in appstate.groups {
-            group.wait(&mut ctx);
+        for group in appstate.groups {
             group.release(&mut ctx);
         }
 
