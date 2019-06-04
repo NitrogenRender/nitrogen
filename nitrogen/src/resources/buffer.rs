@@ -445,6 +445,11 @@ unsafe fn write_data_to_buffer(
 
     let range = offset..(offset + data.len() as u64);
 
+    if (range.start == range.end) || (range.end < range.start) {
+        // TODO return error?
+        return Ok(());
+    }
+
     let mut map = block.map(&device.device, range.clone())?;
 
     {
@@ -471,6 +476,11 @@ unsafe fn read_data_from_buffer(
     let block = buffer.block_mut();
 
     let range = offset..(offset + data.len() as u64);
+
+    if (range.start == range.end) || (range.end < range.start) {
+        // TODO return error?
+        return Ok(());
+    }
 
     let mut map = block.map(&device.device, range.clone())?;
 
