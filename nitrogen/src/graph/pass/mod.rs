@@ -28,6 +28,7 @@ pub struct PassId(pub(crate) usize);
 
 /// Primitive mode used for rasterization.
 #[allow(missing_docs)]
+#[repr(u8)]
 #[derive(Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Hash, Debug)]
 pub enum Primitive {
     PointList,
