@@ -252,31 +252,49 @@ impl MemoryUsage for RendyRequest {
     }
 
     fn memory_fitness(&self, properties: gfx::memory::Properties) -> u32 {
+        use gfx::memory::Properties;
+
         let req = &self.0;
 
         let is_big = self.0.size >= 2 * 1024 * 1024;
 
-        if req.transient {
-            assert!(properties.contains(gfx::memory::Properties::CPU_VISIBLE));
-            assert!(!properties.contains(gfx::memory::Properties::LAZILY_ALLOCATED));
+        let fitness = |flags: &[u32]| {
+            flags
+                .iter()
+                .rev()
+                .enumerate()
+                .map(|(i, f)| *f << i as u32)
+                .fold(0, |acc, f| acc | f)
+        };
 
-            0 | ((!properties.contains(gfx::memory::Properties::DEVICE_LOCAL)) as u32) << 2
-                | (properties.contains(gfx::memory::Properties::COHERENT) as u32) << 1
-                | ((!properties.contains(gfx::memory::Properties::CPU_CACHED)) as u32) << 0
+        let is = |x| u32::from(properties.contains(x));
+        let is_not = |x| u32::from(!properties.contains(x));
+
+        if req.transient {
+            assert!(!properties.contains(Properties::LAZILY_ALLOCATED));
+
+            fitness(&[
+                is_not(Properties::DEVICE_LOCAL),
+                is(Properties::COHERENT),
+                is_not(Properties::CPU_CACHED),
+            ])
         } else if is_big {
             // dedicated
-            assert!(properties.contains(gfx::memory::Properties::DEVICE_LOCAL));
-            0 | ((!properties.contains(gfx::memory::Properties::CPU_VISIBLE)) as u32) << 3
-                | ((!properties.contains(gfx::memory::Properties::LAZILY_ALLOCATED)) as u32) << 2
-                | ((!properties.contains(gfx::memory::Properties::CPU_CACHED)) as u32) << 1
-                | ((!properties.contains(gfx::memory::Properties::COHERENT)) as u32) << 0
+            fitness(&[
+                is_not(Properties::CPU_VISIBLE),
+                is_not(Properties::LAZILY_ALLOCATED),
+                is_not(Properties::CPU_CACHED),
+                is_not(Properties::COHERENT),
+            ])
         } else {
             // dynamic
             assert!(!properties.contains(gfx::memory::Properties::LAZILY_ALLOCATED));
 
-            0 | (properties.contains(gfx::memory::Properties::DEVICE_LOCAL) as u32) << 2
-                | (properties.contains(gfx::memory::Properties::COHERENT) as u32) << 1
-                | ((!properties.contains(gfx::memory::Properties::CPU_CACHED)) as u32) << 0
+            fitness(&[
+                is(Properties::DEVICE_LOCAL),
+                is(Properties::COHERENT),
+                is_not(Properties::CPU_CACHED),
+            ])
         }
     }
 
