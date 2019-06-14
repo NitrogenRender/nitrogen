@@ -8,6 +8,7 @@ use nitrogen::graph::Store;
 use nitrogen::submit_group::SubmitGroup;
 use nitrogen::*;
 
+use nitrogen::display::SwapchainSetupConfig;
 use std::time::Instant;
 
 pub struct CanvasSize(pub f32, pub f32);
@@ -173,7 +174,11 @@ impl<U: UserData> MainLoop<U> {
             if let Some(size) = new_size {
                 // resize happened
                 self.size = size;
-                submit.display_setup_swapchain(&mut self.ctx, self.display);
+                submit.display_setup_swapchain(
+                    &mut self.ctx,
+                    self.display,
+                    SwapchainSetupConfig::new(),
+                );
             }
         }
 
