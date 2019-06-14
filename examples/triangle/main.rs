@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use nitrogen::display::SwapchainSetupConfig;
 use nitrogen::Context;
 
 struct AppState {
@@ -55,7 +56,7 @@ fn main() {
 
         if resized {
             unsafe {
-                group.display_setup_swapchain(&mut ctx, display);
+                group.display_setup_swapchain(&mut ctx, display, SwapchainSetupConfig::new());
             }
 
             resized = false;

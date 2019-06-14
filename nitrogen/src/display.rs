@@ -17,6 +17,29 @@ use crate::resources::semaphore_pool::{SemaphoreList, SemaphorePool};
 use crate::submit_group::ResourceList;
 use std;
 
+///A `SwapchainSetupConfig` is used to provide configuration to the swapchain creation.
+#[derive(Copy, Clone, Debug)]
+pub struct SwapchainSetupConfig {
+    pub extent: gfx::window::Extent2D,
+    pub image_usage: gfx::image::Usage,
+    pub image_layers: gfx::image::Layer,
+    pub present_mode: gfx::PresentMode,
+}
+
+impl SwapchainSetupConfig {
+    pub fn new() -> Self {
+        SwapchainSetupConfig {
+            extent: gfx::window::Extent2D {
+                width: 100,
+                height: 100,
+            },
+            image_usage: gfx::image::Usage::TRANSFER_DST,
+            image_layers: 1,
+            present_mode: gfx::PresentMode::Immediate,
+        }
+    }
+}
+
 /// A `Display` object represents a window surface.
 pub struct Display {
     pub(crate) surface: Surface,
@@ -64,6 +87,7 @@ impl Display {
         &mut self,
         device: &DeviceContext,
         res_list: &mut ResourceList,
+        swapchain_setup_config: SwapchainSetupConfig,
     ) {
         use gfx::Surface;
 
@@ -89,19 +113,18 @@ impl Display {
 
         let format = self.display_format;
 
-        let default_extent = gfx::window::Extent2D {
-            width: 100,
-            height: 100,
-        };
+        let default_extent = swapchain_setup_config.extent;
 
-        let mut config =
-            gfx::SwapchainConfig::from_caps(&surface_capability, format, default_extent);
+        let mut config = gfx::SwapchainConfig::from_caps(
+            &surface_capability,
+            format,
+            swapchain_setup_config.extent,
+        );
 
-        config.image_usage |= gfx::image::Usage::TRANSFER_DST;
-        config.image_layers = 1;
+        config.image_usage |= swapchain_setup_config.image_usage;
+        config.image_layers = swapchain_setup_config.image_layers;
 
-        // TODO add a setting for VSync
-        config.present_mode = gfx::PresentMode::Immediate;
+        config.present_mode = swapchain_setup_config.present_mode;
         // config.present_mode = gfx::PresentMode::Relaxed;
 
         let extent = config.extent.to_extent();

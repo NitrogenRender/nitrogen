@@ -19,6 +19,7 @@ use crate::resources::semaphore_pool::{SemaphoreList, SemaphorePool};
 
 use smallvec::SmallVec;
 
+use crate::display::SwapchainSetupConfig;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -159,8 +160,17 @@ impl SubmitGroup {
     }
 
     /// Setup a new swapchain for a given `Display`, recreating it if an old one already exists.
-    pub unsafe fn display_setup_swapchain(&mut self, ctx: &mut Context, display: DisplayHandle) {
-        ctx.displays[display].setup_swapchain(&ctx.device_ctx, &mut self.res_destroys);
+    pub unsafe fn display_setup_swapchain(
+        &mut self,
+        ctx: &mut Context,
+        display: DisplayHandle,
+        swapchain_setup_config: SwapchainSetupConfig,
+    ) {
+        ctx.displays[display].setup_swapchain(
+            &ctx.device_ctx,
+            &mut self.res_destroys,
+            swapchain_setup_config,
+        );
     }
 
     /// Queue the clearing of an `Image` with a given `ClearValue`.
